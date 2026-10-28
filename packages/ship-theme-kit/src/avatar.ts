@@ -73,7 +73,7 @@ export const HAIR_STYLES: readonly CatalogItem<HairStyle>[] = [
 
 export const HATS: readonly CatalogItem<HatId>[] = [
   { id: "none", name: "No Hat", description: "Let the wind in your hair.", ...starter },
-  { id: "straw-hat", name: "Straw Hat", description: "A wide-brimmed sun hat with a red band.", ...starter },
+  { id: "straw-hat", name: "Straw Hat", description: "A wide-brimmed sun hat with a blue ribbon.", ...starter },
   { id: "bandana", name: "Bandana", description: "Knotted at the back.", ...starter },
   { id: "beanie", name: "Beanie", description: "Warm for cold fjords.", ...shop(120, 1) },
   { id: "tricorn", name: "Tricorn", description: "Three corners of authority.", ...shop(200, 2) },
@@ -124,10 +124,10 @@ export const DEFAULT_AVATAR: AvatarLoadout = {
   name: "Captain",
   skin: "peach",
   hair: "messy",
-  hairColor: HAIR_COLORS[0],
+  hairColor: HAIR_COLORS[1],
   hat: "straw-hat",
   coat: "striped-shirt",
-  coatColor: COAT_COLORS[0],
+  coatColor: COAT_COLORS[1],
   accessory: "none",
   tool: "quill-logbook",
 };

@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "The Lookout",
+  "short_name": "Lookout",
+  "description": "Ship's lookout: guards your focus voyages, judges YouTube videos against your assignment, and rewards steering back.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": {
+    "default_title": "The Lookout",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" }
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["storage", "alarms", "scripting"],
+  "host_permissions": [
+    "https://*.youtube.com/*",
+    "https://i.ytimg.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["content/bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://*.youtube.com/*"],
+      "js": ["content/guard.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
