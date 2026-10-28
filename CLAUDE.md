@@ -35,7 +35,7 @@ The 2026-10-28 spec splits the work by specialty:
   - **Claude no longer draws complex ships or characters with procedural Canvas code.** The procedural art built in session 3 is a stand-in until sprites arrive (see "Next steps").
   - The art brief for the graphics AI is `docs/art-brief.md`; the full sprite checklist is `docs/sprite-list.md` (generated).
 - **Gemini** handles the AI judgement, with the user's own API key:
-  - **The Lookout's video judge** (built): it reads a YouTube video's thumbnail, title, channel and description and decides PROCEED or BLOCKED against the current assignment.
+  - **The Lookout's second opinion** (built): the Lookout's own video groups (written in session 5, no AI) sort each YouTube video. Gemini reads the thumbnail, title, channel and description and decides PROCEED or BLOCKED only for videos the groups aren't sure about.
   - **Feynman "blurt diff" grading** (built in session 4): it decides which concepts in a blurt are mastered, partly grasped or missed, and flags statements the notes contradict. The key is the web app's own setting.
 
 ## Repo layout
@@ -63,7 +63,7 @@ ship/
 │   │       │                useCrewSync, useWebRTC
 │   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
-│   │   └── src/ background/ content/ popup/ options/
+│   │   └── src/ background/ content/ popup/ options/; core/videoGroups.ts + videoSort.ts sort watch pages
 │   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
 ├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor)
 └── packages/
@@ -87,9 +87,13 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-10-28, after the fourth session)
+## Status (2026-10-28, after the fifth session)
 
-Sessions 1–3 are merged into `main` (pull request #1). Session 4 is on branch `claude/build-foundations`, in pull request #2. It covers this CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading. Start new work on a fresh branch from `main` once #2 is merged.
+Sessions 1–4 are merged into `main`:
+- pull request #1: sessions 1–3;
+- pull request #2: the CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading.
+
+Session 5 (the Lookout's video groups) is on branch `claude/build-foundations`, not yet in a pull request.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -105,8 +109,9 @@ Every build step now has working code:
   - async grading in the Captain's Log, falling back to the offline engine.
 
   The Lookout now uses the same client.
+- **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 729 tests, and all pass:
+`npm test` runs 744 tests, and all pass:
 
 | Package | Tests |
 |---|---|
@@ -114,7 +119,7 @@ Every build step now has working code:
 | active-recall-engine | 41 |
 | crew server | 100 |
 | integrations (incl. Gemini client and blurt grader 15) | 119 |
-| extension | 171 |
+| extension (incl. video groups 25) | 186 |
 | web (ship art 147, sailor art 68, stores and voyage rules 23, sprite engine 11, asset checks 6, Gemini grading and backups 7) | 262 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
@@ -139,6 +144,7 @@ Every build step now has working code:
 
 **Never checked for real:**
 - A real Canvas, Todoist or Drive account, a real Parchment file or `study.json`, real YouTube, or a real Gemini key (for the Lookout or for blurt grading).
+- Whether YouTube watch pages still carry `<meta itemprop="genre">`, the category the video groups read. YouTube was unreachable from the cloud sandbox. Without it the groups simply ignore the category.
 - The Lookout's options page has a **Check key** button for Gemini.
 - Parchment's Swift source still needs comparing (see session 2 notes).
 
@@ -162,7 +168,7 @@ Do these in order.
      - the citrus tree in its three states, plus a fruit and a blossom;
      - the starter sailor's layers and the Captain's Desk.
    - **When art arrives:** put it in `apps/web/public/assets/<sheet>/` with a `manifest.json`, run `npm run assets -w @ship/web`, then `npm test`, then look at it in the galleries.
-4. **The Lookout (Gemini).** Built in session 3. It still needs testing with a real key.
+4. **The Lookout (Gemini).** Built in session 3. Since session 5 its own video groups decide most videos, and Gemini only the unsure ones. It still needs testing on real YouTube, and with a real key.
 5. ✅ **Gemini blurt grading** (session 4). See "Gemini blurt grading" under "Decisions made in session 4". It still needs a try with a real key; Settings has a **Check key** button.
 
 Also still to do: try everything with real accounts and files (see "Never checked for real" above).
@@ -236,9 +242,10 @@ Mythic (names from the brief, all generic or public-domain):
 - **Bridge content script** on the Ship web app (`http://localhost/*` and `http://127.0.0.1/*`; only active if `<meta name="ship-app">` is present). It relays the voyage state and a few due flashcards to the extension, and sends reward events back. The messages are the `WebToLookout` / `LookoutToWeb` types in `shared-types/lookout.ts`. The web app pays each reward event once (by id), then acks it.
 - **Guarding** happens only while a focus block runs:
   - YouTube home, Shorts and feeds are always blocked.
-  - A YouTube watch page is judged by **Gemini Flash** from its title, channel, description, an optional transcript excerpt and the thumbnail, checked against the active assignment. Verdicts are cached per video.
+  - A YouTube watch page is first sorted by the Lookout's **video groups** (session 5): subjects, lessons, study audio and distractions, written ahead of time, with no AI and no network.
+  - Only when the groups aren't sure, and a key is set, does **Gemini Flash** judge it: from its title, channel, description, YouTube category, an optional transcript excerpt and the thumbnail, checked against the active assignment. Gemini verdicts are cached per video.
   - **The answer's shape:** the spec writes it as `{ "verdict": "PROCEED" | "BLOCKED", "confidence": number, "reason": string }`. The code asks Gemini for `decision` instead, to match `LookoutVerdict.decision` in shared-types, and accepts either name.
-  - With no API key, a keyword heuristic decides and is labeled as such.
+  - With no API key, the video groups decide everything, and their verdicts are labeled as such ("Sorted by the Lookout's video groups, not Gemini").
 - **Gemini setup**: the user types their own key on the options page. The model name is a setting, because Gemini model IDs change. Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with header `x-goog-api-key`, using `responseMimeType: application/json`. The call itself goes through the shared client in `@ship/integrations` (`generateGeminiJson`); the Lookout's prompt and verdict parsing stay in `apps/extension/src/core/gemini.ts`.
 - **Siren Friction Gate**: a Shadow-DOM overlay with a cartoon pirate. It offers two choices:
   - Answer 2 flashcards correctly (typed) for a 5-minute leisure pass.
@@ -432,7 +439,7 @@ This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI'
 - **Gemini:**
   - The default model is `gemini-flash-latest`; it's never been called with a real key, so check it with the options page's Check key button.
   - Only Gemini verdicts are cached (12 h, per video and study context).
-  - After an error or 15 s, the keyword check decides, and is labeled as such.
+  - After an error or 15 s, the video groups' answer stands, and is labeled as such.
 - **The Siren Gate:**
   - It lives in a closed shadow DOM with no `innerHTML`, which is safe under YouTube's Trusted Types.
   - "Close" answers count as right. A leisure pass opens the whole site.
@@ -575,6 +582,50 @@ So:
 - The Lookout now calls Gemini through `generateGeminiJson` in `@ship/integrations`.
 - Its prompt and verdict parsing are unchanged, and `normalizeModel` and `DEFAULT_GEMINI_MODEL` are re-exported from `@ship/integrations`.
 - `@ship/integrations` and `@ship/active-recall-engine` are marked `"sideEffects": false`, so the extension's bundles stay their old size.
+
+## Decisions made in session 5
+
+### The Lookout's video groups (`apps/extension/src/core/videoGroups.ts`, `videoSort.ts`)
+
+The user asked for the grouping to be done ahead of time ("you don't have to use Gemini on the spot"). So the Lookout carries its own knowledge and sorts most videos instantly, with no network. Gemini became an optional second opinion.
+
+**The groups**
+- **Subjects:** 17 subjects (math, statistics, physics, chemistry, biology, medicine, earth and space, computer science, engineering, history, government, economics, English, psychology, philosophy, arts, geography) plus 12 languages. Each has:
+  - telltale terms: "krebs cycle" means biology, "stoichiometry" means chemistry;
+  - course codes: "BIO 201", "CS61B", "APUSH", "AP Calc";
+  - related subjects (math ↔ physics, for example).
+- **Kinds of video:**
+  - lessons: "lecture", "tutorial", "explained", "practice problems", "… in 5 minutes";
+  - study audio: lofi, rain sounds, "study with me", "10 hours of …";
+  - 11 distraction groups: gaming, reactions, comedy and challenges, vlogs and lifestyle, music videos, TV and film, sports, shopping, celebrity news, cooking, and clips and streams.
+- **166 known channels:** lesson channels with their subjects, "edutainment" channels (fun explainers such as Veritasium), and entertainment channels.
+- **YouTube's own category:** read from `meta[itemprop="genre"]`, only when the page's meta tags describe this video. Education and Science & Technology lean lesson. Gaming, Music, Comedy and the like lean distraction. People & Blogs is the upload default, so it means nothing.
+
+**Avoiding false alarms.** Words that would misfire on study videos are left out or narrowed: "reaction" (chemistry), "makeup" (a makeup exam), "edit" (editing an essay), "goals", "season", "matrix", "galaxy", bare "episode" and "comedy". Short course codes ("art", "me") count only as the course's first word or right before a number.
+
+**How a video is sorted** (`sortVideo`). The verdict always has `source: "heuristic"`, and a reason that names the group. The rules, in order:
+1. An entertainment channel is blocked, unless the title names the topic twice.
+2. Study audio is allowed.
+3. A distraction is blocked, unless the title is strongly on topic and there's only one distraction group. If it touches the topic at all, the block is marked unsure.
+4. With a study context:
+   - a strongly on-topic title is allowed;
+   - an edutainment channel is allowed only when on topic (and unsure); otherwise it's blocked;
+   - a lesson in the studied subject is allowed;
+   - a title naming the studied subject is allowed;
+   - a video clearly from another subject is blocked ("This is a chemistry video, but you're studying history.");
+   - a lesson from a related subject is allowed but unsure;
+   - otherwise the old keyword relevance decides, unsure.
+5. With no study context, lessons are allowed and everything else is blocked.
+
+**Who decides**
+- A verdict is **sure** at confidence 0.75 or more (`SURE_CONFIDENCE`).
+- `lookout.ts` uses a sure verdict straight away, even with a Gemini key.
+- An unsure verdict goes to Gemini only when a key is set (cached as before). If Gemini fails, the groups' answer stands, prefixed "Gemini couldn't answer, so the Lookout's video groups decided."
+- The groups' verdicts aren't cached; they're instant.
+
+**What changed in the contracts:** `VideoInspection` gains optional `category`. `LookoutVerdict.source` keeps `"heuristic"`, now documented as the video groups. The old keyword check (`heuristic.ts`) is gone; `topicKeywords` lives in `videoSort.ts`.
+
+**Wording:** the labels and the options, popup and Lookout panel texts say "video groups" instead of "keyword check", and call Gemini a second opinion.
 
 ## Conventions
 

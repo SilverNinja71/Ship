@@ -49,6 +49,9 @@ export function readInspection(doc: Document, videoId: string): VideoInspection 
   let description = collapse(doc.querySelector("ytd-watch-metadata #description-inline-expander, ytd-watch-metadata #description")?.textContent, 2000);
   if (!description && metaIsCurrent) description = meta(doc, 'meta[name="description"]') || meta(doc, 'meta[property="og:description"]');
 
+  // The page's microdata names YouTube's category, but only the first video's: trust it only then.
+  const category = metaIsCurrent ? collapse(doc.querySelector('meta[itemprop="genre"]')?.getAttribute("content"), 60) : "";
+
   return {
     videoId,
     title,
@@ -57,5 +60,6 @@ export function readInspection(doc: Document, videoId: string): VideoInspection 
     // Transcripts need YouTube's signed caption URLs; title, description and thumbnail are enough to judge.
     transcriptExcerpt: null,
     thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+    category: category || null,
   };
 }

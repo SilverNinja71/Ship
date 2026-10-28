@@ -71,6 +71,8 @@ export interface VideoInspection {
   description: string;
   transcriptExcerpt: string | null;
   thumbnailUrl: string | null;
+  /** YouTube's own category ("Education", "Gaming"...), when the page carries it. */
+  category?: string | null;
 }
 
 export interface LookoutVerdict {
@@ -78,5 +80,6 @@ export interface LookoutVerdict {
   reason: string;
   /** 0..1 */
   confidence: number;
+  /** "heuristic" is the Lookout's own video groups (rules written ahead of time, no AI). */
   source: "gemini" | "heuristic" | "cache" | "always-blocked" | "leisure-pass";
 }

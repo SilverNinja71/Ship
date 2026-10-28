@@ -71,7 +71,7 @@ function startGuard() {
         toast ??= mountToast("");
         toast.set(
           "The Lookout cleared this video.",
-          decision.verdict.source === "heuristic" ? `Keyword check: ${decision.verdict.reason}` : decision.verdict.reason,
+          decision.verdict.source === "heuristic" ? `Video groups: ${decision.verdict.reason}` : decision.verdict.reason,
           true,
         );
         toastTimer = setTimeout(clearToast, 4500);

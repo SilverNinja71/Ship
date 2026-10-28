@@ -1,5 +1,5 @@
 // Gemini verdicts, remembered per video and study context so re-opening a
-// video doesn't cost another call. Keyword-check verdicts aren't cached:
+// video doesn't cost another call. The video groups' verdicts aren't cached:
 // they're instant, and caching them would hide Gemini once a key is added.
 
 import type { LookoutVerdict } from "@ship/shared-types";

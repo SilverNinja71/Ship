@@ -19,7 +19,8 @@ import { parseVoyageState, parseWebMessage, sanitizeCards } from "../core/bridge
 import { classifyUrl, type PageClass } from "../core/classify.js";
 import { THUMBNAIL_MAX_BYTES } from "../core/constants.js";
 import { askGemini, GeminiError, type InlineImage } from "../core/gemini.js";
-import { judgeByKeywords } from "../core/heuristic.js";
+import { sortVideo } from "../core/videoSort.js";
+import type { SortedVideo } from "../core/videoSort.js";
 import { bytesToBase64, type LookoutFetch } from "../core/net.js";
 import { activePass, grantPass, normalizePasses, prunePasses, type Passes } from "../core/passes.js";
 import { ackRewards, claimRewards, enqueueReward, isRewardEvent, makeReward, newRewardId, pendingDoubloons, steerBackPayout } from "../core/rewards.js";
@@ -135,6 +136,7 @@ export function sanitizeInspection(raw: unknown, videoId: string): VideoInspecti
     description: str(r.description, 2000),
     transcriptExcerpt: str(r.transcriptExcerpt, 2000) || null,
     thumbnailUrl: safeThumbnailUrl(r.thumbnailUrl, videoId),
+    category: str(r.category, 60) || null,
   };
 }
 
@@ -230,7 +232,7 @@ export function createLookout(deps: LookoutDeps) {
     }
   }
 
-  async function callGemini(settings: LookoutSettings, video: VideoInspection, context: StudyContext, key: string): Promise<LookoutVerdict> {
+  async function callGemini(settings: LookoutSettings, video: VideoInspection, context: StudyContext, key: string, sorted: SortedVideo): Promise<LookoutVerdict> {
     try {
       const thumb = video.thumbnailUrl ? await thumbnail(video.thumbnailUrl) : null;
       const verdict = await askGemini(deps.fetch, { apiKey: settings.geminiApiKey, model: settings.geminiModel, video, context, thumbnail: thumb });
@@ -239,8 +241,7 @@ export function createLookout(deps: LookoutDeps) {
     } catch (e) {
       const message = e instanceof GeminiError ? e.message : "Gemini call failed.";
       await mutate(() => ({ geminiError: { at: deps.now(), message } }));
-      const fallback = judgeByKeywords(video, context);
-      return { ...fallback, reason: `Gemini couldn't answer, so the keyword check decided. ${fallback.reason}` };
+      return { ...sorted.verdict, reason: `Gemini couldn't answer, so the Lookout's video groups decided. ${sorted.verdict.reason}` };
     }
   }
 
@@ -254,14 +255,15 @@ export function createLookout(deps: LookoutDeps) {
       if (meta) Object.assign(video, { title: meta.title, channel: video.channel || meta.channel });
     }
     const context = studyContext(s.voyage?.state ?? null);
+    // The video groups sort most videos on the spot; Gemini only settles the ones they're unsure about.
+    const sorted = sortVideo(video, context);
     const key = verdictCacheKey(video.videoId, studyContextKey(context));
-    let verdict = getCachedVerdict(s.verdicts, key, deps.now());
-    if (!verdict && !geminiReady(s.settings)) verdict = judgeByKeywords(video, context);
+    let verdict = sorted.sure || !geminiReady(s.settings) ? sorted.verdict : getCachedVerdict(s.verdicts, key, deps.now());
     if (!verdict) {
       // Two tabs (or a quick re-check) on the same video share one call.
       let pending = inflight.get(key);
       if (!pending) {
-        pending = callGemini(s.settings, video, context, key).finally(() => inflight.delete(key));
+        pending = callGemini(s.settings, video, context, key, sorted).finally(() => inflight.delete(key));
         inflight.set(key, pending);
       }
       verdict = await pending;

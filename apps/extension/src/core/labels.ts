@@ -3,7 +3,7 @@
 import type { LookoutVerdict, VoyagePhase } from "@ship/shared-types";
 import type { GuardStatus } from "./voyage.js";
 
-/** Who made the call. A keyword-check verdict must always say so. */
+/** Who made the call. A verdict from the Lookout's own rules must always say it wasn't Gemini. */
 export function verdictSourceLabel(verdict: Pick<LookoutVerdict, "source">, model: string | null): string {
   switch (verdict.source) {
     case "gemini":
@@ -11,7 +11,7 @@ export function verdictSourceLabel(verdict: Pick<LookoutVerdict, "source">, mode
     case "cache":
       return "Gemini's earlier verdict on this video";
     case "heuristic":
-      return "Keyword check (heuristic), not Gemini";
+      return "Sorted by the Lookout's video groups, not Gemini";
     case "always-blocked":
       return "Always blocked during focus";
     case "leisure-pass":
@@ -27,7 +27,7 @@ export function verdictSourceShort(verdict: Pick<LookoutVerdict, "source">): str
     case "cache":
       return "Gemini (remembered)";
     case "heuristic":
-      return "the keyword check (heuristic)";
+      return "the Lookout's video groups";
     case "always-blocked":
       return "the always-blocked list";
     case "leisure-pass":

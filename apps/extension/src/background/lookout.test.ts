@@ -279,7 +279,7 @@ describe("gate outcomes and rewards", () => {
 });
 
 describe("judging watch pages", () => {
-  it("uses the keyword check without a key, and labels it", async () => {
+  it("sorts with the video groups without a key, and labels it", async () => {
     const h = harness();
     await h.voyage();
     expect(await h.judge("Enzyme Kinetics Explained")).toMatchObject({ action: "allow", verdict: { decision: "PROCEED", source: "heuristic" } });
@@ -291,41 +291,51 @@ describe("judging watch pages", () => {
     const calls: { url: string; body?: string }[] = [];
     const h = harness({ settings: { geminiApiKey: "k" }, fetch: geminiFetch({ decision: "BLOCKED", reason: "Gaming.", confidence: 0.9 }, calls) });
     await h.voyage();
-    const first = await h.judge("Speedrun fails");
+    // Nothing ties this to enzymes, but nothing marks it as entertainment either: the groups are unsure.
+    const first = await h.judge("A day on the boat");
     expect(first).toMatchObject({ action: "block", verdict: { source: "gemini", reason: "Gaming." }, voyage: { geminiModel: "gemini-flash-latest" } });
     const gen = calls.find((c) => c.url.includes(":generateContent"))!;
     expect(JSON.parse(gen.body!).contents[0].parts[1]).toEqual({ inlineData: { mimeType: "image/jpeg", data: "/9j/2Q==" } });
     expect(calls[0]!.url).toBe("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg");
 
     const before = calls.length;
-    expect(await h.judge("Speedrun fails")).toMatchObject({ verdict: { source: "cache", reason: "Gaming." } });
+    expect(await h.judge("A day on the boat")).toMatchObject({ verdict: { source: "cache", reason: "Gaming." } });
     expect(calls).toHaveLength(before);
 
     // A different assignment is a different question.
     await h.voyage({ assignment: { title: "Game design essay", course: null } });
-    await h.judge("Speedrun fails");
+    await h.judge("A day on the boat");
     expect(calls.length).toBeGreaterThan(before);
+  });
+
+  it("doesn't ask Gemini about videos the groups are sure of, even with a key", async () => {
+    const calls: { url: string }[] = [];
+    const h = harness({ settings: { geminiApiKey: "k" }, fetch: geminiFetch({ decision: "BLOCKED", reason: "Nope.", confidence: 0.9 }, calls) });
+    await h.voyage();
+    expect(await h.judge("Enzyme Kinetics Explained")).toMatchObject({ action: "allow", verdict: { source: "heuristic" } });
+    expect(await h.judge("Top 10 Speedrun Fails")).toMatchObject({ action: "block", verdict: { source: "heuristic", reason: "This looks like gaming, not study material." } });
+    expect(calls).toHaveLength(0);
   });
 
   it("shares one Gemini call between tabs judging the same video", async () => {
     const calls: { url: string }[] = [];
     const h = harness({ settings: { geminiApiKey: "k" }, fetch: geminiFetch({ decision: "PROCEED", reason: "On topic.", confidence: 0.8 }, calls) });
     await h.voyage();
-    const [a, b] = await Promise.all([h.judge("Enzymes"), h.judge("Enzymes")]);
+    const [a, b] = await Promise.all([h.judge("A day on the boat"), h.judge("A day on the boat")]);
     expect(a).toEqual(b);
     expect(calls.filter((c) => c.url.includes(":generateContent"))).toHaveLength(1);
   });
 
-  it("falls back to the keyword check when Gemini fails, and says why in the popup", async () => {
+  it("falls back to the video groups when Gemini fails, and says why in the popup", async () => {
     const h = harness({
       settings: { geminiApiKey: "bad" },
       fetch: async (url) => (url.includes("generateContent") ? fakeResponse({ error: { message: "API key not valid." } }, 400) : fakeResponse({}, 404)),
     });
     await h.voyage();
-    const d = await h.judge("Enzyme Kinetics Explained");
+    const d = await h.judge("Lecture 12", "Today: enzyme inhibition and reaction rates");
     expect(d).toMatchObject({
       action: "allow",
-      verdict: { source: "heuristic", reason: expect.stringMatching(/^Gemini couldn't answer, so the keyword check decided\./) },
+      verdict: { source: "heuristic", reason: expect.stringMatching(/^Gemini couldn't answer, so the Lookout's video groups decided\./) },
     });
     expect((await h.popup()).geminiError).toEqual({ at: T0, message: "Gemini answered HTTP 400: API key not valid." });
   });

@@ -1,8 +1,8 @@
 // Gemini Flash as the judge of YouTube watch pages. Builds the
 // generateContent request (structured JSON output) and reads the verdict
 // defensively; the shared client in @ship/integrations makes the call. Any
-// surprise becomes a GeminiError, and the caller falls back to the keyword
-// check.
+// surprise becomes a GeminiError, and the caller falls back to the video
+// groups' answer.
 
 import type { LookoutVerdict, VideoInspection } from "@ship/shared-types";
 import { GeminiError, clipText, extractCandidateText, generateGeminiJson, parseJsonLoose } from "@ship/integrations";
@@ -62,6 +62,7 @@ export function buildGeminiRequest({ video, context, thumbnail }: GeminiRequestI
     channel: clip(video.channel, 120),
     description: clip(video.description, 1500),
     transcriptExcerpt: clip(video.transcriptExcerpt, 1500),
+    youtubeCategory: video.category ?? null,
   };
   const lines = [
     `Study session: ${JSON.stringify(session)}`,

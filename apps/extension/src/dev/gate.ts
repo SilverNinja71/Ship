@@ -32,11 +32,12 @@ const SCENARIOS: Record<string, Scenario> = {
     url: "https://www.youtube.com/watch?v=Zx8sKkX1y2Q",
     apiKey: "dev-only-not-a-key",
     cards: CARDS,
-    video: { title: "Top 10 Speedrun Fails of the Year", channel: "Blocky Laughs", description: "The funniest speedrun disasters, ranked." },
-    gemini: { decision: "BLOCKED", reason: "Speedrun fails are gaming entertainment, not enzyme kinetics. Save it for shore leave!", confidence: 0.93 },
+    // The video groups aren't sure about this one, so Gemini is asked.
+    video: { title: "Exploring a Coral Reef in 4K", channel: "Ocean Wanderer", description: "Relaxing underwater footage from the Pacific." },
+    gemini: { decision: "BLOCKED", reason: "Reef footage is lovely, but it isn't enzyme kinetics. Save it for shore leave!", confidence: 0.93 },
   },
   heuristic: {
-    label: "Keyword check",
+    label: "Video groups",
     url: "https://www.youtube.com/watch?v=Qw3rTy7uI9o",
     apiKey: "",
     cards: CARDS,
@@ -122,7 +123,7 @@ async function renderState() {
   };
   add("h2", "Fake background");
   add("p", `Blocked ${s.stats.blockedToday} · steered back ${s.stats.steeredBackToday} · passes ${s.stats.leisurePassesToday}`);
-  add("p", `Gemini ready: ${s.stats.geminiReady ? "yes" : "no (keyword check)"}`);
+  add("p", `Gemini ready: ${s.stats.geminiReady ? "yes" : "no (video groups only)"}`);
   add("h3", `Reward queue (${plural(rewards.length, "event")}, ${s.pendingDoubloons} doubloons)`);
   for (const e of rewards) add("p", `${e.kind} · ${e.site} · +${e.doubloons}`, "mono");
   if (s.passes.length) add("h3", "Leisure passes");
