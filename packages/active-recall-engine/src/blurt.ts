@@ -271,9 +271,7 @@ export function gradeBlurt(blurt: string, concepts: readonly BlurtConcept[], opt
     return { concept, status, score, matchedWith: [...matched] };
   });
 
-  const totalWeight = concepts.reduce((a, c) => a + c.weight, 0);
-  const credit = (r: BlurtConceptResult) => (r.status === "mastered" ? 1 : r.status === "partial" ? r.score : 0);
-  const coverage = totalWeight ? results.reduce((a, r) => a + r.concept.weight * credit(r), 0) / totalWeight : 0;
+  const coverage = blurtCoverage(results);
 
   // Extra terms: blurt words that neither hit a concept nor appear anywhere in the notes.
   const known = new Set<string>();
@@ -292,6 +290,13 @@ export function gradeBlurt(blurt: string, concepts: readonly BlurtConcept[], opt
   }
 
   return { coverage, concepts: results, extraTerms: [...extras.values()] };
+}
+
+/** Weighted share of the ideas recalled: mastered counts 1, partial its score, missed 0. */
+export function blurtCoverage(results: readonly BlurtConceptResult[]): number {
+  const totalWeight = results.reduce((a, r) => a + r.concept.weight, 0);
+  const credit = (r: BlurtConceptResult) => (r.status === "mastered" ? 1 : r.status === "partial" ? r.score : 0);
+  return totalWeight ? results.reduce((a, r) => a + r.concept.weight * credit(r), 0) / totalWeight : 0;
 }
 
 /** Extract concepts from the notes and grade the blurt against them in one go. */

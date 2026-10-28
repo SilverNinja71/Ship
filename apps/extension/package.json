@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ship/active-recall-engine": "*",
+    "@ship/integrations": "*",
     "@ship/shared-types": "*"
   },
   "devDependencies": {

@@ -1,6 +1,9 @@
 // The options-page settings, and the Ship URL helpers that depend on them.
 
+import { DEFAULT_GEMINI_MODEL, normalizeGeminiModel } from "@ship/integrations";
 import { normalizeSiteEntry } from "./classify.js";
+
+export { DEFAULT_GEMINI_MODEL };
 
 export interface LookoutSettings {
   /** The user's own Gemini key. Stays in chrome.storage.local and is only sent to Google. */
@@ -13,8 +16,6 @@ export interface LookoutSettings {
 }
 
 export const DEFAULT_SHIP_URL = "http://localhost:5173";
-/** Google's alias for its newest Flash model, so the default doesn't go stale. */
-export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
 
 export const DEFAULT_SETTINGS: LookoutSettings = {
   geminiApiKey: "",
@@ -24,7 +25,6 @@ export const DEFAULT_SETTINGS: LookoutSettings = {
 };
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
 export function isLoopbackHost(hostname: string): boolean {
   return LOOPBACK_HOSTS.has(hostname.toLowerCase());
@@ -49,11 +49,7 @@ export function normalizeShipUrl(input: string): string | null {
 }
 
 /** "models/gemini-2.5-flash " becomes "gemini-2.5-flash"; anything odd falls back to the default. */
-export function normalizeModel(input: unknown): string {
-  if (typeof input !== "string") return DEFAULT_GEMINI_MODEL;
-  const model = input.trim().replace(/^models\//, "");
-  return MODEL_ID.test(model) ? model : DEFAULT_GEMINI_MODEL;
-}
+export const normalizeModel = normalizeGeminiModel;
 
 export function normalizeSettings(raw: unknown): LookoutSettings {
   const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};

@@ -74,7 +74,20 @@ export interface BlurtConceptResult {
   score: number;
   /** The words in the blurt that matched, if any. */
   matchedWith: string[];
+  /** Gemini grading only: one sentence on what to add or fix (partial and missed ideas). */
+  feedback?: string;
 }
+
+/** Something the blurt says that the notes contradict (Gemini grading only). */
+export interface BlurtMisconception {
+  /** The words from the blurt, as written. */
+  quote: string;
+  /** What the notes say instead. */
+  correction: string;
+}
+
+/** Who graded a blurt: Gemini (with the sailor's own key) or the offline keyword engine. */
+export type BlurtGrader = "gemini" | "heuristic";
 
 /** Mastered is seafoam green, missed is coral red. */
 export const BLURT_STATUS_COLORS: Record<BlurtConceptResult["status"], string> = {
@@ -89,4 +102,10 @@ export interface BlurtResult {
   concepts: BlurtConceptResult[];
   /** Words in the blurt that matched no concept (possible new ideas or errors). */
   extraTerms: string[];
+  /** Missing means "heuristic" (results from before Gemini grading existed). */
+  gradedBy?: BlurtGrader;
+  /** Gemini grading only. */
+  misconceptions?: BlurtMisconception[];
+  /** Gemini grading only: one encouraging sentence. */
+  summary?: string;
 }

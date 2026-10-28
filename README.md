@@ -8,7 +8,7 @@ npm run dev     # the web app on http://localhost:5173, the crew server on :8787
 npm test        # every package's tests
 ```
 
-- **The web app** (`apps/web`): your ship on an animated sea. Set sail from the dock at the bottom (or press Space), and open the panels from the toolbar: the Navigation Map, the Captain's Log (blurting), Flashcards, the Shipwright, the Wardrobe, Crew, the Fleet Log (Canvas, Todoist, calendars, Google Drive, Parchment imports), the Lookout and Settings. Sound is off until you turn it on.
+- **The web app** (`apps/web`): your ship on an animated sea. Set sail from the dock at the bottom (or press Space), and open the panels from the toolbar: the Navigation Map, the Captain's Log (blurting), Flashcards, the Shipwright, the Wardrobe, Crew, the Fleet Log (Canvas, Todoist, calendars, Google Drive, Parchment imports), the Lookout and Settings. Sound is off until you turn it on. To have the Captain's Log graded by Gemini, paste your own Gemini API key into Settings; without one, it grades on your device.
 - **The crew server** (`apps/signaling-server`): crew rooms, the crew quest, video calls between crewmates, and a relay for Canvas (which blocks requests from web pages).
 - **The Lookout** (`apps/extension`): build it with `npm run build -w @ship/extension`, then in Chrome open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and choose `apps/extension/dist`.
 

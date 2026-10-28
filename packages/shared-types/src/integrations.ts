@@ -81,7 +81,7 @@ export interface IntegrationStatus {
  * web app can route requests through the crew server's relay (Canvas has no
  * CORS) and tests can fake the network.
  */
-export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{
+export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
   ok: boolean;
   status: number;
   headers: { get(name: string): string | null };

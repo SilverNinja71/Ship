@@ -1,14 +1,18 @@
 // The Captain's Log: blurting practice. Pick reference notes, hide them,
-// write down everything you remember, then see what you recalled.
+// write down everything you remember, then see what you recalled. Gemini
+// grades it when the sailor has added their own key in Settings; otherwise,
+// or when Gemini can't answer, the offline engine does.
 
 import { useMemo, useState } from "react";
 import { BLURT_STATUS_COLORS } from "@ship/shared-types";
 import type { BlurtConceptResult, BlurtResult } from "@ship/shared-types";
-import { annotateBlurt, annotateNotes, checkBlurt } from "@ship/active-recall-engine";
+import { annotateBlurt, annotateNotes } from "@ship/active-recall-engine";
 import type { TextSpan } from "@ship/active-recall-engine";
+import { gradeLogEntry } from "../../lib/blurtGrading.js";
 import { relativeTime } from "../../lib/format.js";
 import { useFleet } from "../../stores/fleetStore.js";
 import { useRecall } from "../../stores/recallStore.js";
+import { useSettings } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { IconLog } from "../icons.js";
 import { Badge, Button, Card, EmptyState, Field, Panel, ProgressBar, Select, Tabs, TextArea, TextInput, cx } from "../ui.js";
@@ -26,13 +30,19 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
   const [notes, setNotes] = useState("");
   const [blurt, setBlurt] = useState("");
   const [result, setResult] = useState<BlurtResult | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [grading, setGrading] = useState(false);
   const saveBlurt = useRecall((s) => s.saveBlurt);
+  const usesGemini = useSettings((s) => s.geminiApiKey.trim().length > 0);
 
-  const check = () => {
-    const r = checkBlurt(blurt, notes);
-    setResult(r);
+  const check = async () => {
+    setGrading(true);
+    const graded = await gradeLogEntry(blurt, notes, useSettings.getState());
+    setGrading(false);
+    setResult(graded.result);
+    setNotice(graded.notice);
     setStep("results");
-    saveBlurt({ title: title.trim() || "Untitled notes", notes, blurt, coverage: r.coverage });
+    saveBlurt({ title: title.trim() || "Untitled notes", notes, blurt, coverage: graded.result.coverage, gradedBy: graded.result.gradedBy ?? "heuristic" });
   };
 
   return (
@@ -59,7 +69,7 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
       ) : step === "notes" ? (
         <NotesStep title={title} notes={notes} onTitle={setTitle} onNotes={setNotes} onStart={() => setStep("blurt")} />
       ) : step === "blurt" ? (
-        <BlurtStep title={title} blurt={blurt} onBlurt={setBlurt} onBack={() => setStep("notes")} onCheck={check} />
+        <BlurtStep title={title} blurt={blurt} onBlurt={setBlurt} onBack={() => setStep("notes")} onCheck={() => void check()} grading={grading} usesGemini={usesGemini} />
       ) : (
         result && (
           <Results
@@ -67,6 +77,8 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
             notes={notes}
             blurt={blurt}
             result={result}
+            notice={notice}
+            usesGemini={usesGemini}
             onRetry={() => {
               setBlurt("");
               setStep("blurt");
@@ -134,19 +146,40 @@ function NotesStep({ title, notes, onTitle, onNotes, onStart }: { title: string;
   );
 }
 
-function BlurtStep({ title, blurt, onBlurt, onBack, onCheck }: { title: string; blurt: string; onBlurt: (v: string) => void; onBack: () => void; onCheck: () => void }) {
+function BlurtStep({
+  title,
+  blurt,
+  onBlurt,
+  onBack,
+  onCheck,
+  grading,
+  usesGemini,
+}: {
+  title: string;
+  blurt: string;
+  onBlurt: (v: string) => void;
+  onBack: () => void;
+  onCheck: () => void;
+  grading: boolean;
+  usesGemini: boolean;
+}) {
   return (
     <div className="space-y-3">
       <Card className="bg-navy-900 text-cream-50">
         <p className="font-display text-lg font-extrabold">No peeking, captain.</p>
         <p className="text-sm text-cream-50/80">Write everything you remember{title ? ` about ${title}` : ""}: facts, terms, how things connect. Messy is fine.</p>
       </Card>
-      <TextArea autoFocus value={blurt} onChange={(e) => onBlurt(e.target.value)} className="min-h-72 text-lg" placeholder="Start writing…" aria-label="Your blurt" />
-      <div className="flex justify-between gap-2">
-        <Button onClick={onBack}>Back to notes</Button>
-        <Button variant="primary" onClick={onCheck} disabled={!blurt.trim()}>
-          Check my blurt
+      <TextArea autoFocus value={blurt} onChange={(e) => onBlurt(e.target.value)} className="min-h-72 text-lg" placeholder="Start writing…" aria-label="Your blurt" readOnly={grading} />
+      <div className="flex items-center justify-between gap-2">
+        <Button onClick={onBack} disabled={grading}>
+          Back to notes
         </Button>
+        <span className="flex items-center gap-2">
+          {usesGemini && <span className="hidden text-sm text-ink/60 sm:inline">Gemini grades this</span>}
+          <Button variant="primary" onClick={onCheck} disabled={!blurt.trim() || grading} aria-busy={grading}>
+            {grading ? "Grading with Gemini…" : "Check my blurt"}
+          </Button>
+        </span>
       </div>
     </div>
   );
@@ -180,12 +213,34 @@ function Spans({ spans }: { spans: TextSpan[] }) {
   );
 }
 
-function Results({ title, notes, blurt, result, onRetry, onNew }: { title: string; notes: string; blurt: string; result: BlurtResult; onRetry: () => void; onNew: () => void }) {
+function Results({
+  title,
+  notes,
+  blurt,
+  result,
+  notice,
+  usesGemini,
+  onRetry,
+  onNew,
+}: {
+  title: string;
+  notes: string;
+  blurt: string;
+  result: BlurtResult;
+  notice: string | null;
+  usesGemini: boolean;
+  onRetry: () => void;
+  onNew: () => void;
+}) {
   const { addDeck, addCard } = useRecall.getState();
   const toast = useUi((s) => s.toast);
   const counts = { mastered: 0, partial: 0, missed: 0 };
   result.concepts.forEach((c) => counts[c.status]++);
   const pct = Math.round(result.coverage * 100);
+  const byGemini = result.gradedBy === "gemini";
+  // Gemini's notes on what to add or fix, biggest ideas first.
+  const advice = result.concepts.filter((c) => c.status !== "mastered" && c.feedback).sort((a, b) => b.concept.weight - a.concept.weight);
+  const misconceptions = result.misconceptions ?? [];
 
   const makeCards = () => {
     const missed = result.concepts.filter((c) => c.status !== "mastered");
@@ -203,6 +258,15 @@ function Results({ title, notes, blurt, result, onRetry, onNew }: { title: strin
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge tone={byGemini ? "seafoam" : "plain"}>{byGemini ? "Graded by Gemini" : "Graded on this device"}</Badge>
+        {!byGemini && !usesGemini && <span className="text-ink/60">Add a Gemini key in Settings to have your own wording understood.</span>}
+      </div>
+      {notice && (
+        <p role="status" className="rounded-xl bg-brass-400/20 px-3 py-2 text-sm font-bold">
+          {notice}
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
         <div className="text-center sm:text-left">
           <p className="font-display text-5xl font-extrabold tabular-nums">{pct}%</p>
@@ -227,13 +291,47 @@ function Results({ title, notes, blurt, result, onRetry, onNew }: { title: strin
             key={c.concept.id}
             className={cx("inline-flex items-center gap-1 rounded-full border-2 px-2.5 py-0.5 text-sm font-bold text-ink", c.concept.weight === 3 && "text-base")}
             style={{ borderColor: BLURT_STATUS_COLORS[c.status], background: HIGHLIGHT[c.status] }}
-            title={c.concept.sentence}
+            title={c.feedback ? `${c.concept.sentence}\n\n${c.feedback}` : c.concept.sentence}
           >
             <span aria-label={STATUS_LABEL[c.status]}>{STATUS_MARK[c.status]}</span>
             {c.concept.display}
           </span>
         ))}
       </div>
+
+      {result.summary && <p className="font-display text-lg font-bold">{result.summary}</p>}
+
+      {(advice.length > 0 || misconceptions.length > 0) && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {advice.length > 0 && (
+            <Card>
+              <h3 className="mb-1 font-display font-extrabold">What to work on</h3>
+              <ul className="space-y-1.5 text-sm">
+                {advice.map((c) => (
+                  <li key={c.concept.id}>
+                    <span className="font-bold" style={{ color: c.status === "missed" ? "var(--color-coral-700)" : undefined }}>
+                      {STATUS_MARK[c.status]} {c.concept.display}:
+                    </span>{" "}
+                    {c.feedback}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+          {misconceptions.length > 0 && (
+            <Card>
+              <h3 className="mb-1 font-display font-extrabold">Check these</h3>
+              <ul className="space-y-1.5 text-sm">
+                {misconceptions.map((m, i) => (
+                  <li key={i}>
+                    <span className="font-bold">“{m.quote}”</span> {m.correction}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Card>
@@ -276,6 +374,7 @@ function History({ onOpen }: { onOpen: (title: string, notes: string) => void })
           <button type="button" onClick={() => onOpen(b.title, b.notes)} className="flex w-full items-center gap-3 rounded-xl border-2 border-ink/10 bg-cream-50 px-3 py-2 text-left hover:border-ink/30">
             <Badge tone={b.coverage >= 0.75 ? "seafoam" : b.coverage >= 0.4 ? "brass" : "coral"}>{Math.round(b.coverage * 100)}%</Badge>
             <span className="min-w-0 flex-1 truncate font-bold">{b.title}</span>
+            {b.gradedBy === "gemini" && <Badge tone="navy">Gemini</Badge>}
             <span className="text-xs text-ink/50">{relativeTime(b.at)}</span>
           </button>
         </li>
