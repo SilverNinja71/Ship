@@ -49,28 +49,38 @@ npm run typecheck    # tsc (TypeScript 7) across the repo
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-10-27, end of the first session)
+## Status (2026-10-28, end of the second session)
+
+Work is on the branch `claude/build-foundations` (not merged into `main` yet).
 
 Done:
 - Monorepo scaffold: root `package.json` (workspaces), `turbo.json`, `tsconfig.base.json`, a `package.json` and `tsconfig.json` for every workspace, and `npm install` run with the dependencies below.
-- **`packages/shared-types` is written and typechecks.** It holds every contract: ships and avatars (`ship.ts`), voyages and economy (`voyage.ts`), flashcards and blurt (`recall.ts`), integrations and the relay (`integrations.ts`), the crew wire protocol (`crew.ts`), and the extension bridge (`lookout.ts`).
+- **`packages/shared-types`**: every contract. Ships and avatars (`ship.ts`), voyages and economy (`voyage.ts`), flashcards and blurt (`recall.ts`), integrations and the relay (`integrations.ts`), the crew wire protocol (`crew.ts`), and the extension bridge (`lookout.ts`). Session 2 added the `swing` extra, `Inventory`, `newReviewSchedule()`, `BLURT_STATUS_COLORS` and `ImportResult.assignments`.
+- **`packages/ship-theme-kit`** (build step 1), with tests.
+- **`packages/active-recall-engine`** (build step 2), with tests.
+- **`apps/signaling-server`** (build step 5), with tests, including an end-to-end test with two real WebSocket clients.
+- **`packages/integrations`** (build step 6), with tests. It is only tested against faked responses and generated fixtures. Nothing has been run against a real Canvas, Todoist or Drive account, or a real Parchment file, yet. A Canvas sync through the real crew-server relay was checked end to end, with a fake Canvas behind it.
 
-Not started yet: everything else. Empty `src/` folders exist locally but git doesn't keep empty folders, so recreate them as needed.
+`npm test` runs 267 tests, and all pass. `npm run typecheck` passes for the five finished workspaces. It fails for `@ship/web` and `@ship/extension` with "No inputs were found" until they get source files.
+
+Not started yet: the web app (step 3), the Lookout extension (step 4) and the browser checks (step 7). Their `src/` folders don't exist yet.
 
 Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23, esbuild 0.28, @types/chrome 0.3.
 
 ## Build plan (next steps, in order)
 
-1. **ship-theme-kit**: the 16 ships below as `ShipDefinition`s, the parts catalogs, the avatar catalog, prices and level gates, and a `validateLoadout()`.
-2. **active-recall-engine** (with tests):
+Steps 1, 2, 5 and 6 are done (see "Decisions made in session 2" below). Next up: 3, then 4, then 7.
+
+1. ✅ **ship-theme-kit**: the 16 ships below as `ShipDefinition`s, the parts catalogs, the avatar catalog, prices and level gates, and a `validateLoadout()`.
+2. ✅ **active-recall-engine** (with tests):
    - SM-2 that copies Parchment's `ReviewSchedule.next()` exactly. Ratings 1–2 reset the card and bring it back in 1 or 10 minutes. Ease = max(1.3, ease + 0.1 − (5−q)(0.08 + (5−q)·0.02)).
    - FSRS-4.5 with the default weights. Rating mapping: 1–2 → Again, 3 → Hard, 4 → Good, 5 → Easy.
    - Typed-answer grading (normalize, token overlap + Levenshtein) that suggests a rating.
    - Blurt diff: pull weighted key concepts out of reference notes, then fuzzy-match the blurt against them to get mastered / partial / missed and a coverage score. Mastered shows seafoam green; missed shows coral red.
 3. **web app** (the biggest piece; see "Web app design").
-4. **Lookout extension** (see "Lookout design").
-5. **signaling server** (see "Crew server design").
-6. **integrations** (see "Integrations").
+4. **Lookout extension** (see "Lookout design"). The Siren Gate should grade typed answers with `gradeTypedAnswer` from `@ship/active-recall-engine`. Add that package to `apps/extension/package.json` before building (esbuild bundles workspace packages).
+5. ✅ **signaling server** (see "Crew server design").
+6. ✅ **integrations** (see "Integrations").
 7. Verify: unit tests, then run the web app in the built-in browser pane (muted) and take screenshots. Test crew rooms with two tabs. Add a dev page to the extension that mounts the Siren Gate with a fake `chrome` object, so it can be checked in the pane, because the pane can't load extensions.
 
 Steps 4–6 depend only on `shared-types`, so they can be built in parallel by separate agents (Claude or Gemini). Each agent stays inside its own folder and must not run `npm install` while other agents are working. Install new dependencies once, up front, from the root.
@@ -163,6 +173,82 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - Flashcards live in Parchment's `study.json` (`{ decks, cards, pageSchedules, reviewLog }`). Swift `JSONEncoder` writes its dates as seconds since 2001-01-01.
 - **Paper** (the user's art app, ~/Downloads/ForgePaper): undecided. Probably imports exported text or images only.
 - **CSV/TSV** flashcard import.
+
+## Decisions made in session 2
+
+### ship-theme-kit
+- **Starter items** (everyone owns them):
+  - Ship and parts: the Woolly Wanderer, square sails, bare masts, the ram figurehead or none, the Sun-Hat Skull flag and the Captain's Desk.
+  - Avatar: every skin tone and hair style, the straw hat, bandana or no hat, the striped shirt or hoodie, glasses or nothing, and the quill & logbook or laptop.
+- The `straw-skull` flag is shown as the **Sun-Hat Skull**: a skull in a sun hat over crossed quills. Don't draw the Straw Hat Jolly Roger.
+- **Quest figureheads** (kraken, dragon, mermaid, swordfish) can't be bought. When a crew wins one, it goes into `Inventory.parts` as `figurehead:kraken`.
+- A ship's own default parts work on that ship without buying them, but not on other ships.
+- **What fits where:**
+  - Sails only fit ships whose default sails aren't `none`, so engine ships and the Sunfish always have bare masts.
+  - Figureheads only fit hulls in `FIGUREHEAD_HULLS`. The submarine, battleship, dreadnought and ironclad don't take one.
+- Level gates apply when buying (`checkPurchase` and friends), not when equipping (`validateLoadout`).
+- Prices assume about 75 doubloons per 25-minute voyage.
+- `ENVIRONMENTS` holds the sky and sea palette for each environment. `CABIN_DECOR` names each ship's themed cabin item.
+
+### active-recall-engine
+- **SM-2 needs checking against Parchment.** Parchment's Swift source wasn't on this machine, so SM-2 follows the formula above plus classic SM-2. When the source is at hand, check these choices against `ReviewSchedule.next()`:
+  - The new interval uses the ease from before the review.
+  - Ease changes on failed reviews too.
+  - A lapse counts only when a learned card (repetitions > 0) fails.
+  - A failed card stores `interval: 0`.
+  - Rating 1 brings the card back in 1 minute, and rating 2 in 10 minutes.
+- **FSRS:**
+  - A lapse never raises stability; it's capped at the previous value.
+  - Cards first reviewed under SM-2 start from stability = interval, with a difficulty mapped from ease.
+  - There is no interval fuzz.
+  - The SM-2 ease keeps updating, so a deck can switch schedulers safely.
+- **Typed grading:**
+  - Correct means a score of at least 0.9, and close at least 0.7.
+  - Suggested rating: correct → 4 (5 if exact and answered within 5 s), close → 3, otherwise 2 or 1.
+  - Numbers must match exactly, and a flipped "not" caps the score.
+- **Blurt:**
+  - Concepts come from heuristics, with no dictionary and no AI.
+  - Mastered means a score of at least 0.75, and partial at least 0.34.
+  - Coverage counts mastered as 1, partial as its score and missed as 0.
+  - `annotateNotes` and `annotateBlurt` return text spans for coloring.
+
+### signaling-server
+- `HOST` defaults to `127.0.0.1`, so only this computer can connect. For friends on other machines, run with `HOST=0.0.0.0`. The relay still serves only this computer.
+- **Who gets which message:**
+  - `welcome.members` includes the joiner.
+  - `member-updated`, `quest` and `shout` go to the whole room, sender included.
+  - `member-joined` and `member-left` go to everyone else.
+- Room names are lowercased and must be 1–32 characters of a–z, 0–9 and inner dashes.
+- **Quests:**
+  - Focus ticks are clamped to the time the member has actually spent in the room, plus 15 s of slack.
+  - One tick defeats at most one beast.
+  - Hp can be fractional, so show it with `Math.ceil`.
+  - Quest state lives in memory and is lost on restart.
+- **`/relay`:**
+  - An HTTP 200 reply means the upstream answered, with its real status inside the `RelayResponse`. Any other HTTP status means the relay refused, with an `{ error }` body.
+  - Requests must be POSTed as `application/json`.
+  - Only these request headers are forwarded: `authorization`, `content-type`, `accept`, `accept-language` and `x-request-id`.
+  - The login token is dropped when a redirect changes host, so a school's Canvas base URL must be its final domain.
+
+### integrations
+- **`importFile(name, data)`** is the one entry point for dropped files: `.parchment`, `study.json`, `.csv`/`.tsv`/`.txt` and `.ics`.
+  - It never throws; problems come back as `warnings`.
+  - `ImportResult` now has `assignments`, for `.ics` files.
+- **IDs and dates:**
+  - IDs are `${source}:${remoteId}`. Parchment cards with no deck go into a `parchment:unfiled` deck.
+  - A date with no time means the end of that local day.
+- **Canvas** (`syncCanvas(createRelayFetch(crewServerUrl), settings)`):
+  - The base URL is cleaned up: `https://` is added, and `http://` is refused.
+  - Group weights are read only when the course has `apply_assignment_group_weights`.
+  - If the course list fails, or any call returns a 401, the sync throws. Everything else becomes a warning.
+- **Todoist** uses the unified API v1 (`https://api.todoist.com/api/v1`, cursor paging).
+  - The docs site wasn't reachable, so the shapes come from the official `@doist/todoist-sdk` types.
+  - A task's `deadline` wins over its `due`.
+- **Lodestar** is imported only from an ICS export or feed (no API was invented). Recurring ICS items are imported once, with a warning.
+- **Plain text:** a `.txt` or `.md` file that isn't cards becomes a note with `source: "paper"`, because there is no neutral `IntegrationId` for files. Ask the user whether a `"file"` source is wanted.
+- **Parchment needs checking against the real Swift source and a real file:**
+  - `.parchment` is assumed to be `PropertyListEncoder` output (plain dicts, native plist dates), with NSKeyedArchiver and JSON as fallbacks.
+  - Field names are guessed tolerantly. The lists live in `parchment/archive.ts` and `parchment/study.ts`.
 
 ## Conventions
 
