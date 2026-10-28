@@ -19,7 +19,7 @@ export const STATION_WIDTH = 150;
 export const STATION_HEIGHT = 190;
 
 /** x offset of each galley seat's sailor from the table's center at scale 1 (left at -, right at +). */
-export const GALLEY_SEAT_X = 38;
+export const GALLEY_SEAT_X = 40;
 /**
  * y of the top of a seated sailor's head (hair included, no hat) relative to
  * the floor point `at`, at scale 1. Hats reach up to about -STATION_HEIGHT.
@@ -72,7 +72,7 @@ export function drawGalleyTable(ctx: Ctx, at: Point, seats: [CrewSeat | null, Cr
   const sx = GALLEY_SEAT_X / GALLEY_SEAT_SCALE;
   withTransform(ctx, { x: at.x, y: at.y, scale: scale * GALLEY_SEAT_SCALE }, () => {
     for (const s of [-1, 1]) withTransform(ctx, { x: s * sx }, () => drawChairBack(ctx));
-    drawGalleyTableBody(ctx, 92);
+    drawGalleyTableBody(ctx, 96);
     seats.forEach((seat, i) => {
       if (!seat) return;
       const seed = seat.seed ?? hashString(seat.avatar.name);

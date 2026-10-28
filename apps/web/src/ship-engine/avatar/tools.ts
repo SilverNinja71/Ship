@@ -39,18 +39,16 @@ export function drawToolOver(ctx: Ctx, tool: StudyToolId, tc: ToolContext): void
   if (tool === "mech-keyboard") monitor(ctx, tc);
 }
 
-function scribble(ctx: Ctx, x0: number, x1: number, y: number, seed: number, width = 1.1): void {
+/** Adds one wobbly handwritten line to the current path. */
+function scribble(c: Ctx, x0: number, x1: number, y: number, seed: number): void {
   if (x1 - x0 < 0.5) return;
-  strokePath(ctx, (c) => {
-    c.moveTo(x0, y);
-    let x = x0;
-    let i = 0;
-    while (x < x1) {
-      const step = Math.min(2.2, x1 - x);
-      x += step;
-      c.lineTo(x, y + (hash01(seed, i++) - 0.5) * 1.1);
-    }
-  }, alpha(INKLINE, 0.75), width);
+  c.moveTo(x0, y);
+  let x = x0;
+  let i = 0;
+  while (x < x1) {
+    x += Math.min(2.2, x1 - x);
+    c.lineTo(x, y + (hash01(seed, i++) - 0.5) * 1.1);
+  }
 }
 
 function logbook(ctx: Ctx, { pose, seed }: ToolContext): void {
@@ -63,14 +61,13 @@ function logbook(ctx: Ctx, { pose, seed }: ToolContext): void {
   const right = page([[4, -72.5, 1], [15, -75], [26.5, -73.5, 1], [29.5, -62.6, 1], [17, -63.2], [4.6, -62, 1]]);
   paintShaded(ctx, left, "#FBF4E2", "#EADFC6", (c) => c.rect(-2, -76, 7, 16), { stroke: "#9C8C70", width: 2.4 });
   paintShaded(ctx, right, "#FBF4E2", "#EADFC6", (c) => c.rect(4, -76, 5, 16), { stroke: "#9C8C70", width: 2.4 });
-  for (let r = 0; r < 4; r++) scribble(ctx, -16 + r * 0.3, 1 - (r === 3 ? 6 : 0), -71 + r * 2.4, seed + r);
   const writing = pose.state === "SAILING_FOCUS";
   const rows = writing ? pose.write.line : 2;
-  for (let r = 0; r < rows; r++) scribble(ctx, 7.5, 25, -71 + r * 2.4, seed + 10 + r);
-  if (writing) {
-    const nib = writingNib(pose);
-    scribble(ctx, 7.5, Math.min(25, nib.x), -71 + rows * 2.4, seed + 10 + rows);
-  }
+  strokePath(ctx, (c) => {
+    for (let r = 0; r < 4; r++) scribble(c, -16 + r * 0.3, 1 - (r === 3 ? 6 : 0), -71 + r * 2.4, seed + r);
+    for (let r = 0; r < rows; r++) scribble(c, 7.5, 25, -71 + r * 2.4, seed + 10 + r);
+    if (writing) scribble(c, 7.5, Math.min(25, writingNib(pose).x), -71 + rows * 2.4, seed + 10 + rows);
+  }, alpha(INKLINE, 0.75), 1.1);
   // Ink pot; the quill rests in it when the sailor isn't writing.
   paintShaded(ctx, (c) => curvyPath(c, [[33, -73], [43, -73], [45, -64], [38, -61.5], [31, -64]], 0.6), "#2E3A5C", "#1F2842", (c) => c.ellipse(42, -64, 5, 5, 0, 0, Math.PI * 2));
   fillPath(ctx, (c) => c.ellipse(35, -68, 1.2, 2.6, 0, 0, Math.PI * 2), alpha("#FFFFFF", 0.5));
@@ -96,7 +93,6 @@ function sticker(ctx: Ctx, kind: (typeof STICKERS)[number], x: number, y: number
   ctx.save();
   ctx.translate(x, y);
   const white = "#FFFFFF";
-  const edge = "#8D88A3";
   switch (kind) {
     case "star": {
       const pts: CurvePt[] = [];
@@ -139,7 +135,6 @@ function sticker(ctx: Ctx, kind: (typeof STICKERS)[number], x: number, y: number
       strokePath(ctx, (c) => c.arc(0, 0, r * 0.5, 0.35, Math.PI - 0.35), "#3A4A2A", 1.1);
       break;
   }
-  void edge;
   ctx.restore();
 }
 
@@ -156,14 +151,8 @@ const LID = "#CDCADB";
 function openLaptop(ctx: Ctx, { seed }: ToolContext): void {
   // The hinge edge of the base peeks out below the lid.
   paintShaded(ctx, (c) => c.roundRect(-27, -66, 54, 5.5, 2.5), "#A9A6BC", null, null);
-  const lid = (c: Ctx) => curvyPath(c, [[-25, -64, 1], [-23.5, -99, 1], [23.5, -99, 1], [25, -64, 1]], 0);
-  ctx.save();
-  ctx.beginPath();
-  // Round the corners a touch.
-  ctx.roundRect(-25, -100, 50, 36, 4);
-  ctx.restore();
+  // The lid's back faces us; the screen faces the sailor.
   paintShaded(ctx, (c) => c.roundRect(-25, -100, 50, 37, 4), LID, shade(LID, -0.1), (c) => c.rect(-26, -76, 52, 14));
-  void lid;
   // Logo and stickers.
   fillPath(ctx, (c) => c.arc(0, -83, 3.6, 0, Math.PI * 2), alpha("#FFFFFF", 0.55));
   const [a, b, c] = stickerSet(seed);
@@ -197,22 +186,28 @@ function keyboard(ctx: Ctx, { pose, seed }: ToolContext): void {
     { y: -73.2, x0: kx - 27.6, w: 4.4, n: 11, skew: 0 },
     { y: -68.6, x0: kx - 29, w: 4.6, n: 11, skew: 0 },
   ];
+  // Keycaps grouped by color so each group is one path: plain, accent, pressed.
+  const groups: Record<string, { x: number; y: number; w: number }[]> = { "#FBF6EC": [], [accent]: [], "#FFFFFF": [] };
   rows.forEach((row, ri) => {
     for (let i = 0; i < row.n; i++) {
       const isSpace = ri === 1 && i >= 3 && i <= 7;
       if (ri === 1 && i > 3 && i <= 7) continue;
       const idx = ri * 6 + Math.floor(i / 2);
       const pressed = pose.keys[0] === idx || pose.keys[1] === idx;
-      const w = isSpace ? row.w * 5 + 0.6 * 4 : row.w;
-      const x = row.x0 + i * (row.w + 0.6);
-      const y = row.y + (pressed ? 0.9 : 0);
       const special = (ri === 0 && (i === 0 || i === row.n - 1)) || (ri === 1 && i === row.n - 1);
       const top = pressed ? "#FFFFFF" : special ? accent : "#FBF6EC";
-      paintShaded(ctx, (c) => c.roundRect(x, y, w, 3.9, 1), shade(top, -0.14), null, null, { stroke: "#9C927E", width: 1 });
-      fillPath(ctx, (c) => c.roundRect(x + 0.5, y + 0.2, w - 1, 2.7, 0.8), top);
-      if (pressed) fillPath(ctx, (c) => c.ellipse(x + w / 2, y + 1.5, w, 3, 0, 0, Math.PI * 2), alpha(accent, 0.35));
+      groups[top].push({ x: row.x0 + i * (row.w + 0.6), y: row.y + (pressed ? 0.9 : 0), w: isSpace ? row.w * 5 + 0.6 * 4 : row.w });
     }
   });
+  for (const [top, keys] of Object.entries(groups)) {
+    if (!keys.length) continue;
+    paintShaded(ctx, (c) => keys.forEach((k) => c.roundRect(k.x, k.y, k.w, 3.9, 1)), shade(top, -0.14), null, null, { stroke: "#9C927E", width: 1 });
+    fillPath(ctx, (c) => keys.forEach((k) => c.roundRect(k.x + 0.5, k.y + 0.2, k.w - 1, 2.7, 0.8)), top);
+    if (top === "#FFFFFF") fillPath(ctx, (c) => keys.forEach((k) => {
+      c.moveTo(k.x + k.w * 1.5, k.y + 1.5);
+      c.ellipse(k.x + k.w / 2, k.y + 1.5, k.w, 3, 0, 0, Math.PI * 2);
+    }), alpha(accent, 0.35));
+  }
   // A soft underglow along the front.
   fillPath(ctx, (c) => c.roundRect(kx - 30, -61.8, 60, 1.6, 0.8), alpha(accent, 0.8));
 }

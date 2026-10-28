@@ -79,7 +79,7 @@ export function drawEarring(ctx: Ctx): void {
 /** A knitted scarf around the neck (torso frame), its tail fluttering in the wind. */
 export function drawScarf(ctx: Ctx, look: Look, turn: number, t: number, wind: number): void {
   const col = look.scarf;
-  const stripe = shade(col, col === "#F2E6C9" ? -0.35 : 0.45);
+  const stripe = shade(col, 0.55);
   const flap = Math.sin(t * (2 + wind * 2)) * (1 + wind * 2.2);
   const tail = (x0: number, len: number, phase: number, color: string) => {
     const pts = [
@@ -97,21 +97,22 @@ export function drawScarf(ctx: Ctx, look: Look, turn: number, t: number, wind: n
       }, shade(color, -0.4), 1.6);
     }
   };
-  tail(turn + 9, 18, 0.3, shade(col, -0.12));
-  tail(turn + 14, 26, 0, col);
+  tail(turn + 8, 20, 0.3, shade(col, -0.12));
+  tail(turn + 14, 28, 0, col);
+  // A chunky wrap that sits on the shoulders, below the chin.
   paintShaded(
     ctx,
-    (c) => curvyPath(c, [[-21, -1], [-13, -8], [13, -8], [21, -1], [19, 7], [turn, 10.5], [-19, 7]], 0.55),
+    (c) => curvyPath(c, [[-24, 1], [-15, -6], [15, -6], [24, 1], [22, 10], [turn, 14], [-22, 10]], 0.55),
     col,
     shade(col, -0.16),
-    (c) => c.rect(-25, 3.5, 50, 10),
+    (c) => c.rect(-28, 7.5, 56, 10),
   );
-  for (const x of [-11, -3, 5, 13]) {
-    strokePath(ctx, (c) => {
-      c.moveTo(x, -6.5);
-      c.quadraticCurveTo(x + 1, 1, x, 8.5);
-    }, alpha(stripe, 0.75), 1.3);
-  }
+  strokePath(ctx, (c) => {
+    for (const x of [-14, -5, 4, 13]) {
+      c.moveTo(x, 1);
+      c.quadraticCurveTo(x + 1, 6, x, 12);
+    }
+  }, alpha(stripe, 0.8), 1.4);
 }
 
 /** The parrot, feet at the origin, facing +x. */

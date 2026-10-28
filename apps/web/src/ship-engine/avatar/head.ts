@@ -2,7 +2,7 @@
 // visible ear, and the face. The face turns towards +x for the 3/4 view, so
 // the left (-x) ear shows and the right eye sits a little narrower.
 
-import { INK, alpha, mix, OUTLINE, radialGradient, shade } from "../draw.js";
+import { INK, alpha, mix, radialGradient, shade } from "../draw.js";
 import type { Ctx } from "../types.js";
 import { curvyPath, fillPath, paintShaded, strokePath, withClip, type CurvePt } from "./kit.js";
 import type { Look } from "./look.js";
@@ -79,9 +79,6 @@ export function drawFace(ctx: Ctx, look: Look, pose: Pose, hideEye: -1 | 0 | 1 =
 
   if (hideEye !== -1) drawEye(ctx, look, pose, left.x, left.y, left.rx, left.ry, pose.eyes === "wink" ? "open" : pose.eyes, -1);
   if (hideEye !== 1) drawEye(ctx, look, pose, right.x, right.y, right.rx, right.ry, pose.eyes === "wink" ? "open" : pose.eyes, 1);
-  if (pose.eyes === "wink" && hideEye !== -1) {
-    // Wink drawn above as an override for the free eye.
-  }
 
   // A hint of a nose.
   strokePath(ctx, (c) => {
@@ -249,6 +246,3 @@ function drawMouth(ctx: Ctx, kind: MouthKind, x: number, y: number): void {
       return;
   }
 }
-
-/** A thin outline weight for small details. */
-export const FINE = OUTLINE * 0.55;

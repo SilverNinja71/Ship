@@ -3,7 +3,7 @@
 // DESK_NEAR (towards the viewer), and the front panel hides the sailor's legs.
 
 import type { DeskId } from "@ship/shared-types";
-import { alpha, mix, radialGradient, shade } from "../draw.js";
+import { alpha, radialGradient, shade } from "../draw.js";
 import type { Ctx } from "../types.js";
 import { drawSteam } from "./arms.js";
 import { curvyPath, fillPath, hash01, paintShaded, strokePath, tube, withClip, type CurvePt } from "./kit.js";
@@ -29,15 +29,15 @@ function slab(ctx: Ctx, top: string, edge: string, opts: { half?: number; flare?
 }
 
 function grain(ctx: Ctx, x0: number, x1: number, y0: number, y1: number, color: string, seed: number, n = 5): void {
-  for (let i = 0; i < n; i++) {
-    const y = y0 + ((i + 0.5) / n) * (y1 - y0);
-    const a = x0 + hash01(seed, i) * (x1 - x0) * 0.4;
-    const b = a + (x1 - x0) * (0.3 + hash01(seed, i + 9) * 0.4);
-    strokePath(ctx, (c) => {
+  strokePath(ctx, (c) => {
+    for (let i = 0; i < n; i++) {
+      const y = y0 + ((i + 0.5) / n) * (y1 - y0);
+      const a = x0 + hash01(seed, i) * (x1 - x0) * 0.4;
+      const b = a + (x1 - x0) * (0.3 + hash01(seed, i + 9) * 0.4);
       c.moveTo(a, y);
       c.bezierCurveTo(a + (b - a) * 0.3, y - 1.5, a + (b - a) * 0.7, y + 1.5, b, y);
-    }, color, 1.1);
-  }
+    }
+  }, color, 1.1);
 }
 
 export function drawDesk(ctx: Ctx, id: DeskId, t: number, seed: number): void {
@@ -270,7 +270,14 @@ function starChart(ctx: Ctx, t: number): void {
   }, gold, null, null, { width: 2 });
   slab(ctx, "#232A58", "#1B2148");
   withClip(ctx, (c) => topPath(c), () => {
-    for (let i = 0; i < 26; i++) fillPath(ctx, (c) => c.arc(-70 + hash01(7, i) * 140, -74 + hash01(8, i) * 11, 0.7 + hash01(9, i) * 0.7, 0, Math.PI * 2), alpha("#FFF3C4", 0.85));
+    fillPath(ctx, (c) => {
+      for (let i = 0; i < 26; i++) {
+        const x = -70 + hash01(7, i) * 140;
+        const r = 0.7 + hash01(9, i) * 0.7;
+        c.moveTo(x + r, -74 + hash01(8, i) * 11);
+        c.arc(x, -74 + hash01(8, i) * 11, r, 0, Math.PI * 2);
+      }
+    }, alpha("#FFF3C4", 0.85));
   });
   // A small brass astrolabe at the left end, its rete turning slowly.
   const ax = -55;
@@ -312,11 +319,15 @@ function coralVanity(ctx: Ctx, t: number, seed: number): void {
   const outline: CurvePt[] = [[-64, -57], [64, -57], [67, -44], [64, -32], [68, -18], [65, -4], ...body.reverse(), [-68, -18], [-64, -32], [-67, -44]];
   paintShaded(ctx, (c) => curvyPath(c, outline, 0.5), coral, shade(coral, -0.16), (c) => c.rect(-72, -20, 144, 20));
   withClip(ctx, (c) => curvyPath(c, outline, 0.5), () => {
-    for (let i = 0; i < 16; i++) {
-      const x = -60 + hash01(seed + 3, i) * 120;
-      const y = -52 + hash01(seed + 4, i) * 44;
-      fillPath(ctx, (c) => c.ellipse(x, y, 2.6 + hash01(seed, i) * 2.5, 1.8 + hash01(seed, i + 3), 0, 0, Math.PI * 2), alpha(shade(coral, -0.3), 0.55));
-    }
+    fillPath(ctx, (c) => {
+      for (let i = 0; i < 16; i++) {
+        const x = -60 + hash01(seed + 3, i) * 120;
+        const y = -52 + hash01(seed + 4, i) * 44;
+        const rx = 2.6 + hash01(seed, i) * 2.5;
+        c.moveTo(x + rx, y);
+        c.ellipse(x, y, rx, 1.8 + hash01(seed, i + 3), 0, 0, Math.PI * 2);
+      }
+    }, alpha(shade(coral, -0.3), 0.55));
     // Branching coral fronds in relief.
     for (const [x, h] of [[-44, 30], [-8, 24], [30, 32]] as const) {
       strokePath(ctx, (c) => {
@@ -338,10 +349,14 @@ function coralVanity(ctx: Ctx, t: number, seed: number): void {
   }
   slab(ctx, "#F9E6E1", "#E6B6B0");
   // A string of pearls along the front edge.
-  for (let i = 0; i < 25; i++) {
-    const x = -70 + i * 5.83;
-    paintShaded(ctx, (c) => c.arc(x, -57 + Math.sin(i * 0.9) * 0.6, 1.9, 0, Math.PI * 2), "#FFFDF8", null, null, { width: 1, stroke: "#B9A8B6" });
-  }
+  paintShaded(ctx, (c) => {
+    for (let i = 0; i < 25; i++) {
+      const x = -70 + i * 5.83;
+      const y = -57 + Math.sin(i * 0.9) * 0.6;
+      c.moveTo(x + 1.9, y);
+      c.arc(x, y, 1.9, 0, Math.PI * 2);
+    }
+  }, "#FFFDF8", null, null, { width: 1, stroke: "#B9A8B6" });
   // The shell mirror at the left end.
   const mx = -54;
   const my = -105;
@@ -350,7 +365,7 @@ function coralVanity(ctx: Ctx, t: number, seed: number): void {
   const shell: CurvePt[] = [[mx - 6, my + 16, 1]];
   for (let i = 0; i <= ribs; i++) {
     const a = Math.PI * (0.98 + (i / ribs) * 1.04);
-    const r = i % 1 === 0 ? 20 : 20;
+    const r = 20;
     shell.push([mx + Math.cos(a) * r, my + 2 + Math.sin(a) * r * 0.95]);
     if (i < ribs) {
       const a2 = a + (Math.PI * 1.04) / ribs / 2;
@@ -375,7 +390,6 @@ function coralVanity(ctx: Ctx, t: number, seed: number): void {
     c.lineTo(mx + 3, my - 4.5);
   }, alpha("#FFFFFF", 0.55 + 0.4 * glint), 1.6);
   fillPath(ctx, (c) => c.arc(mx, my + 14, 2.3, 0, Math.PI * 2), "#FFFDF8");
-  void mix;
 }
 
 function stumpBench(ctx: Ctx): void {
@@ -384,17 +398,20 @@ function stumpBench(ctx: Ctx): void {
   const body: CurvePt[] = [[-68, -63], [68, -63], [69, -45], [71, -22], [75, -9], [84, -1, 1], [70, -2], [58, 0, 1], [20, -1], [-14, 0], [-56, -1], [-70, 0, 1], [-80, -1, 1], [-72, -9], [-70, -24], [-69, -45]];
   paintShaded(ctx, (c) => curvyPath(c, body, 0.45), bark, shade(bark, -0.2), (c) => c.ellipse(-62, -28, 20, 40, 0, 0, Math.PI * 2));
   withClip(ctx, (c) => curvyPath(c, body, 0.45), () => {
-    for (let i = 0; i < 13; i++) {
-      const x = -62 + i * 10.3 + hash01(5, i) * 3;
-      strokePath(ctx, (c) => {
+    const xs = Array.from({ length: 13 }, (_, i) => -62 + i * 10.3 + hash01(5, i) * 3);
+    strokePath(ctx, (c) => {
+      for (const x of xs) {
         c.moveTo(x, -62);
         c.bezierCurveTo(x - 3, -45, x + 3, -25, x + (x > 0 ? 4 : -4), -2);
-      }, alpha(shade(bark, -0.4), 0.7), 1.6);
-      if (i % 3 === 1) strokePath(ctx, (c) => {
+      }
+    }, alpha(shade(bark, -0.4), 0.7), 1.6);
+    strokePath(ctx, (c) => {
+      xs.forEach((x, i) => {
+        if (i % 3 !== 1) return;
         c.moveTo(x + 4, -55);
         c.quadraticCurveTo(x + 5, -46, x + 3.5, -38);
-      }, alpha(shade(bark, 0.25), 0.7), 1.4);
-    }
+      });
+    }, alpha(shade(bark, 0.25), 0.7), 1.4);
   });
   // Moss at the base, a red mushroom and a sprout.
   for (const [x, w] of [[-62, 16], [-20, 12], [44, 18]] as const) {
@@ -431,10 +448,9 @@ function marblePlinth(ctx: Ctx): void {
   const shaft = (c: Ctx) => c.rect(-58, -55, 116, 45);
   paintShaded(ctx, shaft, marble, shade(marble, -0.08), (c) => c.rect(-60, -55, 20, 46));
   withClip(ctx, shaft, () => {
-    for (let i = 0; i < 9; i++) {
-      const x = -52 + i * 13;
-      paintShaded(ctx, (c) => c.roundRect(x, -50, 6.5, 35, 3.2), shade(marble, -0.07), null, null, { stroke: alpha(vein, 0.8), width: 1.2 });
-    }
+    paintShaded(ctx, (c) => {
+      for (let i = 0; i < 9; i++) c.roundRect(-52 + i * 13, -50, 6.5, 35, 3.2);
+    }, shade(marble, -0.07), null, null, { stroke: alpha(vein, 0.8), width: 1.2 });
     strokePath(ctx, (c) => {
       c.moveTo(-40, -55);
       c.bezierCurveTo(-30, -40, -45, -28, -20, -10);

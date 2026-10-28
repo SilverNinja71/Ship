@@ -197,12 +197,13 @@ function sheets(): Sheet[] {
   out.push({
     id: "big",
     title: "Captain's Quarters zoom (2.5×)",
-    cols: 2,
     px: 0.95,
     h: 560,
     background: "cabin",
+    cols: 3,
     cells: [
-      { label: "focus", w: 400, draw: (ctx, frame, x, floor) => drawStudyStation(ctx, { avatar: CREW[4], state: "SAILING_FOCUS", desk: "captains-desk", at: { x, y: floor }, scale: 2.5 }, frame) },
+      { label: "default sailor", w: 400, draw: (ctx, frame, x, floor) => drawStudyStation(ctx, { avatar: DEFAULT_AVATAR, state: "SAILING_FOCUS", desk: "captains-desk", at: { x, y: floor }, scale: 2.5 }, frame) },
+      { label: "focus", w: 400, draw: (ctx, frame, x, floor) => drawStudyStation(ctx, { avatar: CREW[4], state: "SAILING_FOCUS", desk: "war-room", at: { x, y: floor }, scale: 2.5 }, frame) },
       { label: "break", w: 400, draw: (ctx, frame, x, floor) => drawStudyStation(ctx, { avatar: CREW[1], state: "SHORE_LEAVE_BREAK", desk: "coral-vanity", at: { x, y: floor }, scale: 2.5 }, frame) },
     ],
   });

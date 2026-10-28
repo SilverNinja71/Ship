@@ -209,4 +209,6 @@ export function drawTorso(ctx: Ctx, look: Look, coat: CoatId, turn: number): Sle
       return { fill: col, cuff: shade(col, -0.25), line: look.coatLine };
     }
   }
+  // An unknown id (say, from old saved data) falls back to the classic stripes.
+  return drawTorso(ctx, look, "striped-shirt", turn);
 }

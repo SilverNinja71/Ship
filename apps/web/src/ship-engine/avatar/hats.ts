@@ -228,11 +228,14 @@ function bandana(ctx: Ctx, dx: number, t: number): void {
   tube(ctx, [{ x: -40, y: -18 }, { x: -47, y: -3 }, { x: -48 + flap * 0.4, y: 9 }], 6.5, shade(red, -0.15));
   paintShaded(ctx, (c) => curvyPath(c, shape, 0.5), red, shade(red, -0.18), (c) => c.ellipse(-30, -10, 22, 30, 0, 0, Math.PI * 2));
   withClip(ctx, (c) => curvyPath(c, shape, 0.5), () => {
-    for (let i = 0; i < 18; i++) {
-      const x = -34 + (i % 6) * 13.5 + (Math.floor(i / 6) % 2) * 6;
-      const y = -38 + Math.floor(i / 6) * 9;
-      fillPath(ctx, (c) => c.arc(x, y, 1.9, 0, Math.PI * 2), "#F8E9D2");
-    }
+    fillPath(ctx, (c) => {
+      for (let i = 0; i < 18; i++) {
+        const x = -34 + (i % 6) * 13.5 + (Math.floor(i / 6) % 2) * 6;
+        const y = -38 + Math.floor(i / 6) * 9;
+        c.moveTo(x + 1.9, y);
+        c.arc(x, y, 1.9, 0, Math.PI * 2);
+      }
+    }, "#F8E9D2");
   });
   paintShaded(ctx, (c) => c.ellipse(-40, -17, 5.5, 5, 0, 0, Math.PI * 2), shade(red, -0.05), null, null);
 }
@@ -327,14 +330,14 @@ function beanie(ctx: Ctx, dx: number, t: number): void {
   const knitShade = shade(knit, -0.2);
   const body = (c: Ctx) => curvyPath(c, [[39, -15], [36, -32], [22, -44], [2, -48.5], [-20, -45], [-35, -33], [-39.5, -15]], 0.5);
   paintShaded(ctx, body, knit, knitShade, (c) => c.ellipse(-26, -24, 18, 30, 0, 0, Math.PI * 2));
-  withClip(ctx, body, () => {
-    for (let i = -4; i <= 4; i++) {
-      strokePath(ctx, (c) => {
+  withClip(ctx, body, () =>
+    strokePath(ctx, (c) => {
+      for (let i = -4; i <= 4; i++) {
         c.moveTo(dx + i * 8.5, -14);
         c.quadraticCurveTo(dx + i * 7.5, -32, dx + i * 3.5, -48);
-      }, alpha(knitShade, 0.75), 1.3);
-    }
-  });
+      }
+    }, alpha(knitShade, 0.75), 1.3),
+  );
   const cuff = (c: Ctx) => {
     c.moveTo(-40.5, -25);
     c.quadraticCurveTo(dx, -17, 40.5, -25);
@@ -343,15 +346,14 @@ function beanie(ctx: Ctx, dx: number, t: number): void {
     c.closePath();
   };
   paintShaded(ctx, cuff, shade(knit, 0.06), knitShade, (c) => c.rect(-45, -10, 90, 10));
-  withClip(ctx, cuff, () => {
-    for (let i = -9; i <= 9; i++) {
-      const x = dx + i * 4.3;
-      strokePath(ctx, (c) => {
-        c.moveTo(x, -26);
-        c.lineTo(x, -2);
-      }, alpha(knitShade, 0.8), 1.3);
-    }
-  });
+  withClip(ctx, cuff, () =>
+    strokePath(ctx, (c) => {
+      for (let i = -9; i <= 9; i++) {
+        c.moveTo(dx + i * 4.3, -26);
+        c.lineTo(dx + i * 4.3, -2);
+      }
+    }, alpha(knitShade, 0.8), 1.3),
+  );
   const bob = Math.sin(t * 2.4) * 0.8;
   const pom: CurvePt[] = ellipsePts(1, -51 + bob, 9.5, 8.5, 12).map((p, i) => (i % 2 ? [p[0] * 1.04, p[1]] : [p[0], p[1], 1] as const));
   paintShaded(ctx, (c) => curvyPath(c, pom, 0.7), "#FBF1DF", "#E7D8BD", (c) => c.ellipse(4, -46 + bob, 8, 5, 0, 0, Math.PI * 2), { stroke: "#B9A27A" });

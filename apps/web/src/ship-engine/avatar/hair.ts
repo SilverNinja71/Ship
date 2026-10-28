@@ -205,11 +205,16 @@ const STYLES: Record<HairStyle, StyleDef> = {
     ],
     extra: (ctx, look) => {
       // A little stubble texture.
-      for (let i = 0; i < 26; i++) {
-        const a = Math.PI * (1.08 + (i % 13) * 0.065);
-        const r = i < 13 ? 30 : 23;
-        fillPath(ctx, (c) => c.arc(Math.cos(a) * r, -6 + Math.sin(a) * r * 0.95, 0.9, 0, Math.PI * 2), alpha(look.hairShade, 0.8));
-      }
+      fillPath(ctx, (c) => {
+        for (let i = 0; i < 26; i++) {
+          const a = Math.PI * (1.08 + (i % 13) * 0.065);
+          const r = i < 13 ? 30 : 23;
+          const x = Math.cos(a) * r;
+          const y = -6 + Math.sin(a) * r * 0.95;
+          c.moveTo(x + 0.9, y);
+          c.arc(x, y, 0.9, 0, Math.PI * 2);
+        }
+      }, alpha(look.hairShade, 0.8));
     },
     shine: [-10, 26, 22, 1.25, 1.55],
   },
@@ -380,17 +385,19 @@ export function drawHairFront(ctx: Ctx, look: Look, style: HairStyle, h: HairCon
   ctx.clip();
   // One soft shade under the crown, towards the far side of the head.
   fillPath(ctx, (c) => c.ellipse(-30, 4, 22, 30, 0.2, 0, Math.PI * 2), alpha(look.hairShade, 0.9));
-  for (const [x0, y0, x1, y1] of def.strands ?? []) {
+  if (def.strands) {
     strokePath(ctx, (c) => {
-      c.moveTo(x0, y0);
-      c.quadraticCurveTo((x0 + x1) / 2 + 3, (y0 + y1) / 2, x1, y1);
+      for (const [x0, y0, x1, y1] of def.strands ?? []) {
+        c.moveTo(x0, y0);
+        c.quadraticCurveTo((x0 + x1) / 2 + 3, (y0 + y1) / 2, x1, y1);
+      }
     }, alpha(look.hairShade, 0.85), 1.6);
   }
   if (def.shine && !h.hatted) {
     const [cy, rx, ry, a0, a1] = def.shine;
     ctx.save();
-    ctx.setLineDash([7, 3.5]);
-    strokePath(ctx, (c) => c.ellipse(h.turn * 0.4, cy, rx, ry, 0, Math.PI * a0, Math.PI * a1), look.hairShine, 3.6);
+    ctx.setLineDash([9, 5]);
+    strokePath(ctx, (c) => c.ellipse(h.turn * 0.4, cy, rx, ry, 0, Math.PI * a0, Math.PI * a1), alpha(look.hairShine, 0.8), 3.4);
     ctx.restore();
   }
   ctx.restore();

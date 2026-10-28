@@ -48,6 +48,11 @@ function surfaceFor(level: number, w: number, h: number): Surface | null {
   return next;
 }
 
+/** Drops the cached layers (tests; or to free memory after leaving a zoomed view). */
+export function releaseLayers(): void {
+  pool.length = 0;
+}
+
 /** The largest layer we allocate, so a huge zoom can't eat memory. */
 const MAX_SIDE = 4096;
 

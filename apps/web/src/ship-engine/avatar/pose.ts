@@ -281,8 +281,9 @@ function breakPose(p: Pose, time: number, tm: number, ph: number, seed: number, 
     const atChest = tea ? { x: 13, y: -88 + torso.y } : { x: 10, y: -84 + torso.y };
     const held = lerpPt(atChest, atLips, sipping);
     const hand = lerpPt(lapR, held, a);
-    const angle = tea ? -0.45 * p.sip : -0.06;
-    p.arms = [arm(-1, torso, lapL, "under"), { ...arm(1, torso, hand, "front", drink, angle), fromLap: true }];
+    // Down in the lap the cup lies on its side, so the straw stays hidden behind the desk.
+    const angle = lerp(-1.5, tea ? -0.45 * p.sip : -0.06, smoothstep(0.12, 0.6, a));
+    p.arms = [arm(-1, torso, lapL, "under"), { ...arm(1, torso, hand, "front", amount > 0.02 ? drink : "none", angle), fromLap: true }];
     p.eyes = p.sip > 0.6 ? "happy" : blink ? "blink" : "open";
     p.mouth = p.sip > 0.6 ? "sip" : "cat";
     p.headRot += tea ? -0.04 * p.sip : 0;
@@ -323,7 +324,8 @@ function breakPose(p: Pose, time: number, tm: number, ph: number, seed: number, 
   const eye = headToStation(p, { x: p.turn + 13, y: 6 });
   const grip = { x: eye.x + 10 * Math.cos(p.pan), y: eye.y + 10 * Math.sin(p.pan) + 2 };
   const hand = lerpPt(lapR, grip, a);
-  p.arms = [arm(-1, torso, lapL, "under"), { ...arm(1, torso, hand, "front", "spyglass", lerp(-1.3, p.pan, smoothstep(0.3, 0.8, a))), fromLap: true }];
+  // The spyglass comes up pointing down, then swings level as it reaches the eye.
+  p.arms = [arm(-1, torso, lapL, "under"), { ...arm(1, torso, hand, "front", amount > 0.02 ? "spyglass" : "none", lerp(1.4, p.pan, smoothstep(0.25, 0.8, a))), fromLap: true }];
   p.eyes = a > 0.6 ? "wink" : blink ? "blink" : "open";
   p.mouth = a > 0.6 ? "grin" : "smile";
   p.look = { x: 0.6, y: 0 };

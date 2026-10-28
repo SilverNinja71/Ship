@@ -33,7 +33,7 @@ export function drawArm(ctx: Ctx, look: Look, sleeve: SleeveStyle, arm: ArmPose,
     }
   }
 
-  if (arm.hold !== "none") drawHeld(ctx, look, arm, pose);
+  if (arm.hold !== "none") drawHeld(ctx, arm, pose);
   drawHand(ctx, look, h, side, arm);
 }
 
@@ -48,7 +48,7 @@ export function drawHand(ctx: Ctx, look: Look, h: Point, side: -1 | 1, arm: Pick
   }, alpha(look.skinLine, 0.55), 1.3);
 }
 
-function drawHeld(ctx: Ctx, look: Look, arm: ArmPose, pose: Pose): void {
+function drawHeld(ctx: Ctx, arm: ArmPose, pose: Pose): void {
   const h = arm.hand;
   ctx.save();
   ctx.translate(h.x, h.y);
@@ -68,7 +68,7 @@ function drawHeld(ctx: Ctx, look: Look, arm: ArmPose, pose: Pose): void {
       paintShaded(ctx, (c) => c.arc(-1.4, 8.6, 1.4, 0, Math.PI * 2), "#D7DCE6", null, null, { width: 1 });
       break;
     case "boba":
-      boba(ctx, look, pose);
+      boba(ctx, pose);
       break;
     case "tea":
       teacup(ctx, pose);
@@ -104,7 +104,7 @@ export function quill(ctx: Ctx): void {
   }, "#3A3248", null, null, { width: 1.2 });
 }
 
-function boba(ctx: Ctx, look: Look, pose: Pose): void {
+function boba(ctx: Ctx, pose: Pose): void {
   ctx.scale(1.12, 1.12);
   const cup = (c: Ctx) => {
     c.moveTo(-8.5, -10);
@@ -143,7 +143,6 @@ function boba(ctx: Ctx, look: Look, pose: Pose): void {
     c.closePath();
   }, alpha("#F7F4F0", 0.95), null, null, { stroke: "#8B6E5D", width: 2.4 });
   paintShaded(ctx, (c) => c.roundRect(-10, -11, 20, 3, 1.2), "#F7F4F0", null, null, { stroke: "#8B6E5D", width: 2 });
-  void look;
 }
 
 function teacup(ctx: Ctx, pose: Pose): void {

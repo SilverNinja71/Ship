@@ -46,7 +46,7 @@ export interface Look {
   eye: string;
 }
 
-const SCARF_COLORS = ["#E8B04B", "#D9534F", "#3C8D93", "#F2E6C9", "#7A5BB0"];
+const SCARF_COLORS = ["#E8B04B", "#D9534F", "#3C8D93", "#7A5BB0", "#F08AAE"];
 
 function distance(a: string, b: string): number {
   const x = parseColor(a);
@@ -61,8 +61,8 @@ export function resolveLook(loadout: AvatarLoadout): Look {
   const hit = cache.get(key);
   if (hit) return { ...hit, loadout };
   const tone = getSkinTone(loadout.skin);
-  const hair = loadout.hairColor;
-  const coat = loadout.coatColor;
+  const hair = colorOr(loadout.hairColor, "#5A3A22");
+  const coat = colorOr(loadout.coatColor, "#2E5E8B");
   // Dark hair gets a brighter shine so the highlight still reads.
   const hairLum = luminance(hair);
   const look: Look = {
@@ -84,6 +84,11 @@ export function resolveLook(loadout: AvatarLoadout): Look {
   if (cache.size > 64) cache.clear();
   cache.set(key, look);
   return look;
+}
+
+/** Saved loadouts may carry anything; keep only strings that look like hex colors. */
+function colorOr(c: unknown, fallback: string): string {
+  return typeof c === "string" && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c.trim()) ? c.trim() : fallback;
 }
 
 /** Relative luminance 0..1, for picking contrasting details. */
