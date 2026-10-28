@@ -1,0 +1,21 @@
+{
+  "name": "ship",
+  "private": true,
+  "description": "Ship: a cartoon study-ship app, its Lookout browser extension and the crew server.",
+  "packageManager": "npm@11.19.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
