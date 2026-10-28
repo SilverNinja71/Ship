@@ -57,6 +57,8 @@ export interface ImportResult {
   notes: NoteDocument[];
   decks: Deck[];
   cards: Flashcard[];
+  /** Dated items, e.g. from an .ics calendar export. */
+  assignments: Assignment[];
   warnings: string[];
 }
 
