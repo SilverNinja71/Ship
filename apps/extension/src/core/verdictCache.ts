@@ -36,7 +36,14 @@ export function getCachedVerdict(cache: VerdictCache, key: string, now: number, 
   return { ...hit.verdict, source: "cache" };
 }
 
-export function putCachedVerdict(cache: VerdictCache, key: string, verdict: LookoutVerdict, now: number, max = VERDICT_CACHE_MAX, ttlMs = VERDICT_TTL_MS): VerdictCache {
+export function putCachedVerdict(
+  cache: VerdictCache,
+  key: string,
+  verdict: LookoutVerdict,
+  now: number,
+  max = VERDICT_CACHE_MAX,
+  ttlMs = VERDICT_TTL_MS,
+): VerdictCache {
   const entries = Object.entries(cache).filter(([k, e]) => k !== key && now - e.at <= ttlMs);
   entries.push([key, { verdict, at: now }]);
   entries.sort((a, b) => a[1].at - b[1].at);

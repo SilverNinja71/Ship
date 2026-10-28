@@ -161,7 +161,11 @@ export function parseVerdictText(text: string): GeminiAnswer {
   const decision = PROCEED_WORDS.has(decisionWord) ? "PROCEED" : BLOCKED_WORDS.has(decisionWord) ? "BLOCKED" : null;
   if (!decision) throw new GeminiError("Gemini's answer had no PROCEED or BLOCKED decision.");
   const rawReason = typeof data.reason === "string" ? data.reason.replace(/\s+/g, " ").trim() : "";
-  const reason = rawReason ? clip(rawReason, 280)! : decision === "PROCEED" ? "Gemini says this fits your study session." : "Gemini says this doesn't fit your study session.";
+  const reason = rawReason
+    ? clip(rawReason, 280)!
+    : decision === "PROCEED"
+      ? "Gemini says this fits your study session."
+      : "Gemini says this doesn't fit your study session.";
   return { decision, reason, confidence: readConfidence(data.confidence) };
 }
 
@@ -214,7 +218,11 @@ export async function askGemini(fetch: LookoutFetch, options: AskGeminiOptions):
 }
 
 /** For the options page's "Check key" button: does this key see this model? */
-export async function checkGeminiModel(fetch: LookoutFetch, apiKey: string, model: string): Promise<{ ok: true; displayName: string } | { ok: false; message: string }> {
+export async function checkGeminiModel(
+  fetch: LookoutFetch,
+  apiKey: string,
+  model: string,
+): Promise<{ ok: true; displayName: string } | { ok: false; message: string }> {
   try {
     const res = await fetch(geminiModelUrl(model), { method: "GET", headers: { "x-goog-api-key": apiKey } });
     if (!res.ok) return { ok: false, message: `Gemini answered HTTP ${res.status}${await errorMessage(res)}` };

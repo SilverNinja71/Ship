@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { VideoInspection } from "@ship/shared-types";
-import { askGemini, buildGeminiRequest, checkGeminiModel, extractCandidateText, GeminiError, geminiGenerateUrl, parseGeminiResponse, parseVerdictText } from "./gemini.js";
+import {
+  askGemini,
+  buildGeminiRequest,
+  checkGeminiModel,
+  extractCandidateText,
+  GeminiError,
+  geminiGenerateUrl,
+  parseGeminiResponse,
+  parseVerdictText,
+} from "./gemini.js";
 import type { LookoutFetch } from "./net.js";
 import type { StudyContext } from "./voyage.js";
 
@@ -68,8 +77,15 @@ describe("parsing Gemini's answer", () => {
   });
 
   it("tolerates code fences, prose, lowercase, synonyms and percent confidences", () => {
-    expect(parseVerdictText('```json\n{"decision":"proceed","reason":"On topic","confidence":"85"}\n```')).toEqual({ decision: "PROCEED", reason: "On topic", confidence: 0.85 });
-    expect(parseVerdictText('Sure! Here you go: {"verdict":"Block","reason":"Off topic"} Hope that helps.')).toMatchObject({ decision: "BLOCKED", confidence: 0.5 });
+    expect(parseVerdictText('```json\n{"decision":"proceed","reason":"On topic","confidence":"85"}\n```')).toEqual({
+      decision: "PROCEED",
+      reason: "On topic",
+      confidence: 0.85,
+    });
+    expect(parseVerdictText('Sure! Here you go: {"verdict":"Block","reason":"Off topic"} Hope that helps.')).toMatchObject({
+      decision: "BLOCKED",
+      confidence: 0.5,
+    });
     expect(parseVerdictText('[{"decision":"ALLOW","reason":"x","confidence":2}]')).toMatchObject({ decision: "PROCEED", confidence: 0.02 });
     expect(parseVerdictText('{"decision":"BLOCKED","confidence":-3}')).toMatchObject({ reason: expect.stringContaining("doesn't fit"), confidence: 0 });
   });
@@ -79,7 +95,11 @@ describe("parsing Gemini's answer", () => {
   });
 
   it("joins text parts and skips thought parts", () => {
-    const body = { candidates: [{ content: { parts: [{ text: "thinking...", thought: true }, { text: '{"decision":' }, { text: '"PROCEED","reason":"ok","confidence":1}' }] } }] };
+    const body = {
+      candidates: [
+        { content: { parts: [{ text: "thinking...", thought: true }, { text: '{"decision":' }, { text: '"PROCEED","reason":"ok","confidence":1}' }] } },
+      ],
+    };
     expect(extractCandidateText(body)).toBe('{"decision":"PROCEED","reason":"ok","confidence":1}');
   });
 
@@ -130,7 +150,10 @@ describe("askGemini", () => {
 
 describe("checkGeminiModel", () => {
   it("returns the model's display name, or why not", async () => {
-    expect(await checkGeminiModel(async () => respond(200, { displayName: "Gemini Flash Latest" }), "k", "gemini-flash-latest")).toEqual({ ok: true, displayName: "Gemini Flash Latest" });
+    expect(await checkGeminiModel(async () => respond(200, { displayName: "Gemini Flash Latest" }), "k", "gemini-flash-latest")).toEqual({
+      ok: true,
+      displayName: "Gemini Flash Latest",
+    });
     expect(await checkGeminiModel(async () => respond(404, { error: { message: "models/nope is not found" } }), "k", "nope")).toEqual({
       ok: false,
       message: "Gemini answered HTTP 404: models/nope is not found",

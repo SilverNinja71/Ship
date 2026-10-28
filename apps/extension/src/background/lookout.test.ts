@@ -48,7 +48,11 @@ function harness(options: { settings?: Record<string, unknown>; fetch?: LookoutF
   const web = (msg: Record<string, unknown>) => send({ t: "web", msg: { source: WEB_SOURCE, ...msg } }) as Promise<LookoutToWeb | null>;
   const check = (url: string) => send({ t: "check", url }) as Promise<GuardDecision>;
   const judge = (title: string, description = "", url = WATCH) =>
-    send({ t: "judge", url, inspection: { videoId: "ignored", title, channel: "Cell Lab", description, transcriptExcerpt: null, thumbnailUrl: null } }) as Promise<GuardDecision>;
+    send({
+      t: "judge",
+      url,
+      inspection: { videoId: "ignored", title, channel: "Cell Lab", description, transcriptExcerpt: null, thumbnailUrl: null },
+    }) as Promise<GuardDecision>;
   const popup = () => send({ t: "popup-state" }) as Promise<PopupState>;
   const voyage = (over: Partial<LookoutVoyageState> = {}) =>
     web({
@@ -120,7 +124,13 @@ describe("bridge messages", () => {
 
   it("stores the cards Ship sends for the gate", async () => {
     const h = harness();
-    await h.web({ t: "cards", cards: [{ id: "a", front: "Q", back: "A" }, { id: "b", front: "", back: "x" }] });
+    await h.web({
+      t: "cards",
+      cards: [
+        { id: "a", front: "Q", back: "A" },
+        { id: "b", front: "", back: "x" },
+      ],
+    });
     expect(await h.send({ t: "gate-cards" })).toEqual({ cards: [{ id: "a", front: "Q", back: "A" }] });
   });
 });
@@ -307,10 +317,16 @@ describe("judging watch pages", () => {
   });
 
   it("falls back to the keyword check when Gemini fails, and says why in the popup", async () => {
-    const h = harness({ settings: { geminiApiKey: "bad" }, fetch: async (url) => (url.includes("generateContent") ? fakeResponse({ error: { message: "API key not valid." } }, 400) : fakeResponse({}, 404)) });
+    const h = harness({
+      settings: { geminiApiKey: "bad" },
+      fetch: async (url) => (url.includes("generateContent") ? fakeResponse({ error: { message: "API key not valid." } }, 400) : fakeResponse({}, 404)),
+    });
     await h.voyage();
     const d = await h.judge("Enzyme Kinetics Explained");
-    expect(d).toMatchObject({ action: "allow", verdict: { source: "heuristic", reason: expect.stringMatching(/^Gemini couldn't answer, so the keyword check decided\./) } });
+    expect(d).toMatchObject({
+      action: "allow",
+      verdict: { source: "heuristic", reason: expect.stringMatching(/^Gemini couldn't answer, so the keyword check decided\./) },
+    });
     expect((await h.popup()).geminiError).toEqual({ at: T0, message: "Gemini answered HTTP 400: API key not valid." });
   });
 

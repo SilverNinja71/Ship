@@ -19,7 +19,12 @@ const rewards: LookoutRewardEvent[] = [
 ];
 
 const store = memoryStore({
-  settings: { geminiApiKey: gemini ? "dev-only-not-a-key" : "", geminiModel: "gemini-flash-latest", shipUrl: "http://localhost:5173", blockedSites: ["reddit.com"] },
+  settings: {
+    geminiApiKey: gemini ? "dev-only-not-a-key" : "",
+    geminiModel: "gemini-flash-latest",
+    shipUrl: "http://localhost:5173",
+    blockedSites: ["reddit.com"],
+  },
   stats: { day: localDayKey(now), blocked: 4, steeredBack: 2, leisurePasses: 1 },
   rewards,
   passes: { "reddit.com": now + 3 * 60_000 + 10_000 },
@@ -36,26 +41,26 @@ installFakeChrome({ store, fetch: async () => fakeResponse({}, 404) });
 
 async function run() {
   await chrome.runtime.sendMessage({
-  t: "web",
-  msg: {
-    source: WEB_SOURCE,
-    t: "voyage",
-    voyage: docked
-      ? { phase: "docked", guarding: false, endsAt: null, objective: null, assignment: null, updatedAt: now }
-      : {
-          phase: "sailing",
-          guarding: true,
-          endsAt: now + 23 * 60_000 + 41_000,
-          objective: "Finish the discussion section",
-          assignment: { title: "Enzyme kinetics lab report", course: "BIO 201" },
-          updatedAt: now,
-        },
-  },
-});
+    t: "web",
+    msg: {
+      source: WEB_SOURCE,
+      t: "voyage",
+      voyage: docked
+        ? { phase: "docked", guarding: false, endsAt: null, objective: null, assignment: null, updatedAt: now }
+        : {
+            phase: "sailing",
+            guarding: true,
+            endsAt: now + 23 * 60_000 + 41_000,
+            objective: "Finish the discussion section",
+            assignment: { title: "Enzyme kinetics lab report", course: "BIO 201" },
+            updatedAt: now,
+          },
+    },
+  });
   await chrome.runtime.sendMessage({
-  t: "web",
-  msg: { source: WEB_SOURCE, t: "cards", cards: Array.from({ length: 12 }, (_, i) => ({ id: `c${i}`, front: `Q${i}`, back: `A${i}` })) },
-});
+    t: "web",
+    msg: { source: WEB_SOURCE, t: "cards", cards: Array.from({ length: 12 }, (_, i) => ({ id: `c${i}`, front: `Q${i}`, back: `A${i}` })) },
+  });
   await startPopup();
   document.documentElement.dataset.ready = "1";
 }

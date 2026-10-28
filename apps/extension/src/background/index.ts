@@ -81,6 +81,13 @@ async function syncDynamicScripts(): Promise<void> {
   if (wanted.length) await chrome.scripting.registerContentScripts(wanted);
 }
 
+// Adding a site fires permissions.onAdded and a settings change together; overlapping syncs would register the same ids twice.
+let syncing: Promise<void> = Promise.resolve();
+function queueSync(): Promise<void> {
+  syncing = syncing.then(syncDynamicScripts).catch((e) => warn("sync scripts", e));
+  return syncing;
+}
+
 function warn(where: string, e: unknown) {
   // Messages only: nothing here may print the API key.
   console.warn(`[lookout] ${where}:`, e instanceof Error ? e.message : String(e));
@@ -94,7 +101,7 @@ async function setup(): Promise<void> {
   await ensureAlarm();
   // Keep the stored Gemini key away from content scripts where Chrome supports it.
   await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }).catch(() => undefined);
-  await syncDynamicScripts().catch((e) => warn("sync scripts", e));
+  await queueSync();
   await lookout.tick();
 }
 
@@ -123,8 +130,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const change = changes.settings;
   if (area !== "local" || !change) return;
   void lookout.onSettingsChanged(change.oldValue, change.newValue).catch((e) => warn("settings", e));
-  void syncDynamicScripts().catch((e) => warn("sync scripts", e));
+  void queueSync();
 });
 
-chrome.permissions.onAdded.addListener(() => void syncDynamicScripts().catch((e) => warn("sync scripts", e)));
-chrome.permissions.onRemoved.addListener(() => void syncDynamicScripts().catch((e) => warn("sync scripts", e)));
+chrome.permissions.onAdded.addListener(() => void queueSync());
+chrome.permissions.onRemoved.addListener(() => void queueSync());

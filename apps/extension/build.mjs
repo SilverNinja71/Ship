@@ -114,7 +114,10 @@ function drawIcon(size) {
   const ss = 4; // 4x4 supersampling for smooth edges
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
-      let r = 0, g = 0, b = 0, a = 0;
+      let r = 0,
+        g = 0,
+        b = 0,
+        a = 0;
       for (let sy = 0; sy < ss; sy++) {
         for (let sx = 0; sx < ss; sx++) {
           const c = iconColor((px + (sx + 0.5) / ss) / size, (py + (sy + 0.5) / ss) / size, size <= 32);
@@ -154,7 +157,7 @@ await mkdir(dist, { recursive: true });
 if (!watching) {
   await Promise.all(builds.map((options) => esbuild.build(options)));
   await copyStatic();
-  console.log("The Lookout is built in dist/. Load it from chrome://extensions with \"Load unpacked\".");
+  console.log('The Lookout is built in dist/. Load it from chrome://extensions with "Load unpacked".');
 } else {
   const contexts = await Promise.all(builds.map((options) => esbuild.context(options)));
   await copyStatic();
@@ -162,7 +165,14 @@ if (!watching) {
   let pending = null;
   const recopy = () => {
     clearTimeout(pending);
-    pending = setTimeout(() => copyStatic().then(() => console.log("[lookout] static files copied"), (e) => console.error(e)), 100);
+    pending = setTimeout(
+      () =>
+        copyStatic().then(
+          () => console.log("[lookout] static files copied"),
+          (e) => console.error(e),
+        ),
+      100,
+    );
   };
   watchFs(join(root, "static"), { recursive: true }, recopy);
   watchFs(join(root, "manifest.json"), recopy);

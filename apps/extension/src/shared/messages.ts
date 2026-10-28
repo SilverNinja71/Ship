@@ -20,10 +20,8 @@ export type ToBackground =
   | { t: "popup-state" }
   | { t: "open-ship" };
 
-export type ToContent =
-  /** Guarding, passes or the blocklist changed: check the page again. */
-  | { t: "lookout-refresh" }
-  | { t: "lookout-stats"; stats: LookoutStats };
+/** "lookout-refresh": guarding, passes or the blocklist changed, so check the page again. */
+export type ToContent = { t: "lookout-refresh" } | { t: "lookout-stats"; stats: LookoutStats };
 
 /** What the gate shows about the voyage it's protecting. */
 export interface GateVoyageInfo {

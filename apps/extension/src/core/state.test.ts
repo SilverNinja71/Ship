@@ -114,7 +114,12 @@ describe("daily stats", () => {
   });
 
   it("cleans stored values", () => {
-    expect(normalizeStats({ day: "2026-10-28", blocked: -2, steeredBack: 3.7, leisurePasses: "x" }, T0)).toEqual({ day: "2026-10-28", blocked: 0, steeredBack: 3, leisurePasses: 0 });
+    expect(normalizeStats({ day: "2026-10-28", blocked: -2, steeredBack: 3.7, leisurePasses: "x" }, T0)).toEqual({
+      day: "2026-10-28",
+      blocked: 0,
+      steeredBack: 3,
+      leisurePasses: 0,
+    });
     expect(normalizeStats(null, T0)).toEqual(emptyStats(T0));
   });
 });
@@ -176,6 +181,8 @@ describe("staleness", () => {
   });
 
   it("normalizes the study context key", () => {
-    expect(studyContextKey(studyContext(state({ objective: "  FINISH, the discussion! " })))).toBe(studyContextKey(studyContext(state({ objective: "finish the discussion" }))));
+    expect(studyContextKey(studyContext(state({ objective: "  FINISH, the discussion! " })))).toBe(
+      studyContextKey(studyContext(state({ objective: "finish the discussion" }))),
+    );
   });
 });

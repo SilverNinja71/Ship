@@ -23,7 +23,8 @@ function render(doc: Document, root: HTMLElement, state: PopupState, clockNow: n
   top.append(el(doc, "span", "phase", voyage ? PHASE_LABELS[voyage.phase] : "No voyage yet"));
   if (voyage?.endsAt != null) top.append(el(doc, "span", "clock", formatClock(voyage.endsAt - clockNow)));
   voyageCard.append(top);
-  if (voyage?.assignment) voyageCard.append(el(doc, "p", "line", `${voyage.assignment.title}${voyage.assignment.course ? ` · ${voyage.assignment.course}` : ""}`));
+  if (voyage?.assignment)
+    voyageCard.append(el(doc, "p", "line", `${voyage.assignment.title}${voyage.assignment.course ? ` · ${voyage.assignment.course}` : ""}`));
   if (voyage?.objective) voyageCard.append(el(doc, "p", "line muted", `Objective: ${voyage.objective}`));
   voyageCard.append(el(doc, "p", `status ${guarding ? "good" : ""}`, GUARD_STATUS_LABELS[state.status]));
 

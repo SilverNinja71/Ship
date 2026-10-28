@@ -58,9 +58,7 @@ export function normalizeModel(input: unknown): string {
 export function normalizeSettings(raw: unknown): LookoutSettings {
   const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const sites = Array.isArray(r.blockedSites) ? r.blockedSites : [];
-  const blockedSites = [
-    ...new Set(sites.map((s) => (typeof s === "string" ? normalizeSiteEntry(s) : null)).filter((s): s is string => s !== null)),
-  ];
+  const blockedSites = [...new Set(sites.map((s) => (typeof s === "string" ? normalizeSiteEntry(s) : null)).filter((s): s is string => s !== null))];
   return {
     geminiApiKey: typeof r.geminiApiKey === "string" ? r.geminiApiKey.trim() : "",
     geminiModel: normalizeModel(r.geminiModel),

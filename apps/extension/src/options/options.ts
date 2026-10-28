@@ -59,7 +59,11 @@ export async function startOptions(doc: Document = document, fetchImpl: LookoutF
     e.preventDefault();
     settings = await save({ geminiApiKey: keyInput.value.trim(), geminiModel: normalizeModel(modelInput.value || DEFAULT_GEMINI_MODEL) });
     modelInput.value = settings.geminiModel;
-    say(geminiStatus, settings.geminiApiKey ? `Saved. Watch pages will be judged by ${settings.geminiModel}.` : "Saved. With no key, the keyword check judges watch pages.", "good");
+    say(
+      geminiStatus,
+      settings.geminiApiKey ? `Saved. Watch pages will be judged by ${settings.geminiModel}.` : "Saved. With no key, the keyword check judges watch pages.",
+      "good",
+    );
   });
 
   byId<HTMLButtonElement>(doc, "check-key").addEventListener("click", async () => {
@@ -84,7 +88,9 @@ export async function startOptions(doc: Document = document, fetchImpl: LookoutF
       shipInput.value = settings.shipUrl;
       say(
         shipStatus,
-        ok ? "Saved. Steering back will sail here." : "Saved, but without access to that site the Lookout can't talk to Ship there. Steering back still opens it.",
+        ok
+          ? "Saved. Steering back will sail here."
+          : "Saved, but without access to that site the Lookout can't talk to Ship there. Steering back still opens it.",
         ok ? "good" : "bad",
       );
     });

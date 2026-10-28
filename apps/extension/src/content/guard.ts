@@ -69,7 +69,11 @@ function startGuard() {
       if (decision.passUntil !== null) passTimer = setTimeout(() => void evaluate(), Math.max(0, decision.passUntil - Date.now()) + 500);
       if (announce && decision.verdict) {
         toast ??= mountToast("");
-        toast.set("The Lookout cleared this video.", decision.verdict.source === "heuristic" ? `Keyword check: ${decision.verdict.reason}` : decision.verdict.reason, true);
+        toast.set(
+          "The Lookout cleared this video.",
+          decision.verdict.source === "heuristic" ? `Keyword check: ${decision.verdict.reason}` : decision.verdict.reason,
+          true,
+        );
         toastTimer = setTimeout(clearToast, 4500);
       } else clearToast();
       return;

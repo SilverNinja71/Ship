@@ -97,7 +97,8 @@ export function parseState(raw: Record<string, unknown>, now: number): LookoutSt
     lastSteerBackPaidAt: num(raw.lastSteerBackPaidAt),
     guardKey: typeof raw.guardKey === "string" ? raw.guardKey : "off",
     geminiError: isRecord(err) && typeof err.message === "string" && num(err.at) !== null ? { at: err.at as number, message: err.message } : null,
-    lastVerdict: isRecord(last) && isRecord(last.verdict) && typeof last.title === "string" && num(last.at) !== null ? (last as LookoutState["lastVerdict"]) : null,
+    lastVerdict:
+      isRecord(last) && isRecord(last.verdict) && typeof last.title === "string" && num(last.at) !== null ? (last as LookoutState["lastVerdict"]) : null,
   };
 }
 

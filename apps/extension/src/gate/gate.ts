@@ -200,12 +200,7 @@ export function mountSirenGate(options: SirenGateOptions): SirenGate {
       focusSelector = ".choice";
       render();
     });
-    const head = h(
-      "div",
-      { class: "quizhead" },
-      h("span", {}, `${quiz.correct} of ${quiz.required} correct`, pips),
-      back,
-    );
+    const head = h("div", { class: "quizhead" }, h("span", {}, `${quiz.correct} of ${quiz.required} correct`, pips), back);
 
     const feedback = h("div", { class: "feedback", role: "status", "aria-live": "polite" });
     const out: Node[] = [head];
@@ -224,7 +219,14 @@ export function mountSirenGate(options: SirenGateOptions): SirenGate {
     out.push(h("div", { class: "front" }, h("small", {}, "Flashcard"), c.front));
 
     const missed = quiz.phase === "missed";
-    const input = h("input", { type: "text", id: "lk-answer", autocomplete: "off", spellcheck: "false", placeholder: "Type your answer", "aria-label": "Your answer" });
+    const input = h("input", {
+      type: "text",
+      id: "lk-answer",
+      autocomplete: "off",
+      spellcheck: "false",
+      placeholder: "Type your answer",
+      "aria-label": "Your answer",
+    });
     if (missed) {
       input.value = quiz.last?.given ?? "";
       input.disabled = true;

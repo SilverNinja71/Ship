@@ -4,7 +4,9 @@ import { parseSvgMarkup } from "./svg.js";
 
 describe("parseSvgMarkup", () => {
   it("builds a tree of tags and attributes", () => {
-    const svg = parseSvgMarkup('<svg viewBox="0 0 10 10"><g fill="#fff"><circle cx="1" cy="2" r="3"/><path d="M0 0 L1 1"/></g><rect width="1" height="2"/></svg>');
+    const svg = parseSvgMarkup(
+      '<svg viewBox="0 0 10 10"><g fill="#fff"><circle cx="1" cy="2" r="3"/><path d="M0 0 L1 1"/></g><rect width="1" height="2"/></svg>',
+    );
     expect(svg).toEqual({
       tag: "svg",
       attrs: { viewBox: "0 0 10 10" },
