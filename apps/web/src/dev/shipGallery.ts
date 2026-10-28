@@ -10,6 +10,7 @@
 //   ?crew=1        stand-in props and placeholder sailors at the stations
 //   ?w=<px>        cell width
 //   ?fw=<px>       flag cell width; ?flag=<id> shows one flag
+//   ?procedural=1  ignore the graphics AI's sprites in public/assets/
 
 import type { FigureheadId, FlagId, SailStyle, ShipDefinition, ShipLoadout } from "@ship/shared-types";
 import { CABIN_DECOR, DEFAULT_AVATAR, ENVIRONMENTS, FIGUREHEADS, FLAGS, SAILS, SHIPS, defaultLoadout, getShip } from "@ship/ship-theme-kit";
@@ -21,6 +22,7 @@ import type { Ctx, FrameInfo } from "../ship-engine/types.js";
 import { drawCabinDecor, drawShip, shipLayout } from "../ships/index.js";
 import type { HullLayout } from "../ships/index.js";
 import { drawFlag } from "../ships/parts/flags.js";
+import { sprites } from "../ship-engine/sprites/store.js";
 
 const q = new URLSearchParams(location.search);
 const still = q.get("still") === "1";
@@ -358,4 +360,5 @@ function render(now: number): void {
   if (!still && fixedT === null) requestAnimationFrame(render);
   else document.body.dataset.ready = "1";
 }
-requestAnimationFrame(render);
+// Sprites first, so a still frame shows them.
+void (q.get("procedural") === "1" ? Promise.resolve() : sprites.preloadAll()).then(() => requestAnimationFrame(render));

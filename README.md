@@ -12,4 +12,6 @@ npm test        # every package's tests
 - **The crew server** (`apps/signaling-server`): crew rooms, the crew quest, video calls between crewmates, and a relay for Canvas (which blocks requests from web pages).
 - **The Lookout** (`apps/extension`): build it with `npm run build -w @ship/extension`, then in Chrome open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and choose `apps/extension/dist`.
 
+- **The art** comes from a graphics AI as layered sprites. Hand it [docs/art-brief.md](docs/art-brief.md) and [docs/sprite-list.md](docs/sprite-list.md). Put what it makes in `apps/web/public/assets/` and run `npm run assets -w @ship/web` to check it. Until a part's art arrives, the app draws that part itself.
+
 See [CLAUDE.md](CLAUDE.md) for the design, the decisions so far and what's next.

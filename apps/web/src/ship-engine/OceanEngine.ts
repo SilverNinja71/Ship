@@ -5,6 +5,8 @@
 
 import type { EnvironmentTheme } from "@ship/ship-theme-kit";
 import { INK, alpha, circlePath, linearGradient, mix, paint, radialGradient, rng, shade } from "./draw.js";
+import { drawCloudSprite, drawSkySprite, drawWaveSprites } from "./sprites/ocean.js";
+import type { WaveBand } from "./sprites/ocean.js";
 import type { Ctx, FrameInfo } from "./types.js";
 
 export interface SeaGeometry {
@@ -48,6 +50,16 @@ export function waveY(i: number, x: number, geo: SeaGeometry, frame: FrameInfo):
   return geo.seaY + (L.offset + y) * geo.unit;
 }
 
+/** Where wave sprites sit: each layer's resting line, bobbing gently, scrolling at its own speed (far is slower). */
+function waveBands(geo: SeaGeometry, frame: FrameInfo): WaveBand[] {
+  const t = frame.t * motion(frame);
+  const swell = 0.7 + 0.3 * frame.wind;
+  return LAYERS.map((L, i) => ({
+    y: geo.seaY + (L.offset + L.amps[1] * swell * Math.sin(t * L.speeds[0] * Math.PI * 0.5 + L.phase)) * geo.unit,
+    scroll: t * (12 + i * 9) * geo.unit,
+  }));
+}
+
 /** The surface the ship floats on: the middle layer, smoothed. */
 export function surfaceAt(x: number, geo: SeaGeometry, frame: FrameInfo): number {
   return (waveY(1, x, geo, frame) + waveY(2, x, geo, frame)) / 2 - LAYERS[1].offset * geo.unit * 0.5 - LAYERS[2].offset * geo.unit * 0.5;
@@ -55,6 +67,7 @@ export function surfaceAt(x: number, geo: SeaGeometry, frame: FrameInfo): number
 
 export function drawSky(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
   const { width: w, height: h } = geo;
+  if (drawSkySprite(ctx, env.id, w, h)) return;
   ctx.fillStyle = linearGradient(ctx, 0, 0, 0, geo.seaY, [
     [0, env.skyTop],
     [1, env.skyBottom],
@@ -277,6 +290,7 @@ export function drawScenery(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, f
 }
 
 export function drawClouds(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+  if (drawCloudSprite(ctx, env.id, geo.width, geo.seaY, frame.t * motion(frame) * 8 * geo.unit)) return;
   const rand = rng(env.id.length * 7 + 3);
   const count = 7;
   const span = geo.width + 400 * geo.unit;
@@ -337,6 +351,7 @@ function cloudCrest(ctx: Ctx, i: number, geo: SeaGeometry, frame: FrameInfo, col
 
 /** The far and middle wave layers, drawn behind the ship. */
 export function drawSeaBack(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+  if (drawWaveSprites(ctx, env.id, waveBands(geo, frame), 0, 1, geo.unit, geo.width, geo.height)) return;
   for (let i = 0; i < 2; i++) {
     const color = env.cloudSea ? mix(env.sea[i], env.skyBottom, 0.25 - i * 0.1) : env.sea[i];
     if (env.cloudSea) cloudCrest(ctx, i, geo, frame, color);
@@ -367,6 +382,7 @@ function drawGlints(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: Fr
 
 /** The near wave layer, drawn in front of the hull so the ship sits in the water. */
 export function drawSeaFront(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+  if (drawWaveSprites(ctx, env.id, waveBands(geo, frame), 2, 2, geo.unit, geo.width, geo.height)) return;
   const i = 2;
   const color = env.cloudSea ? mix(env.sea[i], "#FFFFFF", 0.15) : env.sea[i];
   if (env.cloudSea) cloudCrest(ctx, i, geo, frame, color);

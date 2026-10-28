@@ -30,9 +30,10 @@ The 2026-10-28 spec splits the work by specialty:
   - **Environments:** looping parallax wave layers (foreground, midground, background), cloud banks, and sky gradients (day, sunset, starry twilight, storm).
 - **Claude** writes the code:
   - The monorepo and the contracts in `@ship/shared-types`.
-  - The **sprite compositor** in `apps/web/src/ship-engine/`: preloading, scaling, anchor-point snapping, wave bobbing, parallax, hit regions, the avatar state machine and particles.
+  - The **sprite compositor** in `apps/web/src/ship-engine/` (built in session 4, in `sprites/`): preloading, scaling, anchor-point snapping, wave bobbing, parallax, hit regions, the avatar state machine and particles.
   - The algorithms (SM-2/FSRS, the `bplist00` parser, typed-answer grading), the signaling server and the stores.
   - **Claude no longer draws complex ships or characters with procedural Canvas code.** The procedural art built in session 3 is a stand-in until sprites arrive (see "Next steps").
+  - The art brief for the graphics AI is `docs/art-brief.md`; the full sprite checklist is `docs/sprite-list.md` (generated).
 - **Gemini** handles the AI judgement, with the user's own API key:
   - **The Lookout's video judge** (built): it reads a YouTube video's thumbnail, title, channel and description and decides PROCEED or BLOCKED against the current assignment.
   - **Feynman "blurt diff" grading** (not built yet): it decides which concepts in a blurt are mastered, partly grasped or missed.
@@ -46,11 +47,13 @@ ship/
 ├── apps/
 │   ├── web/                 Vite 8 + React 19 + Tailwind 4 + Zustand 5. The main app.
 │   │   ├── dev/             ships.html and avatars.html: art galleries (dev server only)
-│   │   ├── public/assets/   PLANNED: the graphics AI's sprites, in ships/, avatars/ and environment/
+│   │   ├── public/assets/   the graphics AI's sprites: index.json + one folder per sheet (empty until art arrives)
+│   │   ├── scripts/         assets.ts (checks the art, writes index.json and docs/sprite-list.md), spriteList.ts
 │   │   └── src/
 │   │       ├── ship-engine/ ShipCanvas.tsx (the frame loop), ShipRenderer.ts (main deck), QuartersRenderer.ts,
 │   │       │                OceanEngine.ts, ParticleFX.ts, props.ts (helm, citrus tree, bell), hitRegions.ts,
-│   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks)
+│   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks),
+│   │       │                sprites/ (the sprite loader and compositor: store, paint, ship, props, avatar, ocean)
 │   │       ├── ships/       types.ts (the art contract), index.ts (drawShip), one file per HullStyle, parts/, decor.ts
 │   │       ├── components/  Hud, VoyageDock, PanelHost, ui kit, icons, panels/ (Helm, Captain's Log, Flashcards,
 │   │       │                Shipwright, Wardrobe, Crew, Fleet Log, Lookout, Settings)
@@ -62,9 +65,11 @@ ship/
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
 │   │   └── src/ background/ content/ popup/ options/
 │   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
+├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor)
 └── packages/
     ├── shared-types/        THE CONTRACTS. Every app and package agrees on these shapes.
-    ├── ship-theme-kit/      ship registry, parts catalogs (sails, figureheads, flags, desks), avatar catalog, prices
+    ├── ship-theme-kit/      ship registry, parts catalogs (sails, figureheads, flags, desks), avatar catalog, prices,
+    │                        sprite sheet specs + manifest validation (sprites.ts)
     ├── active-recall-engine/ SM-2 + FSRS schedulers, typed-answer grading, blurt diff engine
     └── integrations/        adapters: Canvas, Todoist, Lodestar, Google Drive, Parchment (.parchment), CSV cards
 ```
@@ -76,13 +81,14 @@ npm install          # once
 npm run dev          # web app on http://localhost:5173 + crew server on :8787 + extension watch build
 npm test             # every package's Vitest tests
 npm run typecheck    # tsc (TypeScript 7) across the repo
+npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/index.json and docs/sprite-list.md
 ```
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-10-28, after the third session)
+## Status (2026-10-28, after the fourth session)
 
-Everything below is merged into `main` (pull request #1, 2026-10-28). Start new work on a fresh branch from `main`.
+Sessions 1–3 are merged into `main` (pull request #1). Session 4 (this CLAUDE.md rewrite, the sprite contracts and the sprite compositor) is on branch `claude/build-foundations`, in pull request #2. Start new work on a fresh branch from `main` once #2 is merged.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -91,17 +97,18 @@ Every build step now has working code:
 - **`packages/ship-theme-kit`** (step 1), **`packages/active-recall-engine`** (step 2), **`apps/signaling-server`** (step 5) and **`packages/integrations`** (step 6), all with tests.
 - **`apps/web`** (step 3), session 3: the scene engine, the 16 ships' artwork and the chibi sailors (both procedural, to be replaced by sprites), every store and every panel. Details below.
 - **`apps/extension`** (step 4), session 3: the Lookout. Details below.
+- **Sprites** (session 4): the contracts (`shared-types/sprite.ts`), the sheet specs and manifest checks (`ship-theme-kit/sprites.ts`), the compositor (`apps/web/src/ship-engine/sprites/`), the asset check script and the art brief. No art has arrived yet, so everything still draws procedurally. Details in "Decisions made in session 4".
 
-`npm test` runs 676 tests, and all pass:
+`npm test` runs 707 tests, and all pass:
 
 | Package | Tests |
 |---|---|
-| ship-theme-kit | 22 |
+| ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
 | active-recall-engine | 41 |
 | crew server | 100 |
 | integrations | 104 |
 | extension | 171 |
-| web (ship art 147, sailor art 68, stores and voyage rules 23) | 238 |
+| web (ship art 147, sailor art 68, stores and voyage rules 23, sprite engine 11, asset checks 6) | 255 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
 
@@ -110,36 +117,37 @@ Every build step now has working code:
 - Two browser contexts in one crew room against the real crew server: presence, a shout, and a crewmate at the galley table.
 - The built extension loaded into Chromium with the real web app: it connects, the Siren Gate blocks a (faked) YouTube home page during a voyage, and steering back pays exactly 50 doubloons once.
 
+**Verified in session 4** with throwaway placeholder sprites (plain shapes, deleted afterwards, never committed) for the Woolly Wanderer, square sails, the ram, the Sun-Hat Skull, the citrus tree, the Captain's Desk, the galley table, the starter sailor and the tropical sea:
+- They passed `npm run assets`.
+- On the deck: the hull layers and rigging line up with the layout markers, sails are furled when docked and billow under sail, and the flag waves.
+- The sailor is tinted and posed in all three states and all break activities. Sailors without a complete set stay procedural, and the procedural helm and bell sit beside sprite parts.
+- The quarters' cabin-room sprite shows the sea through its porthole.
+
 **Never checked for real:**
 - A real Canvas, Todoist or Drive account, a real Parchment file or `study.json`, real YouTube, or a real Gemini key.
 - The Lookout's options page has a **Check key** button for Gemini.
 - Parchment's Swift source still needs comparing (see session 2 notes).
 
-Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23, esbuild 0.28, @types/chrome 0.3.
+Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23 (crew server and web scripts), esbuild 0.28, @types/chrome 0.3, @types/node 26.6.
 
 ## Next steps (from the 2026-10-28 spec)
 
 Do these in order.
 
-1. **Lock the sprite contracts** in `packages/shared-types` before writing any engine code.
-   - **Sprite references:** a type for a sprite: its image path, size, and anchor point (`anchorX`, `anchorY`).
-   - **Placements:** where a sprite sits: `x`, `y` (in ship units, deck at y = 0) and `zIndex`.
-   - **Sheets:** sets of sprites for each ship part and each avatar layer, including the citrus tree's three states and the sails' two.
-   - **Per-ship metadata:** sprite metadata and offsets for each ship go in `@ship/ship-theme-kit`, next to its `ShipDefinition`.
-   - **Manifest:** each asset folder gets a JSON manifest next to the images, so the art AI's output can be checked by a test.
-2. **Sprite compositor (Claude).** Rebuild `ShipCanvas`'s drawing and `AvatarRenderer` so they compose sprites from that metadata instead of hard-coded drawing curves. Keep:
-   - wave bobbing and parallax;
-   - particles;
-   - the hit regions (helm, citrus tree, bell, desk, sailor);
-   - the three avatar states;
-   - the existing `HullLayout` and `AvatarRenderer` APIs where possible.
-   - **The switch-over:** for each part, draw its sprite when one exists, and the current procedural art when it doesn't, so the app keeps working while art arrives. Once a ship or sailor layer has a complete sprite set, delete its procedural code.
-3. **Asset pipeline (the graphics AI).** Start with a starter pack, all on transparent backgrounds with the anchor points written into the manifest:
-   - the Woolly Wanderer's hull, sails (billowing and furled) and ram figurehead;
-   - the citrus tree in its three states;
-   - the starter sailor's layers.
-
-   Write the art briefs (sizes, anchors, palette, the "not One Piece" rules) as a file the graphics AI can be handed.
+1. ✅ **Lock the sprite contracts** (session 4). See "Decisions made in session 4".
+   - The shapes are in `shared-types/sprite.ts`: `SpriteRef`, `SpritePlacement`, `SpriteManifest` and the layer names.
+   - The sheet specs (sizes and anchors) and `validateManifest` are in `ship-theme-kit/sprites.ts`.
+2. ✅ **Sprite compositor** (session 4). Each part draws its sprite when its set is complete, and its procedural art otherwise.
+   - It kept bobbing, parallax, particles, hit regions, the three avatar states, and the `drawShip`, `HullLayout` and `AvatarRenderer` APIs.
+   - **Still to do:** once a ship or sailor layer has a complete sprite set *and the user is happy with it*, delete its procedural code.
+3. **Asset pipeline (the graphics AI).** The brief is written: `docs/art-brief.md`, plus the generated checklist `docs/sprite-list.md`.
+   - **The starter pack**, all on transparent backgrounds with anchors in the manifests:
+     - the Woolly Wanderer's hull layers and rigging;
+     - the square sails, billowing and furled;
+     - the ram figurehead and the Sun-Hat Skull flag;
+     - the citrus tree in its three states, plus a fruit and a blossom;
+     - the starter sailor's layers and the Captain's Desk.
+   - **When art arrives:** put it in `apps/web/public/assets/<sheet>/` with a `manifest.json`, run `npm run assets -w @ship/web`, then `npm test`, then look at it in the galleries.
 4. **The Lookout (Gemini).** Built in session 3. It still needs testing with a real key.
 5. **Gemini blurt grading.** Grade the Captain's Log semantically with Gemini, and keep the current heuristic engine as the fallback when there's no key or no network. **Open question:** where the web app gets the key: its own setting, or borrowed from the Lookout over the bridge.
 
@@ -421,6 +429,91 @@ This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI'
 - Decide on Paper (the art app) imports and on a neutral `"file"` IntegrationId for plain text.
 - **Audio:** the spec's asset folders include "audio ambiance". The sea sound is synthesized today. Recorded ambience could replace it, but sound must stay off by default.
 - Possible additions: install as an app (PWA), cross-device sync, a weekly "voyage report", and recording your own sessions as ghosts for friends.
+
+## Decisions made in session 4
+
+### Sprite contracts (`shared-types/sprite.ts`, `ship-theme-kit/sprites.ts`)
+
+**Where the art lives**
+- Art lives in `apps/web/public/assets/`, one folder per sheet, each with its own `manifest.json` (a `SpriteManifest`).
+- Folders (`SPRITE_FOLDERS`): `ships/<shipId>`, `sails`, `figureheads`, `flags`, `props`, `avatars` and `environment/<envId>`.
+- `index.json` lists the folders that have art. The app reads it first, and fetches nothing else while it's empty. `npm run assets -w @ship/web` writes it.
+
+**Coordinates:** at density 1, one image pixel is one scene unit. That means ship units on deck, station units for sailors and room units in the quarters. `"density": 2` marks double-size art.
+
+**Sizes** (exact, and checked):
+
+| Sprite | Size | Anchor |
+|---|---|---|
+| hull layers | 1000×300 | (500, 150): the deck line at the ship's middle |
+| rigging | 1200×700 | (600, 700) |
+| sails | 320×320 | the top yard; the engine fits each set to its mast's canvas from `rigFor` |
+| figureheads | 160×160 | the mount, (24, 96), facing right |
+| flags | 120×72 | the hoist's top corner; drawn flat |
+| avatar layers, desks, galley table | 256×256, the station frame | (128, 246): the floor under the desk |
+| cabin-room | 1000×640 | |
+| environment sky | 1920×1080 | |
+| clouds, wave bands | 2048×512 | waves sit on their crest row |
+
+**Where per-ship offsets live (a deviation from the spec)**
+- Each ship's offsets are in its own `manifest.json`, next to the art: `layout` overrides on top of the built-in `HullLayout`, and `placements`. The spec put them in the theme kit.
+- The theme kit holds:
+  - what every sheet must contain (`spriteSheetSpecs()`);
+  - the checks (`validateManifest`, which also checks the shape of every `layout` key, and `sheetProgress`);
+  - the sailor's layer lookup (`avatarSpriteSlots`, `missingAvatarSprites`).
+
+**Rigging is its own sprite.** The spec only sizes hulls. Masts reach −560, which a 300-tall hull can't hold, so the masts, yards, crow's nest and flag pole are a separate 1200×700 sprite. Anything more than about 30 units below the waterline is hidden by the front waves, so 300 is tall enough for the hull itself.
+
+**Ship stacking** (`SHIP_Z`): hull-back 10, rigging 20, sails 30, deck details 40, props and sailors 50, hull-front 60, figurehead 70, flag 80. On a tie, the manifest's sprites go first.
+
+**Sailor layers**, bottom to top (`AVATAR_LAYER_ORDER`): hair-back, body, coat, [desk], tool, head, eyes, mouth, hair-front, hat, accessory, arms, hands.
+- Arms come last so a cup or spyglass covers the face, and folded arms cover a sleeping head.
+- **Arm poses:** writing, typing, relaxed, sipping, stretching, spyglass and resting.
+- **Eyes:** open, focus, blink, happy and sleep.
+- **Mouths:** smile, flat, open, sip and sleep.
+- The procedural pose has more faces; they map onto these (squeeze and wink become happy, yawn becomes open, and so on).
+
+**Tinting**
+- Skin, hair, coats and sleeves are drawn in greys and marked `tintable`. The engine colors them with "hard-light" over the chosen color, so `#808080` becomes the color itself.
+- A variant id wins over tinting when it exists: `body:<skin>`, `head:<skin>`, `arms:<pose>:<coat>` or `hands:<pose>:<skin>`.
+
+### Compositor (`apps/web/src/ship-engine/sprites/`)
+
+**Loading** (`store.ts`) is lazy:
+- `index.json` is read once, by `sprites.start()` in ShipCanvas.
+- A sheet's manifest and images load the first time something asks for that sheet.
+- A sheet appears only when all of its images are in.
+- Sprites that fail validation are dropped with a console warning. A folder is fetched once, even if it fails.
+- `sprites.version` goes up as each sheet arrives. That clears `shipLayout`'s cache and the cache of which sailors are ready.
+- The galleries call `preloadAll()`.
+
+**The switch-over happens per part**, at the existing drawing entry points: `drawShip`, `drawSails`, `drawFigurehead`, `drawFlag`, `drawHelm`, `drawCitrusTree`, `drawBell`, `drawDesk`, `drawGalleyTableBody`, `drawCabinDecor`, `drawSky`, `drawClouds`, `drawSeaBack`/`drawSeaFront`, the quarters' room and `AvatarRenderer`. A part switches when its set is complete:
+- **A ship:** once `hull-back`, `rigging` and `hull-front` are all in. Its manifest `layout` then applies too. On a sprite ship, bare masts get no procedural yards.
+- **A sail style:** once both looks are in. Sails are furled while the wind is under 0.45 (docked) and billow above it (shore leave and sailing).
+- **The citrus tree:** once all three looks, the fruit and the blossom are in. The engine hangs one fruit sprite per ripe fruit.
+- **The helm:** once the stand and the wheel are in; the wheel turns. The bell swings around its anchor.
+- **The sea:** once all three wave bands are in. They ride the procedural wave layers' heights, so the ship's bobbing still matches the water.
+- **A sailor:** only when `missingAvatarSprites` is empty for their loadout, so no sailor is half sprite and half procedural. Desks switch on their own.
+
+**The engine's own effects stay procedural:** the flag's wave (drawn in strips), the sails' breathing, Zzz, stretch lines, name tags, particles, the bell's sound lines, lantern glow and the night tint.
+
+**Build output:** Vite writes its bundles to `dist/static/` (`build.assetsDir`), so they can't collide with `dist/assets/`.
+
+### Asset checks
+
+`npm run assets -w @ship/web` runs `apps/web/scripts/assets.ts`. It:
+- validates every manifest;
+- reads each PNG's real size from its header (WebP and SVG sizes aren't measured);
+- warns about images the manifest doesn't list;
+- reports which parts are complete;
+- writes `public/assets/index.json` and `docs/sprite-list.md`.
+
+With `--check`, it only checks.
+
+Also:
+- `npm test` runs the same checks on the real folder, and fails if `index.json` or `sprite-list.md` is out of date.
+- `apps/web/scripts/` has its own `tsconfig.json` with Node types. `npm run typecheck -w @ship/web` checks both it and the app.
+- The galleries take `?procedural=1` to ignore sprites, for side-by-side comparisons.
 
 ## Conventions
 

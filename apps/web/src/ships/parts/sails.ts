@@ -4,6 +4,7 @@
 import type { SailStyle, ShipDefinition } from "@ship/shared-types";
 import { INK, alpha, circlePath, ellipsePath, hashString, linearGradient, mix, outlineFor, paint, rng, roundRectPath, shade, sway } from "../../ship-engine/draw.js";
 import type { Ctx, FrameInfo, Point } from "../../ship-engine/types.js";
+import { drawSailSprite } from "../../ship-engine/sprites/ship.js";
 import { glow, isNight, paintIn, rigColors, rigFor, stay } from "../kit.js";
 import type { Rig } from "../kit.js";
 import type { HullLayout } from "../types.js";
@@ -38,6 +39,7 @@ interface SailMotion {
 export function drawSails(ctx: Ctx, style: SailStyle, ship: ShipDefinition, layout: HullLayout, i: number, frame: FrameInfo): void {
   const rig = rigFor(ship, layout, i);
   const m = layout.masts[i];
+  if (drawSailSprite(ctx, style, m, rig, frame)) return;
   const colors = rigColors(ship);
   const phase = i * 1.3 + (hashString(ship.id) % 10);
   const sailing = ship.defaultSails !== "none";

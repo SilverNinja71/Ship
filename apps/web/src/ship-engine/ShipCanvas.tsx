@@ -3,7 +3,6 @@
 // the Captain's Quarters, and turns clicks on the ship into actions.
 
 import { useEffect, useRef } from "react";
-import type { ShipDefinition } from "@ship/shared-types";
 import { CABIN_DECOR, ENVIRONMENTS } from "@ship/ship-theme-kit";
 import { ringChime } from "../hooks/useAmbiance.js";
 import { focusProgress } from "../lib/voyageLogic.js";
@@ -15,12 +14,12 @@ import { resolveActiveShip, resolveAvatar, useCustomizer } from "../stores/shipC
 import { useUi } from "../stores/uiStore.js";
 import { useVoyage } from "../stores/voyageStore.js";
 import { shipLayout } from "../ships/index.js";
-import type { HullLayout } from "../ships/index.js";
 import { drawRegions, hitTest } from "./hitRegions.js";
 import type { HitId, HitRegion } from "./hitRegions.js";
 import { ParticleField } from "./ParticleFX.js";
 import { renderQuarters } from "./QuartersRenderer.js";
 import { renderDeck } from "./ShipRenderer.js";
+import { sprites } from "./sprites/store.js";
 import type { CrewOnDeck, Viewport } from "./ShipRenderer.js";
 import type { FrameInfo } from "./types.js";
 
@@ -41,13 +40,6 @@ interface LoopState {
   treeAt: { x: number; y: number };
   unit: number;
   soundHintShown: boolean;
-}
-
-const layouts = new Map<string, HullLayout>();
-function layoutFor(ship: ShipDefinition): HullLayout {
-  let l = layouts.get(ship.id);
-  if (!l) layouts.set(ship.id, (l = shipLayout(ship)));
-  return l;
 }
 
 const approach = (value: number, target: number, rate: number, dt: number) => value + (target - value) * Math.min(1, rate * dt);
@@ -72,6 +64,8 @@ export function ShipCanvas() {
   const particles = useRef(new ParticleField());
 
   useEffect(() => {
+    // The graphics AI's art, where it exists; everything else stays procedural.
+    void sprites.start();
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d", { alpha: false })!;
     let raf = 0;
@@ -151,7 +145,7 @@ export function ShipCanvas() {
             helmAngle: s.helmAngle,
             bellSwing,
           },
-          layoutFor(ship),
+          shipLayout(ship),
         );
         s.treeAt = out.treeAt;
         s.unit = out.unit;

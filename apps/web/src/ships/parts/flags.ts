@@ -5,6 +5,7 @@
 import type { FlagId, ShipDefinition } from "@ship/shared-types";
 import { INK, alpha, circlePath, clamp, ellipsePath, mix, outlineFor, paint, roundRectPath, shade, smoothClosedPath } from "../../ship-engine/draw.js";
 import type { Ctx, FrameInfo, Point } from "../../ship-engine/types.js";
+import { drawFlagSprite, flagWave } from "../../ship-engine/sprites/ship.js";
 import { FLAG_DROP, glow, isNight } from "../kit.js";
 import { sparkle } from "./sails.js";
 
@@ -34,13 +35,12 @@ const FIELD: Record<FlagId, string> = {
 };
 
 export function drawFlag(ctx: Ctx, id: FlagId, pole: Point, frame: FrameInfo, ship: ShipDefinition): void {
+  if (drawFlagSprite(ctx, id, pole, frame)) return;
   const w = frame.wind;
-  const speed = (3 + 4 * w) * (frame.reducedMotion ? 0.08 : 1);
-  const amp = 3 + 7 * w;
   const len = FLAG_LENGTH * (0.86 + 0.14 * w);
   const y0 = pole.y + 4;
   const H = Math.min(FLAG_HEIGHT, FLAG_DROP - 8);
-  const off = (u: number) => amp * u * Math.sin(u * 2.4 * Math.PI - frame.t * speed) + (1 - w) * 12 * u * u;
+  const off = flagWave(frame);
   const cloth: Cloth = { at: (u, v) => ({ x: pole.x - u * len, y: y0 + v * H * (1 - 0.08 * u * (1 - w)) + off(u) }), len, y0 };
   const field = FIELD[id] ?? "#22202A";
   const outline = (c: Ctx) => region(c, cloth, 0, 1, 0, 1);
