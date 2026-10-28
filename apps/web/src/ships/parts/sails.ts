@@ -2,7 +2,7 @@
 // sails always clear the crow's nest, the flag and the sailors below.
 
 import type { SailStyle, ShipDefinition } from "@ship/shared-types";
-import { INK, alpha, circlePath, ellipsePath, hashString, line, linearGradient, mix, outlineFor, paint, rng, roundRectPath, shade, sway } from "../../ship-engine/draw.js";
+import { INK, alpha, circlePath, ellipsePath, hashString, linearGradient, mix, outlineFor, paint, rng, roundRectPath, shade, sway } from "../../ship-engine/draw.js";
 import type { Ctx, FrameInfo, Point } from "../../ship-engine/types.js";
 import { glow, isNight, paintIn, rigColors, rigFor, stay } from "../kit.js";
 import type { Rig } from "../kit.js";
@@ -71,7 +71,7 @@ export function drawSails(ctx: Ctx, style: SailStyle, ship: ShipDefinition, layo
         featherSail(ctx, b, motion, ship, frame, seed, phase);
         break;
       case "papel-picado":
-        papelPicado(ctx, b, frame, seed, phase, i * 2 + k);
+        papelPicado(ctx, b, frame, phase, i * 2 + k);
         break;
     }
     yard(ctx, b, colors.wood, colors.iron);
@@ -452,7 +452,7 @@ function solarStack(ctx: Ctx, ship: ShipDefinition, rig: Rig, cx: number, frame:
 const PICADO = ["#FF7AC6", "#FFB84D", "#3DF2C2", "#FFE25C", "#A98BFF", "#FF6B6B"];
 
 /** A cut-paper banner: scalloped foot, a punched flower and diamonds, fluttering. */
-function papelPicado(ctx: Ctx, b: Box, frame: FrameInfo, seed: number, phase: number, colorIndex: number): void {
+function papelPicado(ctx: Ctx, b: Box, frame: FrameInfo, phase: number, colorIndex: number): void {
   const color = PICADO[colorIndex % PICADO.length];
   const rm = frame.reducedMotion;
   const h = b.bottom - b.top;
@@ -515,7 +515,6 @@ function papelPicado(ctx: Ctx, b: Box, frame: FrameInfo, seed: number, phase: nu
   ctx.lineJoin = "round";
   ctx.strokeStyle = outlineFor(color);
   ctx.stroke();
-  void seed;
 }
 
 function diamond(c: Ctx, x: number, y: number, w: number, h: number): void {
@@ -545,5 +544,4 @@ function bunting(ctx: Ctx, a: Point, b: Point, frame: FrameInfo, salt: number): 
       c.closePath();
     }, color, { width: 1.6 });
   }
-  void line;
 }

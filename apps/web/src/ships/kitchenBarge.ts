@@ -16,8 +16,7 @@ const ROOF = { from: -122, to: 122, y: CABIN.roof };
 const RIGHT = { from: 140, to: 420, y: 0 };
 const TAIL = { x: -440 };
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([
     { ...LEFT, items: ["helm", "desk"] },
     { ...ROOF, items: ["tree", "table"] },
@@ -90,7 +89,7 @@ const drawDeck: HullDrawer["drawDeck"] = (ctx, ship, l, frame) => {
   if (ship.extras.includes("kitchen-chimney") && l.smoke[0]) kitchenChimney(ctx, l.smoke[0].x, ROOF.y - 22, l.smoke[0].y);
 };
 
-const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
+const drawFront: HullDrawer["drawFront"] = (ctx, ship, _l, frame) => {
   const p = ship.palette;
   const belly = mix(p.hull, "#FFFFFF", 0.55);
   paintHull(ctx, ship, outline, {

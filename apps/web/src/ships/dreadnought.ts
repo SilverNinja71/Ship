@@ -18,8 +18,7 @@ const MAST_X = -30;
 const BRIDGE = { from: -170, to: 70, top: -262 };
 const FUNNELS = [-286, -372];
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([{ ...STATIONS, y: 0, items: ["tree", "helm", "desk", "table", "table", "table"] }]);
   return {
     deck: DECK,
@@ -65,6 +64,7 @@ const drawBack: HullDrawer["drawBack"] = (ctx, ship, l, frame) => {
   FUNNELS.forEach((x, k) => smokestack(ctx, x, -24, -380 + k * 20, 68, { body: p.hullDark, band: brass, cap: shade(brass, -0.3) }, 0.07));
   signalMast(ctx, MAST_X, BRIDGE.top - 10, -540, frame, { color: shade(p.hull, -0.1), spottingTop: -420 });
   deckhouse(ctx, ship, -240, 120, -160, -24, p.hull, frame, { rivets: true });
+  for (let x = -214; x < 110; x += 36) porthole(ctx, x, -120, 6.5, ship, frame, { rim: brass, seed: x, bolts: false });
   deckhouse(ctx, ship, BRIDGE.from, BRIDGE.to, BRIDGE.top, -156, steel, frame, { windows: { y: BRIDGE.top + 24, h: 26, frame: brass }, roof: p.hullDark, rivets: true });
   // Bridge wings with brass telescopes; the aft wing carries the bell over the helm.
   const wingY = l.bell.y - 22;

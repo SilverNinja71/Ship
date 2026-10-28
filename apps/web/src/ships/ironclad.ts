@@ -23,8 +23,7 @@ const STACK_RAKE = 0.07;
 /** The stack rises from the roof in the gap between the desk and the first table. */
 const stackXOf = (deskX: number, tableX: number) => Math.round((deskX + 75 + tableX - 65) / 2);
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([
     { ...AFT, items: ["helm", "tree"] },
     { ...ROOF, items: ["desk", "table", "table"] },
@@ -82,7 +81,7 @@ const drawBack: HullDrawer["drawBack"] = (ctx, ship, l) => {
   bellBracket(ctx, { x: STAFF_X, y: l.bell.y - 9 }, l.bell, p.trim, p.accent);
 };
 
-const drawDeck: HullDrawer["drawDeck"] = (ctx, ship, _l, frame) => {
+const drawDeck: HullDrawer["drawDeck"] = (ctx, ship) => {
   const p = ship.palette;
   drawDeckBand(ctx, ship, { from: AFT.from, to: FORE.to, y: 0 });
   // The casemate: sloped armor plates, riveted, with gun ports.
@@ -111,7 +110,6 @@ const drawDeck: HullDrawer["drawDeck"] = (ctx, ship, _l, frame) => {
   );
   if (ship.extras.includes("cannons")) [-176, -40, 96].forEach((x) => gunPort(ctx, x, -64, ship, { size: 1.15, frameColor: p.accent }));
   drawDeckBand(ctx, ship, ROOF, { salt: 9, color: shade(p.deck, 0.08) });
-  void frame;
 };
 
 const drawFront: HullDrawer["drawFront"] = (ctx, ship) => {

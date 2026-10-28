@@ -17,7 +17,7 @@ const FORE = { from: 340, to: 470, y: -48 };
 const STEM = { x: 498, y: -112 };
 const BOWSPRIT = { from: { x: 450, y: -66 }, to: { x: 604, y: -160 } };
 
-function layout(ship: ShipDefinition): HullLayout {
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([
     { ...CASTLE, items: ["helm", "tree"] },
     { ...WAIST, y: 0, items: ["desk", "table", "table", "table"] },

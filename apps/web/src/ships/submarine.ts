@@ -17,8 +17,7 @@ const WALK = { from: -76, to: 366, y: 0 };
 const SCOPE_X = -100;
 const STAFF_X = -304;
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([
     { ...TOWER, items: ["tree", "helm"] },
     { ...WALK, items: ["desk", "table", "table"] },

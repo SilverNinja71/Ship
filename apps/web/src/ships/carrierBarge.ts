@@ -7,7 +7,7 @@ import type { ShipDefinition } from "@ship/shared-types";
 import { INK, alpha, circlePath, hashString, line, mix, outlineFor, paint, rng, roundRectPath, shade, sway } from "../ship-engine/draw.js";
 import type { Ctx } from "../ship-engine/types.js";
 import { leviathan } from "./parts/leviathan.js";
-import { arrange, band, bellBracket, drawDeckBand, drawMastFoot, drawMastPole, drawShrouds, glow, isNight, mastAt, paintIn, rigColors } from "./kit.js";
+import { arrange, bellBracket, drawDeckBand, drawMastFoot, drawMastPole, drawShrouds, glow, isNight, mastAt, paintIn, rigColors } from "./kit.js";
 import { hullPath, paintHull } from "./hullKit.js";
 import { deckhouse, plating } from "./warship.js";
 import type { HullDrawer, HullLayout } from "./types.js";
@@ -15,8 +15,7 @@ import type { HullDrawer, HullLayout } from "./types.js";
 const DECK = { from: -480, to: 480 };
 const ISLAND = { from: -262, to: -128, top: -252 };
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([{ from: -476, to: 476, y: 0, items: ["helm", "tree", "desk", "table", "table", "table", "table"] }]);
   const mastX = s.tables[1].x;
   return {

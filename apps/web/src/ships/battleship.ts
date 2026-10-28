@@ -5,7 +5,7 @@
 import type { ShipDefinition } from "@ship/shared-types";
 import { alpha, circlePath, shade } from "../ship-engine/draw.js";
 import type { Ctx } from "../ship-engine/types.js";
-import { smokestack, turret } from "./parts/extras.js";
+import { porthole, smokestack, turret } from "./parts/extras.js";
 import { arrange, band, bellBracket, drawDeckBand, paintIn } from "./kit.js";
 import { hullPath, paintHull } from "./hullKit.js";
 import { deckhouse, hawseAnchor, plating, signalMast, stanchions } from "./warship.js";
@@ -17,8 +17,7 @@ const MAST_X = -52;
 const BRIDGE = { from: -150, to: 20, top: -252 };
 const FUNNEL_X = -300;
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([{ ...STATIONS, y: 0, items: ["tree", "helm", "desk", "table", "table", "table"] }]);
   return {
     deck: DECK,
@@ -61,6 +60,7 @@ const drawBack: HullDrawer["drawBack"] = (ctx, ship, l, frame) => {
   const steel = shade(p.hull, -0.06);
   smokestack(ctx, FUNNEL_X, -24, -350, 74, { body: navy, band: p.accent, cap: "#2A2F36" }, 0.06);
   deckhouse(ctx, ship, -230, 70, -150, -24, steel, frame, { rivets: true });
+  for (let x = -206; x < 60; x += 34) porthole(ctx, x, -112, 6, ship, frame, { rim: navy, seed: x, bolts: false });
   deckhouse(ctx, ship, BRIDGE.from, BRIDGE.to, BRIDGE.top, -148, p.hull, frame, { windows: { y: BRIDGE.top + 22, h: 22, frame: navy }, roof: navy });
   signalMast(ctx, MAST_X, BRIDGE.top - 10, -520, frame, { color: navy, yard: -418, radar: -366, pennants: true });
   // Bridge wing reaching aft over the helm; the bell hangs under it.
@@ -68,18 +68,16 @@ const drawBack: HullDrawer["drawBack"] = (ctx, ship, l, frame) => {
   bellBracket(ctx, { x: l.bell.x + 12, y: l.bell.y - 12 }, l.bell, navy, p.accent);
 };
 
-const drawDeck: HullDrawer["drawDeck"] = (ctx, ship, l, frame) => {
+const drawDeck: HullDrawer["drawDeck"] = (ctx, ship, _l, frame) => {
   drawDeckBand(ctx, ship, { ...DECK, y: 0 });
   if (ship.extras.includes("turrets")) {
     turret(ctx, -430, 0, ship, frame, { facing: -1, barrels: 2, color: shade(ship.palette.deck, 0.1), seed: 1 });
     turret(ctx, 430, 0, ship, frame, { facing: 1, barrels: 2, color: shade(ship.palette.deck, 0.1), seed: 2 });
   }
-  void l;
 };
 
-const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
+const drawFront: HullDrawer["drawFront"] = (ctx, ship) => {
   const p = ship.palette;
-  void frame;
   paintHull(ctx, ship, outline, {
     fill: p.hull,
     low: p.hullDark,
@@ -98,7 +96,6 @@ const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
   });
   hawseAnchor(ctx, 440, 20, "#2A2F36");
   stanchions(ctx, DECK.from + 8, DECK.to - 6, -3, p.hullDark, 22, 40);
-  void l;
 };
 
 export const battleship: HullDrawer = { layout, drawBack, drawDeck, drawFront };

@@ -185,6 +185,16 @@ function coralSkin(ctx: Ctx, ship: ShipDefinition, frame: FrameInfo): void {
     }
     ctx.stroke();
   }
+  // A few shells and starfish clinging to the hull.
+  for (const [x, y, k] of [
+    [-300, 60, 0],
+    [-40, 52, 1],
+    [210, 64, 0],
+    [380, 50, 1],
+  ] as const) {
+    if (k === 0) shell(ctx, x, y, "#FFE3D3");
+    else starfish(ctx, x, y, 9, ship.palette.accent);
+  }
   const glowC = ship.palette.glow ?? ship.palette.trim;
   for (let k = 0; k < 26; k++) {
     const x = -480 + r() * 940;
@@ -195,6 +205,35 @@ function coralSkin(ctx: Ctx, ship: ShipDefinition, frame: FrameInfo): void {
     ctx.fillStyle = alpha(mix(glowC, "#FFFFFF", 0.3), 0.55 + 0.35 * tw);
     ctx.fill();
   }
+}
+
+function shell(ctx: Ctx, x: number, y: number, color: string): void {
+  paint(ctx, (c) => {
+    c.moveTo(x - 10, y + 6);
+    c.quadraticCurveTo(x - 12, y - 10, x, y - 11);
+    c.quadraticCurveTo(x + 12, y - 10, x + 10, y + 6);
+    c.closePath();
+  }, color, { width: 2 });
+  ctx.strokeStyle = alpha(shade(color, -0.4), 0.7);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (const dx of [-5, 0, 5]) {
+    ctx.moveTo(x + dx * 0.4, y + 5);
+    ctx.lineTo(x + dx, y - 8);
+  }
+  ctx.stroke();
+}
+
+function starfish(ctx: Ctx, x: number, y: number, r: number, color: string): void {
+  paint(ctx, (c) => {
+    for (let k = 0; k < 10; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI) / 5;
+      const rr = k % 2 === 0 ? r : r * 0.45;
+      if (k === 0) c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      else c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    c.closePath();
+  }, color, { width: 2 });
 }
 
 /** Branching coral posts instead of balusters, their tips glowing. */
@@ -237,7 +276,6 @@ function coralRails(ctx: Ctx, ship: ShipDefinition, l: HullLayout, frame: FrameI
       if (night) glow(ctx, x, s.y - h, 26, tip, 0.5 * tw);
     }
   }
-  void l;
 }
 
 export const caravel: HullDrawer = { layout, drawBack, drawDeck, drawFront };

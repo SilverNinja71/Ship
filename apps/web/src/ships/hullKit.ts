@@ -3,8 +3,8 @@
 // standard rig pass. Each hull file supplies its own shape and decoration.
 
 import type { ShipDefinition } from "@ship/shared-types";
-import { INK, alpha, line, mix, outlineFor, paint, roundRectPath, shade } from "../ship-engine/draw.js";
-import type { Ctx, FrameInfo, Point } from "../ship-engine/types.js";
+import { INK, alpha, line, outlineFor, paint, roundRectPath, shade } from "../ship-engine/draw.js";
+import type { Ctx, Point } from "../ship-engine/types.js";
 import {
   band,
   bellBracket,
@@ -18,7 +18,6 @@ import {
   postRail,
   rigColors,
   stay,
-  surfaceOfMast,
   wavyBand,
 } from "./kit.js";
 import type { Corner, MastStyle } from "./kit.js";
@@ -187,21 +186,3 @@ export function sternPost(ctx: Ctx, x: number, foot: number, top: number, bell: 
   line(ctx, [{ x, y: bell.y + 30 }, { x: x + (bell.x - x) * 0.5, y: bell.y - 8 }], wood, 3);
   return { x, y: top };
 }
-
-/** The usual cabin windows in a stern castle's side. */
-export function sternWindows(ctx: Ctx, xs: number[], y: number, w: number, h: number, frameColor: string, ship: ShipDefinition, frame: FrameInfo, drawWindow: (x: number, k: number) => void): void {
-  xs.forEach((x, k) => drawWindow(x, k));
-  void y;
-  void w;
-  void h;
-  void frameColor;
-  void ship;
-  void frame;
-}
-
-export function mastBaseSurface(layout: HullLayout, i: number): number {
-  return surfaceOfMast(layout.masts[i]);
-}
-
-export const wood = (ship: ShipDefinition) => rigColors(ship).wood;
-export const lighten = (c: string, t = 0.2) => mix(c, "#FFFFFF", t);

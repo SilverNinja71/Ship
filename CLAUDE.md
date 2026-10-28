@@ -68,7 +68,18 @@ Every build step now has working code:
 - **`apps/web`** (step 3), session 3: the scene engine, the 16 ships' artwork, the chibi sailors, every store and every panel. Details below.
 - **`apps/extension`** (step 4), session 3: the Lookout. Details below.
 
-TEST_COUNTS_PLACEHOLDER
+`npm test` runs 676 tests, and all pass:
+
+| Package | Tests |
+|---|---|
+| ship-theme-kit | 22 |
+| active-recall-engine | 41 |
+| crew server | 100 |
+| integrations | 104 |
+| extension | 171 |
+| web (ship art 147, sailor art 68, stores and voyage rules 23) | 238 |
+
+`npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
 
 **Verified in session 3** with Playwright's headless Chromium (muted, no pop-ups). Claude Code cloud sessions have no built-in browser pane, so this is the stand-in. Never use the user's own Chrome.
 - Screenshots of the deck, the quarters, every panel and a phone-sized layout, with sample data.
@@ -301,7 +312,24 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - The Sun-Hat Skull flag (a teal-banded sun hat over crossed quills) is restyled so it can't be mistaken for the Straw Hat Jolly Roger.
 
 ### Web app: art
-ART_NOTES_PLACEHOLDER
+- **Ship art files** (`src/ships/`):
+  - One file per hull family, with shared helpers in `kit.ts`, `hullKit.ts` and `warship.ts`.
+  - `parts/` holds the sails, figureheads, flags, extras and the leviathan; `decor.ts` holds the 16 cabin items.
+  - `drawShip` never draws sails or figureheads on a ship that can't carry them, whatever the loadout says.
+- **Layouts:**
+  - Raised decks are real surfaces: stern castles at about −54 to −84 (y is up-negative), the Floating Galley's roof terrace at −124, the Sunfish's conning tower at −128 (helm and tree), and the ironclad's casemate roof at −136 (desk and two tables).
+  - On citrus-tree ships, orchard trees take a table's space: Woolly has 3 tables plus 1 orchard tree, and Merfolk 2 plus 2.
+  - The bell hangs over the helm.
+  - On engine ships, the signal mast starts at the bridge roof.
+  - Waterlines run from 44 (ironclad) to 118 (Pegasus). `bounds` reaches x 660 for the Kaiju's leviathan.
+- **Sun-Hat Skull flag:** a lilac sun hat with a teal band and a daisy, a winking skull in round gold glasses, and teal crossed quills.
+- **Figureheads** are fixed-size; `drawFigurehead` already takes a scale if small hulls need one.
+- **Sailor art** (`src/ship-engine/avatar/`):
+  - Built from layers: back hair, coat, desk, arms, face, front hair, hat, accessories, tool, then the hands over the tool.
+  - Break activities rotate every 6.5 s (sip, stretch, spyglass) in a per-sailor order.
+  - `GALLEY_SEAT_X` is 40.
+- **Ghost cost:** ghosts fade as one layer through a cached offscreen canvas. On this machine's CPU-only headless Chromium, a station costs about 2.6 ms at deck size, and the ghost layer adds almost nothing there; at 2.5× it adds about 3.7 ms. If a full deck is slow on real machines, cache each sailor's head as a bitmap.
+- **Load time:** the production bundle is about 630 kB (207 kB gzipped). If it matters, code-split the panels with `React.lazy`.
 
 ### Lookout extension
 - **Internals:**

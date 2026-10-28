@@ -6,7 +6,7 @@ import type { ShipDefinition } from "@ship/shared-types";
 import { alpha, circlePath, outlineFor, paint, roundRectPath, shade } from "../ship-engine/draw.js";
 import type { Ctx } from "../ship-engine/types.js";
 import { astrolabe, stainedGlass } from "./parts/extras.js";
-import { arrange, band, bellBracket, mastAt, rigColors, rivetRow } from "./kit.js";
+import { arrange, bellBracket, mastAt, rigColors, rivetRow } from "./kit.js";
 import { capRail, drawBowspritSpar, drawDecks, drawFarBulwarks, drawRaisedRails, drawRig, hullPath, paintHull, steppedTop } from "./hullKit.js";
 import type { HullDrawer, HullLayout } from "./types.js";
 
@@ -17,7 +17,7 @@ const STEM = { x: 492, y: -90 };
 const BOWSPRIT = { from: { x: 450, y: -60 }, to: { x: 590, y: -140 } };
 const ASTRO = { x: -508, y: -296, r: 44 };
 
-function layout(ship: ShipDefinition): HullLayout {
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([
     { ...CASTLE, items: ["helm", "tree"] },
     { ...WAIST, y: 0, items: ["desk", "table", "table", "table"] },
@@ -110,7 +110,6 @@ function sunMedallion(ctx: Ctx, x: number, y: number, gold: string): void {
   ctx.lineCap = "round";
   ctx.stroke();
   paint(ctx, (c) => circlePath(c, x, y, 8), gold, { stroke: outlineFor(gold), width: 2 });
-  band(ctx, 0, 0, 0, 0, gold);
 }
 
 export const solarArk: HullDrawer = { layout, drawBack, drawDeck, drawFront };

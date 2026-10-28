@@ -6,7 +6,7 @@ import type { ShipDefinition } from "@ship/shared-types";
 import { alpha, circlePath, ellipsePath, outlineFor, paint, shade } from "../ship-engine/draw.js";
 import type { Ctx, Point } from "../ship-engine/types.js";
 import { ivy, oarBank, oliveSprig } from "./parts/extras.js";
-import { arrange, band, bellBracket, drawDeckBand, drawMastFoot, drawMastPole, drawShrouds, farBulwark, mastAt, paintIn, postRail, rigColors, stay } from "./kit.js";
+import { arrange, bellBracket, drawDeckBand, drawMastFoot, drawMastPole, drawShrouds, farBulwark, mastAt, paintIn, postRail, rigColors, stay } from "./kit.js";
 import { capRail, hullPath, paintHull } from "./hullKit.js";
 import type { HullDrawer, HullLayout } from "./types.js";
 
@@ -14,8 +14,7 @@ const STERN = { from: -458, to: -374, y: -44 };
 const MAIN = { from: -368, to: 448, y: 0 };
 const STEM = { x: 478, y: -84 };
 
-function layout(ship: ShipDefinition): HullLayout {
-  void ship;
+function layout(_ship: ShipDefinition): HullLayout {
   const s = arrange([
     { ...STERN, items: ["helm"] },
     { ...MAIN, items: ["tree", "desk", "table", "table", "table", "table"] },
@@ -118,7 +117,7 @@ const drawDeck: HullDrawer["drawDeck"] = (ctx, ship, l) => {
   drawMastFoot(ctx, l.masts[0], { wood: colors.wood, iron: colors.iron });
 };
 
-const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
+const drawFront: HullDrawer["drawFront"] = (ctx, ship, _l, frame) => {
   const p = ship.palette;
   const bronze = "#C9853A";
   // Bronze ram at the waterline.
@@ -175,7 +174,6 @@ const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
   }
   oliveSprig(ctx, 452, -20, -0.9, frame, 1);
   oliveSprig(ctx, 446, -12, -0.2, frame, 2);
-  void l;
 };
 
 /** A Greek key band between y0 and y1. */
@@ -198,7 +196,6 @@ function meander(ctx: Ctx, x0: number, x1: number, y0: number, y1: number, color
   ctx.lineWidth = 2.6;
   ctx.lineJoin = "miter";
   ctx.stroke();
-  band(ctx, 0, 0, 0, 0, color);
 }
 
 export const trireme: HullDrawer = { layout, drawBack, drawDeck, drawFront };

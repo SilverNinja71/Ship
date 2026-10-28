@@ -4,7 +4,7 @@
 // log-cabin quarterdeck with a woodstove pipe).
 
 import type { ShipDefinition } from "@ship/shared-types";
-import { INK, alpha, circlePath, ellipsePath, hashString, line, mix, outlineFor, paint, rng, roundRectPath, shade } from "../ship-engine/draw.js";
+import { INK, alpha, ellipsePath, hashString, mix, outlineFor, paint, rng, roundRectPath, shade } from "../ship-engine/draw.js";
 import type { Ctx, FrameInfo } from "../ship-engine/types.js";
 import { lantern, stovepipe, swing } from "./parts/extras.js";
 import { arrange, band, bellBracket, cabinWindow, mastAt, rigColors } from "./kit.js";
@@ -195,8 +195,6 @@ function snowCaps(ctx: Ctx, ship: ShipDefinition): void {
       }, snow, { stroke: outlineFor("#C9D6E0"), width: 1.6 });
     }
   }
-  line(ctx, [{ x: -512, y: -82 }, { x: -470, y: -60 }], snow, 0.1);
-  void circlePath;
 }
 
 export const brig: HullDrawer = { layout, drawBack, drawDeck, drawFront };

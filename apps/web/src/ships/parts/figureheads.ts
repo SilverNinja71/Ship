@@ -3,7 +3,7 @@
 // All of them are side-profile carvings, about 100-130 units long.
 
 import type { FigureheadId, ShipDefinition } from "@ship/shared-types";
-import { INK, alpha, circlePath, ellipsePath, line, mix, outlineFor, paint, roundRectPath, shade, smoothClosedPath, sway, withTransform } from "../../ship-engine/draw.js";
+import { INK, alpha, circlePath, ellipsePath, line, outlineFor, paint, roundRectPath, shade, smoothClosedPath, sway, withTransform } from "../../ship-engine/draw.js";
 import type { Ctx, FrameInfo, Point } from "../../ship-engine/types.js";
 import { glow, isNight, paintIn } from "../kit.js";
 
@@ -57,11 +57,6 @@ function stroke(ctx: Ctx, build: (c: Ctx) => void, color: string, width: number,
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
-}
-
-/** A carved mounting block where the figurehead meets the stem. */
-function mount(ctx: Ctx, color: string): void {
-  paint(ctx, (c) => roundRectPath(c, -16, -14, 26, 30, 8), color, { width: 3 });
 }
 
 // ---------------------------------------------------------------------------
@@ -629,12 +624,11 @@ const sunburst: Drawer = (ctx, frame, ship) => {
   ctx.stroke();
 };
 
-const jaguar: Drawer = (ctx, frame) => {
+const jaguar: Drawer = (ctx) => {
   const base = "#FFB84D";
   const pink = "#FF4FA3";
   const teal = "#3DF2C2";
   const purple = "#7A3E9D";
-  void frame;
   // Forepaws stretched ahead.
   for (const y of [6, 16]) {
     paint(ctx, (c) => roundRectPath(c, 30, y - 6, 62, 12, 6), y === 6 ? base : shade(base, -0.1), { width: 2.8 });
@@ -971,5 +965,3 @@ const FIGUREHEADS: Record<FigureheadId, Drawer | null> = {
   swordfish,
 };
 
-void mount;
-void mix;

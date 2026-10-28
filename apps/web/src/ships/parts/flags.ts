@@ -651,5 +651,4 @@ function slash(ctx: Ctx, x: number, y: number, neon: string): void {
     c.closePath();
   };
   paint(ctx, build, neon, { stroke: mix(neon, "#0A3A1E", 0.6), width: 1.8 });
-  void alpha;
 }
