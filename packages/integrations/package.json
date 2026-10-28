@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": { ".": "./src/index.ts" },
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": { "@ship/shared-types": "*" }
+  "dependencies": { "@ship/active-recall-engine": "*", "@ship/shared-types": "*" }
 }

@@ -2,11 +2,13 @@
 // the ship's bell, plus name labels. Ship units, drawn at layout points.
 
 import type { TreeState } from "../stores/voyageStore.js";
+import { drawBellSprite, drawCitrusSprite, drawHelmSprite } from "./sprites/props.js";
 import { INK, OUTLINE, alpha, circlePath, line, mix, paint, rng, roundRectPath, shade, smoothClosedPath, sway, withTransform } from "./draw.js";
 import type { Ctx, FrameInfo, Point } from "./types.js";
 
 /** A ship's wheel on a pedestal. `angle` turns it. */
 export function drawHelm(ctx: Ctx, at: Point, angle: number, trim: string): void {
+  if (drawHelmSprite(ctx, at, angle)) return;
   const wood = "#9C6B3F";
   const cx = at.x;
   const cy = at.y - 74;
@@ -61,6 +63,16 @@ const FRUIT_SPOTS: Point[] = [
 export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: FrameInfo, seed = 1): void {
   const wilted = look.state === "wilted";
   const lean = sway(frame.t, 0.9, seed, frame.reducedMotion) * 0.035 * (0.4 + frame.wind) + (look.shake < 0.6 ? Math.sin(look.shake * 40) * 0.05 * (1 - look.shake / 0.6) : 0);
+  if (drawCitrusSprite(ctx, at, {
+    look: wilted ? "wilted" : look.state === "blooming" ? "blooming" : "normal",
+    lean,
+    fruit: FRUIT_SPOTS.slice(0, Math.min(look.fruit, FRUIT_SPOTS.length)),
+    blossoms: look.state === "blooming" ? blossomSpots(look.progress) : [],
+    droop: wilted ? 16 : 0,
+  })) {
+    if (look.fruit > FRUIT_SPOTS.length) drawLabel(ctx, `×${look.fruit}`, at.x, at.y - 246, 0.8);
+    return;
+  }
   // Pot.
   paint(ctx, (c) => {
     c.moveTo(at.x - 34, at.y - 44);
@@ -103,11 +115,8 @@ export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: Frame
 
     // Blossoms open as the voyage goes on.
     if (look.state === "blooming") {
-      const blossoms = Math.ceil(look.progress * FRUIT_SPOTS.length);
-      for (let i = 0; i < blossoms; i++) {
-        const p = FRUIT_SPOTS[(i + 3) % FRUIT_SPOTS.length];
-        drawBlossom(ctx, p.x + 8, p.y - 6, 6 + (i === blossoms - 1 ? 2 * Math.sin(frame.t * 3) : 0));
-      }
+      const spots = blossomSpots(look.progress);
+      spots.forEach((p, i) => drawBlossom(ctx, p.x, p.y, 6 + (i === spots.length - 1 ? 2 * Math.sin(frame.t * 3) : 0)));
     }
 
     const fruit = Math.min(look.fruit, FRUIT_SPOTS.length);
@@ -124,6 +133,15 @@ export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: Frame
   });
 }
 
+/** One blossom per eighth of the voyage so far, beside the fruit spots. */
+function blossomSpots(progress: number): Point[] {
+  const count = Math.ceil(progress * FRUIT_SPOTS.length);
+  return Array.from({ length: count }, (_, i) => {
+    const p = FRUIT_SPOTS[(i + 3) % FRUIT_SPOTS.length];
+    return { x: p.x + 8, y: p.y - 6 };
+  });
+}
+
 function drawBlossom(ctx: Ctx, x: number, y: number, r: number): void {
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
@@ -134,6 +152,22 @@ function drawBlossom(ctx: Ctx, x: number, y: number, r: number): void {
 
 /** The ship's bell on a little bracket. `swing` is radians. */
 export function drawBell(ctx: Ctx, at: Point, swing: number, glow: string): void {
+  if (!drawBellSprite(ctx, at, swing)) drawBellBody(ctx, at, swing);
+  if (Math.abs(swing) > 0.05) {
+    // Little sound-lines while it rings (even with sound off, you can see it).
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 2; i++) {
+        ctx.beginPath();
+        ctx.arc(at.x, at.y + 26, 34 + i * 10, side < 0 ? Math.PI * 0.85 : -Math.PI * 0.15, side < 0 ? Math.PI * 1.15 : Math.PI * 0.15);
+        ctx.strokeStyle = alpha(mix(glow, "#FFFFFF", 0.4), Math.min(1, Math.abs(swing) * 2.5));
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawBellBody(ctx: Ctx, at: Point, swing: number): void {
   const brass = "#E3B341";
   line(ctx, [{ x: at.x - 18, y: at.y }, { x: at.x + 18, y: at.y }], INK, 8);
   line(ctx, [{ x: at.x - 18, y: at.y }, { x: at.x + 18, y: at.y }], "#7A5230", 4.5);
@@ -150,18 +184,6 @@ export function drawBell(ctx: Ctx, at: Point, swing: number, glow: string): void
     paint(ctx, (c) => c.ellipse(-6, 22, 3, 10, 0.1, 0, Math.PI * 2), alpha("#FFF6C8", 0.8), { stroke: false });
     paint(ctx, (c) => circlePath(c, Math.sin(swing * 2) * 6, 50, 5), shade(brass, -0.35));
   });
-  if (Math.abs(swing) > 0.05) {
-    // Little sound-lines while it rings (even with sound off, you can see it).
-    for (const side of [-1, 1]) {
-      for (let i = 0; i < 2; i++) {
-        ctx.beginPath();
-        ctx.arc(at.x, at.y + 26, 34 + i * 10, side < 0 ? Math.PI * 0.85 : -Math.PI * 0.15, side < 0 ? Math.PI * 1.15 : Math.PI * 0.15);
-        ctx.strokeStyle = alpha(mix(glow, "#FFFFFF", 0.4), Math.min(1, Math.abs(swing) * 2.5));
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-    }
-  }
 }
 
 /** A rounded name tag, centered on (x, y). */

@@ -2,15 +2,19 @@
 // the viewer, seated behind their desk (the desk is in front of them and hides
 // the legs). Units match the ship: a study station is about STATION_WIDTH wide
 // and STATION_HEIGHT tall (floor to hat tip) at scale 1. The artwork lives in
-// ./avatar/; this file is the stable API the engine calls.
+// ./avatar/ (procedural) and ./sprites/avatar.ts (the graphics AI's layers,
+// used once a loadout's whole set has arrived); this file is the stable API
+// the engine calls.
 
 import type { AvatarLoadout, AvatarState, DeskId } from "@ship/shared-types";
+import { avatarSpritesReady, drawSpriteSailor } from "./sprites/avatar.js";
 import { hashString, withTransform } from "./draw.js";
 import { drawChairBack, drawDesk, drawGalleyTableBody } from "./avatar/desks.js";
 import { drawTranslucent, type Bounds } from "./avatar/layer.js";
 import { DESK_FAR, DESK_NEAR } from "./avatar/look.js";
 import { computePose } from "./avatar/pose.js";
 import { drawSailor } from "./avatar/sailor.js";
+import type { SailorOptions } from "./avatar/sailor.js";
 import { curvyPath, paintShaded } from "./avatar/kit.js";
 import { shade } from "./draw.js";
 import type { Ctx, FrameInfo, Point } from "./types.js";
@@ -49,13 +53,19 @@ const SEAT_BOUNDS: Bounds = { x0: -100, y0: -218, x1: 100, y1: -40 };
 
 const sceneTime = (frame: FrameInfo) => (frame.reducedMotion ? frame.t * 0.08 : frame.t);
 
+/** Sprites when this sailor's whole set has arrived, the procedural sailor otherwise. */
+function sailorPainter(avatar: AvatarLoadout): (ctx: Ctx, o: SailorOptions) => void {
+  return avatarSpritesReady(avatar) ? drawSpriteSailor : drawSailor;
+}
+
 /** A sailor at their desk with their study tool, animated by state. */
 export function drawStudyStation(ctx: Ctx, opts: StationOptions, frame: FrameInfo): void {
   const seed = opts.seed ?? hashString(opts.avatar.name);
   const pose = computePose(opts.state, opts.avatar.tool, frame.t, seed, frame.reducedMotion);
+  const paint = sailorPainter(opts.avatar);
   withTransform(ctx, { x: opts.at.x, y: opts.at.y, scale: opts.scale ?? 1 }, () => {
     drawTranslucent(ctx, opts.opacity ?? 1, STATION_BOUNDS, (c) =>
-      drawSailor(c, { avatar: opts.avatar, pose, frame, seed, desk: (cc) => drawDesk(cc, opts.desk, sceneTime(frame), seed) }),
+      paint(c, { avatar: opts.avatar, pose, frame, seed, desk: (cc) => drawDesk(cc, opts.desk, sceneTime(frame), seed) }),
     );
   });
 }
@@ -81,7 +91,7 @@ export function drawGalleyTable(ctx: Ctx, at: Point, seats: [CrewSeat | null, Cr
       const pose = computePose(seat.state, seat.avatar.tool, frame.t, seed, frame.reducedMotion, -1);
       withTransform(ctx, { x: (i === 0 ? -1 : 1) * sx }, () =>
         drawTranslucent(ctx, seat.opacity ?? 1, SEAT_BOUNDS, (c) =>
-          drawSailor(c, { avatar: seat.avatar, pose, frame, seed, dir, desk: "clip", screenSide: -1 }),
+          sailorPainter(seat.avatar)(c, { avatar: seat.avatar, pose, frame, seed, dir, desk: "clip", screenSide: -1 }),
         ),
       );
     });
@@ -106,7 +116,7 @@ export function drawAvatarPreview(ctx: Ctx, avatar: AvatarLoadout, state: Avatar
     }
     withTransform(ctx, { y: -centerY }, () => {
       deskHint(ctx);
-      drawSailor(ctx, { avatar, pose, frame, seed, desk: "clip" });
+      sailorPainter(avatar)(ctx, { avatar, pose, frame, seed, desk: "clip" });
     });
     ctx.restore();
   });

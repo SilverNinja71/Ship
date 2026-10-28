@@ -1,14 +1,17 @@
-// Settings: sound (off until you turn it on), voyages, flashcards, motion,
-// the crew server, and your data.
+// Settings: sound (off until you turn it on), voyages, flashcards, Gemini
+// grading for the Captain's Log, motion, the crew server, and your data.
 
 import { useRef, useState } from "react";
+import { DEFAULT_GEMINI_MODEL, GEMINI_KEY_URL, checkGeminiModel, normalizeGeminiModel } from "@ship/integrations";
 import { PANEL_KEYS } from "../../hooks/useKeyboard.js";
+import { makeBackup, restoreBackup } from "../../lib/backup.js";
+import { browserFetch } from "../../lib/network.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import type { MotionPreference } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { PANELS } from "../Hud.js";
 import { IconGear } from "../icons.js";
-import { Button, Card, Field, Panel, Select, TextInput, Toggle } from "../ui.js";
+import { Button, Card, Field, Panel, Select, TextInput, Toggle, cx } from "../ui.js";
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const s = useSettings();
@@ -18,12 +21,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const file = useRef<HTMLInputElement>(null);
 
   const exportData = () => {
-    const data: Record<string, unknown> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)!;
-      if (key.startsWith("ship:")) data[key] = JSON.parse(localStorage.getItem(key) ?? "null");
-    }
-    const blob = new Blob([JSON.stringify({ app: "ship", exportedAt: new Date().toISOString(), data }, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(makeBackup(localStorage), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `ship-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -34,9 +32,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const importData = async (f: File | undefined) => {
     if (!f) return;
     try {
-      const parsed = JSON.parse(await f.text()) as { app?: string; data?: Record<string, unknown> };
-      if (parsed.app !== "ship" || !parsed.data) throw new Error("not a Ship backup");
-      for (const [key, value] of Object.entries(parsed.data)) if (key.startsWith("ship:")) localStorage.setItem(key, JSON.stringify(value));
+      restoreBackup(localStorage, JSON.parse(await f.text()));
       location.reload();
     } catch (e) {
       toast(`That file isn't a Ship backup (${e instanceof Error ? e.message : "unreadable"}).`, "warning");
@@ -89,6 +85,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </Field>
         </Card>
 
+        <GeminiCard />
+
         <Card>
           <h3 className="mb-2 font-display font-extrabold">Motion</h3>
           <Field label="Animation">
@@ -115,7 +113,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <Card>
           <h3 className="mb-2 font-display font-extrabold">Your data</h3>
-          <p className="mb-2 text-sm text-ink/70">Everything Ship knows lives in this browser. Save a backup to move it or keep it safe.</p>
+          <p className="mb-2 text-sm text-ink/70">Everything Ship knows lives in this browser. Save a backup to move it or keep it safe. Backups leave out your Gemini key.</p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={exportData}>Download a backup</Button>
             <Button onClick={() => file.current?.click()}>Restore a backup</Button>
@@ -152,4 +150,93 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return <kbd className="mr-1 inline-block min-w-6 rounded-md border-2 border-ink/30 bg-cream-50 px-1.5 text-center font-mono text-xs font-bold">{children}</kbd>;
+}
+
+/** Your own Gemini key for grading the Captain's Log. Without one, blurts are graded on this device. */
+function GeminiCard() {
+  const s = useSettings();
+  const [key, setKey] = useState(s.geminiApiKey);
+  const [model, setModel] = useState(s.geminiModel === DEFAULT_GEMINI_MODEL ? "" : s.geminiModel);
+  const [show, setShow] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const cleanKey = key.trim();
+  const cleanModel = normalizeGeminiModel(model.trim() || DEFAULT_GEMINI_MODEL);
+  const changed = cleanKey !== s.geminiApiKey || cleanModel !== s.geminiModel;
+
+  const save = () => {
+    s.set({ geminiApiKey: cleanKey, geminiModel: cleanModel });
+    setModel(cleanModel === DEFAULT_GEMINI_MODEL ? "" : cleanModel);
+    setStatus({ ok: true, text: cleanKey ? "Saved. The Captain's Log will grade with Gemini." : "Saved. The Captain's Log will grade on this device." });
+  };
+
+  const check = async () => {
+    setChecking(true);
+    setStatus({ ok: true, text: `Asking Gemini about ${cleanModel}…` });
+    const r = await checkGeminiModel(browserFetch, cleanKey, cleanModel);
+    setChecking(false);
+    setStatus(r.ok ? { ok: true, text: `The key works: ${r.displayName} is ready.${changed ? " Press Save to use it." : ""}` } : { ok: false, text: r.message });
+  };
+
+  const remove = () => {
+    s.set({ geminiApiKey: "" });
+    setKey("");
+    setStatus({ ok: true, text: "Key removed. The Captain's Log will grade on this device." });
+  };
+
+  return (
+    <Card>
+      <h3 className="mb-1 font-display font-extrabold">Captain's Log grading</h3>
+      <p className="mb-2 text-sm text-ink/70">
+        With your own Gemini API key, Gemini grades your blurts: it understands your own wording and points out mistakes. Without one, Ship grades them on this
+        device by matching key words.
+      </p>
+      <Field
+        label="Gemini API key"
+        hint={
+          <>
+            Get one free at{" "}
+            <a href={GEMINI_KEY_URL} target="_blank" rel="noreferrer" className="font-bold underline">
+              Google AI Studio
+            </a>
+            . It stays in this browser and is sent only to Google. When it's set, grading sends your notes and blurt to Gemini.
+          </>
+        }
+      >
+        <div className="flex gap-2">
+          <TextInput
+            type={show ? "text" : "password"}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="Paste your key"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Gemini API key"
+          />
+          <Button onClick={() => setShow(!show)} disabled={!key}>
+            {show ? "Hide" : "Show"}
+          </Button>
+        </div>
+      </Field>
+      <Field label="Model" hint="Gemini model names change now and then. Leave this empty to use Google's newest Flash model.">
+        <TextInput value={model} onChange={(e) => setModel(e.target.value)} placeholder={DEFAULT_GEMINI_MODEL} spellCheck={false} />
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" onClick={save} disabled={!changed}>
+          Save
+        </Button>
+        <Button onClick={() => void check()} disabled={!cleanKey || checking}>
+          Check key
+        </Button>
+        <Button onClick={remove} disabled={!s.geminiApiKey}>
+          Remove key
+        </Button>
+      </div>
+      {status && (
+        <p role="status" className={cx("mt-2 text-sm font-bold", status.ok ? "text-ink/70" : "text-coral-700")}>
+          {status.text}
+        </p>
+      )}
+    </Card>
+  );
 }

@@ -1,8 +1,11 @@
 // The Captain's Quarters: a zoomed cabin with a porthole onto the voyage,
 // a bookshelf, a hanging lantern, the sailor at their desk and the ship's
-// one themed decor item. Room units: 1000 wide, floor at y = 540.
+// one themed decor item. Room units: 1000 wide, floor at y = 540. A ship
+// with a cabin-room sprite swaps the walls, shelf, rug and lantern for it.
 
 import type { AvatarLoadout, AvatarState, ShipDefinition, ShipLoadout } from "@ship/shared-types";
+import { SHIP_SPRITE, SPRITE_FOLDERS } from "@ship/shared-types";
+import { CABIN_PORTHOLE } from "@ship/ship-theme-kit";
 import type { EnvironmentTheme } from "@ship/ship-theme-kit";
 import { drawCabinDecor } from "../ships/index.js";
 import { STATION_HEIGHT, drawStudyStation } from "./AvatarRenderer.js";
@@ -11,6 +14,8 @@ import { rectRegion } from "./hitRegions.js";
 import type { HitRegion } from "./hitRegions.js";
 import { drawSeaBack, drawSeaFront, drawSky } from "./OceanEngine.js";
 import type { Viewport } from "./ShipRenderer.js";
+import { drawSprite } from "./sprites/paint.js";
+import { sprites } from "./sprites/store.js";
 import type { Ctx, FrameInfo } from "./types.js";
 
 export interface QuartersScene {
@@ -24,7 +29,7 @@ const ROOM_W = 1000;
 const ROOM_H = 640;
 const FLOOR = 540;
 const STATION_SCALE = 2.05;
-const PORTHOLE = { x: 790, y: 215, r: 108 };
+const PORTHOLE = CABIN_PORTHOLE;
 
 export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, scene: QuartersScene): HitRegion[] {
   const { env, ship } = scene;
@@ -43,13 +48,20 @@ export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, scene
   ctx.translate(ox, oy);
   ctx.scale(u, u);
 
-  drawWall(ctx, wood, view, ox, oy, u);
-  drawPorthole(ctx, env, frame, u, ox, oy, view.dpr);
+  const room = sprites.sprite(SPRITE_FOLDERS.ship(ship.id), SHIP_SPRITE.cabinRoom);
+  if (room) {
+    // The room art leaves the porthole see-through, so the sea goes in first.
+    drawPortholeView(ctx, env, frame, u, ox, oy, view.dpr);
+    drawSprite(ctx, room, 0, 0);
+  } else {
+    drawWall(ctx, wood, view, ox, oy, u);
+    drawPorthole(ctx, env, frame, u, ox, oy, view.dpr);
+    drawBookshelf(ctx, ship.id);
+    drawRug(ctx, ship.palette.accent);
+    drawLantern(ctx, frame, ship.palette.glow ?? "#FFD27A", env.night);
+  }
   regions.push(rectRegion(ctx, view.dpr, "porthole", "Porthole: back to the deck", PORTHOLE.x - PORTHOLE.r, PORTHOLE.y - PORTHOLE.r, PORTHOLE.r * 2, PORTHOLE.r * 2));
-  drawBookshelf(ctx, ship.id);
   regions.push(rectRegion(ctx, view.dpr, "bookshelf", "Bookshelf: open the Captain's Log", 40, 150, 210, FLOOR - 150));
-  drawRug(ctx, ship.palette.accent);
-  drawLantern(ctx, frame, ship.palette.glow ?? "#FFD27A", env.night);
 
   drawCabinDecor(ctx, ship.id, { x: 905, y: FLOOR }, frame);
   regions.push(rectRegion(ctx, view.dpr, "decor", "Cabin decor", 835, FLOOR - 200, 140, 200));
@@ -108,6 +120,13 @@ function drawWall(ctx: Ctx, wood: string, view: Viewport, ox: number, oy: number
 
 function drawPorthole(ctx: Ctx, env: EnvironmentTheme, frame: FrameInfo, u: number, ox: number, oy: number, dpr: number): void {
   const { x, y, r } = PORTHOLE;
+  drawPortholeView(ctx, env, frame, u, ox, oy, dpr);
+  drawPortholeRim(ctx, x, y, r);
+}
+
+/** The sky and sea through the porthole glass. */
+function drawPortholeView(ctx: Ctx, env: EnvironmentTheme, frame: FrameInfo, u: number, ox: number, oy: number, dpr: number): void {
+  const { x, y, r } = PORTHOLE;
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -128,7 +147,9 @@ function drawPorthole(ctx: Ctx, env: EnvironmentTheme, frame: FrameInfo, u: numb
   ctx.ellipse(x - r * 0.35, y - r * 0.4, r * 0.5, r * 0.18, -0.7, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
 
+function drawPortholeRim(ctx: Ctx, x: number, y: number, r: number): void {
   // Brass rim and rivets.
   ctx.beginPath();
   ctx.arc(x, y, r + 14, 0, Math.PI * 2);

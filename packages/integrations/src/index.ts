@@ -1,6 +1,7 @@
 // @ship/integrations: adapters that turn Canvas, Todoist, Lodestar calendar
 // exports, Google Drive, Parchment files and CSV decks into the shapes in
-// @ship/shared-types. Network adapters take a FetchLike and never call
+// @ship/shared-types, plus the Gemini client (the Lookout's video judge and
+// the Captain's Log grader). Network adapters take a FetchLike and never call
 // `fetch` themselves.
 
 export { createRelayFetch, isRelayResponse, relayEndpoint, responseFromRelay } from "./relay.js";
@@ -71,6 +72,25 @@ export type { CsvDelimiter, CsvImportOptions, CsvImportResult, CsvParseResult } 
 
 export { decodeText, importFile } from "./importFile.js";
 export type { ImportFileOptions } from "./importFile.js";
+
+export {
+  DEFAULT_GEMINI_MODEL,
+  GEMINI_API_BASE,
+  GEMINI_KEY_URL,
+  GeminiError,
+  checkGeminiModel,
+  clipText,
+  extractCandidateText,
+  geminiErrorDetail,
+  geminiGenerateUrl,
+  geminiModelUrl,
+  generateGeminiJson,
+  normalizeGeminiModel,
+  parseJsonLoose,
+} from "./gemini.js";
+export type { GeminiCallOptions } from "./gemini.js";
+export { BLURT_GEMINI_TIMEOUT_MS, BLURT_SYSTEM_PROMPT, buildBlurtRequest, gradeBlurtWithGemini, readBlurtGrades } from "./geminiBlurt.js";
+export type { GeminiBlurtOptions } from "./geminiBlurt.js";
 
 export { guessKind } from "./kind.js";
 export { APPLE_REFERENCE_EPOCH_MS, appleSecondsToEpochMs, endOfLocalDay, parseDateString, toEpochMs } from "./time.js";

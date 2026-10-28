@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { newReviewSchedule } from "@ship/shared-types";
-import type { Deck, Flashcard, ImportResult, RecallRating } from "@ship/shared-types";
+import type { BlurtGrader, Deck, Flashcard, ImportResult, RecallRating } from "@ship/shared-types";
 import { dueCards, nextSchedule } from "@ship/active-recall-engine";
 import { newId } from "../lib/ids.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
@@ -22,6 +22,8 @@ export interface BlurtSession {
   notes: string;
   blurt: string;
   coverage: number;
+  /** Missing on entries from before Gemini grading: those were graded offline. */
+  gradedBy?: BlurtGrader;
 }
 
 export interface RecallState {

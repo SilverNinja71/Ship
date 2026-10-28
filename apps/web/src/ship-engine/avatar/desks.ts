@@ -8,6 +8,7 @@ import type { Ctx } from "../types.js";
 import { drawSteam } from "./arms.js";
 import { curvyPath, fillPath, hash01, paintShaded, strokePath, tube, withClip, type CurvePt } from "./kit.js";
 import { DESK_FAR, DESK_NEAR } from "./look.js";
+import { drawDeskSprite, drawGalleyTableSprite } from "../sprites/props.js";
 
 const BRASS = "#E0B04A";
 
@@ -41,6 +42,7 @@ function grain(ctx: Ctx, x0: number, x1: number, y0: number, y1: number, color: 
 }
 
 export function drawDesk(ctx: Ctx, id: DeskId, t: number, seed: number): void {
+  if (drawDeskSprite(ctx, id)) return;
   switch (id) {
     case "captains-desk":
       return captainsDesk(ctx);
@@ -478,6 +480,7 @@ function marblePlinth(ctx: Ctx): void {
 
 /** The galley table's long plank top and front, in the table frame (seat scale applied by the caller). */
 export function drawGalleyTableBody(ctx: Ctx, half: number): void {
+  if (drawGalleyTableSprite(ctx)) return;
   const wood = "#B5835A";
   floorShadow(ctx, half + 6);
   for (const s of [-1, 1]) paintShaded(ctx, (c) => c.roundRect(s * (half - 8) - 5, -12, 10, 12, [0, 0, 2, 2]), shade(wood, -0.25), null, null);

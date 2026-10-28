@@ -5,11 +5,13 @@
 import type { FigureheadId, ShipDefinition } from "@ship/shared-types";
 import { INK, alpha, circlePath, ellipsePath, line, outlineFor, paint, roundRectPath, shade, smoothClosedPath, sway, withTransform } from "../../ship-engine/draw.js";
 import type { Ctx, FrameInfo, Point } from "../../ship-engine/types.js";
+import { drawFigureheadSprite } from "../../ship-engine/sprites/ship.js";
 import { glow, isNight, paintIn } from "../kit.js";
 
 type Drawer = (ctx: Ctx, frame: FrameInfo, ship: ShipDefinition) => void;
 
 export function drawFigurehead(ctx: Ctx, id: FigureheadId, bow: Point & { angle: number }, frame: FrameInfo, ship: ShipDefinition, scale = 1): void {
+  if (drawFigureheadSprite(ctx, id, bow, scale)) return;
   const draw = FIGUREHEADS[id];
   if (!draw) return;
   withTransform(ctx, { x: bow.x, y: bow.y, rotate: bow.angle, scale }, () => draw(ctx, frame, ship));

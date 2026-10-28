@@ -1,24 +1,16 @@
 // Gemini Flash as the judge of YouTube watch pages. Builds the
-// generateContent request (structured JSON output), calls it with a timeout
-// and reads the answer defensively: any surprise becomes a GeminiError, and
-// the caller falls back to the keyword check.
+// generateContent request (structured JSON output) and reads the verdict
+// defensively; the shared client in @ship/integrations makes the call. Any
+// surprise becomes a GeminiError, and the caller falls back to the keyword
+// check.
 
 import type { LookoutVerdict, VideoInspection } from "@ship/shared-types";
+import { GeminiError, clipText, extractCandidateText, generateGeminiJson, parseJsonLoose } from "@ship/integrations";
 import { GEMINI_TIMEOUT_MS } from "./constants.js";
 import type { LookoutFetch } from "./net.js";
-import { normalizeModel } from "./settings.js";
 import type { StudyContext } from "./voyage.js";
 
-export const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-
-export class GeminiError extends Error {
-  readonly status: number | null;
-  constructor(message: string, status: number | null = null) {
-    super(message);
-    this.name = "GeminiError";
-    this.status = status;
-  }
-}
+export { GEMINI_API_BASE, GeminiError, checkGeminiModel, extractCandidateText, geminiGenerateUrl, geminiModelUrl } from "@ship/integrations";
 
 export interface GeminiAnswer {
   decision: LookoutVerdict["decision"];
@@ -30,14 +22,6 @@ export interface InlineImage {
   mimeType: string;
   /** Base64. */
   data: string;
-}
-
-export function geminiModelUrl(model: string): string {
-  return `${GEMINI_API_BASE}/models/${encodeURIComponent(normalizeModel(model))}`;
-}
-
-export function geminiGenerateUrl(model: string): string {
-  return `${geminiModelUrl(model)}:generateContent`;
 }
 
 export const SYSTEM_PROMPT = [
@@ -62,7 +46,7 @@ const RESPONSE_SCHEMA = {
   propertyOrdering: ["decision", "reason", "confidence"],
 } as const;
 
-const clip = (s: string | null, max: number) => (s && s.length > max ? `${s.slice(0, max)}…` : s);
+const clip = (s: string | null, max: number) => (s ? clipText(s, max) : s);
 
 export interface GeminiRequestInput {
   video: VideoInspection;
@@ -96,51 +80,6 @@ export function buildGeminiRequest({ video, context, thumbnail }: GeminiRequestI
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** The model's text from a generateContent response, skipping "thought" parts. */
-export function extractCandidateText(body: unknown): string {
-  if (!isRecord(body)) throw new GeminiError("Gemini sent something that isn't JSON.");
-  const feedback = body.promptFeedback;
-  if (isRecord(feedback) && typeof feedback.blockReason === "string") {
-    throw new GeminiError(`Gemini declined to judge this video (${feedback.blockReason}).`);
-  }
-  const candidate = Array.isArray(body.candidates) ? body.candidates[0] : undefined;
-  if (!isRecord(candidate)) throw new GeminiError("Gemini sent no answer.");
-  const content = candidate.content;
-  const parts = isRecord(content) && Array.isArray(content.parts) ? content.parts : [];
-  const text = parts
-    .filter((p): p is Record<string, unknown> => isRecord(p) && typeof p.text === "string" && p.thought !== true)
-    .map((p) => p.text as string)
-    .join("");
-  if (!text.trim()) {
-    const why = typeof candidate.finishReason === "string" ? ` (${candidate.finishReason})` : "";
-    throw new GeminiError(`Gemini's answer was empty${why}.`);
-  }
-  return text;
-}
-
-function parseJsonLoose(text: string): unknown {
-  const unfenced = text
-    .trim()
-    .replace(/^```[a-z]*\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
-  try {
-    return JSON.parse(unfenced);
-  } catch {
-    // Prose around the object: try the outermost {...}.
-    const start = unfenced.indexOf("{");
-    const end = unfenced.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(unfenced.slice(start, end + 1));
-      } catch {
-        // fall through
-      }
-    }
-    return undefined;
-  }
-}
-
 const PROCEED_WORDS = new Set(["PROCEED", "ALLOW", "ALLOWED", "OK", "PASS"]);
 const BLOCKED_WORDS = new Set(["BLOCKED", "BLOCK", "DENY", "DENIED", "REJECT"]);
 
@@ -153,7 +92,12 @@ function readConfidence(v: unknown): number {
 
 /** The verdict inside Gemini's text, tolerating code fences, prose, lowercase and percent confidences. */
 export function parseVerdictText(text: string): GeminiAnswer {
-  let data = parseJsonLoose(text);
+  return readVerdict(parseJsonLoose(text));
+}
+
+/** The verdict in Gemini's JSON, accepting "verdict" as well as "decision". */
+export function readVerdict(json: unknown): GeminiAnswer {
+  let data = json;
   if (Array.isArray(data)) data = data[0];
   if (!isRecord(data)) throw new GeminiError("Gemini's answer wasn't the JSON we asked for.");
   const rawDecision = data.decision ?? data.verdict;
@@ -173,16 +117,6 @@ export function parseGeminiResponse(body: unknown): GeminiAnswer {
   return parseVerdictText(extractCandidateText(body));
 }
 
-async function errorMessage(res: { json(): Promise<unknown> }): Promise<string> {
-  try {
-    const body = await res.json();
-    const msg = isRecord(body) && isRecord(body.error) ? body.error.message : null;
-    return typeof msg === "string" ? `: ${clip(msg, 200)}` : "";
-  } catch {
-    return "";
-  }
-}
-
 export interface AskGeminiOptions extends GeminiRequestInput {
   apiKey: string;
   model: string;
@@ -190,46 +124,6 @@ export interface AskGeminiOptions extends GeminiRequestInput {
 }
 
 export async function askGemini(fetch: LookoutFetch, options: AskGeminiOptions): Promise<LookoutVerdict> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? GEMINI_TIMEOUT_MS);
-  try {
-    let res: Awaited<ReturnType<LookoutFetch>>;
-    try {
-      res = await fetch(geminiGenerateUrl(options.model), {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": options.apiKey },
-        body: JSON.stringify(buildGeminiRequest(options)),
-        signal: controller.signal,
-      });
-    } catch {
-      throw new GeminiError(controller.signal.aborted ? "Gemini took too long to answer." : "Couldn't reach Gemini.");
-    }
-    if (!res.ok) throw new GeminiError(`Gemini answered HTTP ${res.status}${await errorMessage(res)}`, res.status);
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      throw new GeminiError(controller.signal.aborted ? "Gemini took too long to answer." : "Gemini sent something that isn't JSON.");
-    }
-    return { ...parseGeminiResponse(body), source: "gemini" };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** For the options page's "Check key" button: does this key see this model? */
-export async function checkGeminiModel(
-  fetch: LookoutFetch,
-  apiKey: string,
-  model: string,
-): Promise<{ ok: true; displayName: string } | { ok: false; message: string }> {
-  try {
-    const res = await fetch(geminiModelUrl(model), { method: "GET", headers: { "x-goog-api-key": apiKey } });
-    if (!res.ok) return { ok: false, message: `Gemini answered HTTP ${res.status}${await errorMessage(res)}` };
-    const body = await res.json();
-    const name = isRecord(body) && typeof body.displayName === "string" ? body.displayName : normalizeModel(model);
-    return { ok: true, displayName: name };
-  } catch {
-    return { ok: false, message: "Couldn't reach Gemini." };
-  }
+  const json = await generateGeminiJson(fetch, { apiKey: options.apiKey, model: options.model, timeoutMs: options.timeoutMs ?? GEMINI_TIMEOUT_MS }, buildGeminiRequest(options));
+  return { ...readVerdict(json), source: "gemini" };
 }

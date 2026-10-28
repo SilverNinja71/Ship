@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { SIGNALING_DEFAULT_PORT } from "@ship/shared-types";
+import { DEFAULT_GEMINI_MODEL } from "@ship/integrations";
 import type { SchedulerKind, VoyagePresetId } from "@ship/shared-types";
 import { shipStorage, storageKey } from "../lib/storage.js";
 
@@ -25,6 +26,14 @@ export interface SettingsState {
   customBreakMinutes: number;
   /** Draw the clickable areas on the canvas (handy while building). */
   showHitRegions: boolean;
+  /**
+   * The sailor's own Gemini API key, for grading the Captain's Log. Stays in
+   * this browser, is sent only to Google, and is left out of backups. Empty
+   * means blurts are graded offline.
+   */
+  geminiApiKey: string;
+  /** A setting because Gemini model ids change. */
+  geminiModel: string;
   set(patch: Partial<Omit<SettingsState, "set">>): void;
 }
 
@@ -43,6 +52,8 @@ export const useSettings = create<SettingsState>()(
       customFocusMinutes: 40,
       customBreakMinutes: 8,
       showHitRegions: false,
+      geminiApiKey: "",
+      geminiModel: DEFAULT_GEMINI_MODEL,
       set: (patch) => set(patch),
     }),
     { name: storageKey("settings"), storage: shipStorage, version: 1 },

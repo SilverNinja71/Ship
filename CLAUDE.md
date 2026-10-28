@@ -1,4 +1,4 @@
-# Ship: notes for Claude (and Gemini)
+# Ship: notes for Claude, Gemini and the graphics AI
 
 Read this first. It explains what Ship is, how the repo is laid out, the decisions already made, and what is left to build.
 
@@ -6,13 +6,37 @@ Read this first. It explains what Ship is, how the repo is laid out, the decisio
 
 A study app dressed up as a cartoon ship. You command a **Study Ship** and study at a desk on its deck or in the Captain's Quarters. A cartoon sailor avatar shows what you're doing. Focus timers are called **voyages**, and they pay **Doubloons** and XP. Crew rooms let friends study together, and the **Lookout** browser extension blocks distracting sites during a voyage.
 
-The original spec was a long pasted brief (Project "Ship" master blueprint, 2026-10-27). This file is the source of truth for the decisions made since then.
+Two pasted briefs shaped Ship:
+- the **master blueprint** (2026-10-27), which set the features;
+- the **monolithic specification** (2026-10-28), which split the work between three AIs and switched the art to sprites.
+
+This file is the source of truth for the decisions made since then. Where the two briefs disagree, the 2026-10-28 one wins.
 
 ## The user
 
 - New to coding and wants to learn. Explain what you did in plain language and define jargon.
 - Test pages only in Claude's **built-in browser pane**, never the user's own Chrome. Make no sound and open no pop-up windows. Ambient audio in the app must stay **off by default**.
 - Mind the weekly usage cap: check usage between phases and stop well below it.
+
+## Who does what (multi-AI pipeline)
+
+The 2026-10-28 spec splits the work by specialty:
+
+- **A graphics AI** (Midjourney, Recraft.ai or Imagen 3) makes **all ship and sailor art** as sprite assets: transparent PNGs or SVGs.
+  - **Style:** clean cartoon/anime 2.5D side profile, with One Piece / Ghibli-style nautical charm, bold outlines and a warm palette. The designs stay original (see "Ships").
+  - **Delivery:** modular, layered sheets with fixed pixel sizes and anchor points.
+  - **Ship parts:** modular hulls (1000×300 px), mast and rigging mounts, sails (billowing and furled), flags, figureheads, cabin interiors, and deck foliage (the citrus tree: blooming, normal and wilted).
+  - **Chibi sailor layers** (256×256 px): base body, skin tones, eye expressions, hair (front and back), outfits (coats, pirate hats, bandanas, aviator goggles) and desk tools (quill, laptop, tablet, logbook).
+  - **Environments:** looping parallax wave layers (foreground, midground, background), cloud banks, and sky gradients (day, sunset, starry twilight, storm).
+- **Claude** writes the code:
+  - The monorepo and the contracts in `@ship/shared-types`.
+  - The **sprite compositor** in `apps/web/src/ship-engine/` (built in session 4, in `sprites/`): preloading, scaling, anchor-point snapping, wave bobbing, parallax, hit regions, the avatar state machine and particles.
+  - The algorithms (SM-2/FSRS, the `bplist00` parser, typed-answer grading), the signaling server and the stores.
+  - **Claude no longer draws complex ships or characters with procedural Canvas code.** The procedural art built in session 3 is a stand-in until sprites arrive (see "Next steps").
+  - The art brief for the graphics AI is `docs/art-brief.md`; the full sprite checklist is `docs/sprite-list.md` (generated).
+- **Gemini** handles the AI judgement, with the user's own API key:
+  - **The Lookout's video judge** (built): it reads a YouTube video's thumbnail, title, channel and description and decides PROCEED or BLOCKED against the current assignment.
+  - **Feynman "blurt diff" grading** (built in session 4): it decides which concepts in a blurt are mastered, partly grasped or missed, and flags statements the notes contradict. The key is the web app's own setting.
 
 ## Repo layout
 
@@ -23,10 +47,13 @@ ship/
 ├── apps/
 │   ├── web/                 Vite 8 + React 19 + Tailwind 4 + Zustand 5. The main app.
 │   │   ├── dev/             ships.html and avatars.html: art galleries (dev server only)
+│   │   ├── public/assets/   the graphics AI's sprites: index.json + one folder per sheet (empty until art arrives)
+│   │   ├── scripts/         assets.ts (checks the art, writes index.json and docs/sprite-list.md), spriteList.ts
 │   │   └── src/
 │   │       ├── ship-engine/ ShipCanvas.tsx (the frame loop), ShipRenderer.ts (main deck), QuartersRenderer.ts,
 │   │       │                OceanEngine.ts, ParticleFX.ts, props.ts (helm, citrus tree, bell), hitRegions.ts,
-│   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks)
+│   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks),
+│   │       │                sprites/ (the sprite loader and compositor: store, paint, ship, props, avatar, ocean)
 │   │       ├── ships/       types.ts (the art contract), index.ts (drawShip), one file per HullStyle, parts/, decor.ts
 │   │       ├── components/  Hud, VoyageDock, PanelHost, ui kit, icons, panels/ (Helm, Captain's Log, Flashcards,
 │   │       │                Shipwright, Wardrobe, Crew, Fleet Log, Lookout, Settings)
@@ -38,11 +65,14 @@ ship/
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
 │   │   └── src/ background/ content/ popup/ options/
 │   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
+├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor)
 └── packages/
     ├── shared-types/        THE CONTRACTS. Every app and package agrees on these shapes.
-    ├── ship-theme-kit/      ship registry, parts catalogs (sails, figureheads, flags, desks), avatar catalog, prices
+    ├── ship-theme-kit/      ship registry, parts catalogs (sails, figureheads, flags, desks), avatar catalog, prices,
+    │                        sprite sheet specs + manifest validation (sprites.ts)
     ├── active-recall-engine/ SM-2 + FSRS schedulers, typed-answer grading, blurt diff engine
-    └── integrations/        adapters: Canvas, Todoist, Lodestar, Google Drive, Parchment (.parchment), CSV cards
+    └── integrations/        adapters: Canvas, Todoist, Lodestar, Google Drive, Parchment (.parchment), CSV cards,
+                             and the Gemini client (gemini.ts) + Gemini blurt grader (geminiBlurt.ts)
 ```
 
 Commands (run from the repo root):
@@ -52,32 +82,40 @@ npm install          # once
 npm run dev          # web app on http://localhost:5173 + crew server on :8787 + extension watch build
 npm test             # every package's Vitest tests
 npm run typecheck    # tsc (TypeScript 7) across the repo
+npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/index.json and docs/sprite-list.md
 ```
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-10-28, end of the third session)
+## Status (2026-10-28, after the fourth session)
 
-Work is on the branch `claude/build-foundations` (not merged into `main` yet).
+Sessions 1–3 are merged into `main` (pull request #1). Session 4 is on branch `claude/build-foundations`, in pull request #2. It covers this CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading. Start new work on a fresh branch from `main` once #2 is merged.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
   - Ships and avatars (`ship.ts`), voyages and economy (`voyage.ts`), flashcards and blurt (`recall.ts`), integrations and the relay (`integrations.ts`), the crew wire protocol (`crew.ts`), and the extension bridge (`lookout.ts`).
   - Session 2 added the `swing` extra, `Inventory`, `newReviewSchedule()`, `BLURT_STATUS_COLORS` and `ImportResult.assignments`.
 - **`packages/ship-theme-kit`** (step 1), **`packages/active-recall-engine`** (step 2), **`apps/signaling-server`** (step 5) and **`packages/integrations`** (step 6), all with tests.
-- **`apps/web`** (step 3), session 3: the scene engine, the 16 ships' artwork, the chibi sailors, every store and every panel. Details below.
+- **`apps/web`** (step 3), session 3: the scene engine, the 16 ships' artwork and the chibi sailors (both procedural, to be replaced by sprites), every store and every panel. Details below.
 - **`apps/extension`** (step 4), session 3: the Lookout. Details below.
+- **Sprites** (session 4): the contracts (`shared-types/sprite.ts`), the sheet specs and manifest checks (`ship-theme-kit/sprites.ts`), the compositor (`apps/web/src/ship-engine/sprites/`), the asset check script and the art brief. No art has arrived yet, so everything still draws procedurally. Details in "Decisions made in session 4".
+- **Gemini blurt grading** (session 4):
+  - the shared Gemini client and the blurt grader, in `@ship/integrations`;
+  - the key setting in the web app's Settings;
+  - async grading in the Captain's Log, falling back to the offline engine.
 
-`npm test` runs 676 tests, and all pass:
+  The Lookout now uses the same client.
+
+`npm test` runs 729 tests, and all pass:
 
 | Package | Tests |
 |---|---|
-| ship-theme-kit | 22 |
+| ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
 | active-recall-engine | 41 |
 | crew server | 100 |
-| integrations | 104 |
+| integrations (incl. Gemini client and blurt grader 15) | 119 |
 | extension | 171 |
-| web (ship art 147, sailor art 68, stores and voyage rules 23) | 238 |
+| web (ship art 147, sailor art 68, stores and voyage rules 23, sprite engine 11, asset checks 6, Gemini grading and backups 7) | 262 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
 
@@ -86,16 +124,50 @@ Every build step now has working code:
 - Two browser contexts in one crew room against the real crew server: presence, a shout, and a crewmate at the galley table.
 - The built extension loaded into Chromium with the real web app: it connects, the Siren Gate blocks a (faked) YouTube home page during a voyage, and steering back pays exactly 50 doubloons once.
 
+**Verified in session 4** with throwaway placeholder sprites (plain shapes, deleted afterwards, never committed) for the Woolly Wanderer, square sails, the ram, the Sun-Hat Skull, the citrus tree, the Captain's Desk, the galley table, the starter sailor and the tropical sea:
+- They passed `npm run assets`.
+- On the deck: the hull layers and rigging line up with the layout markers, sails are furled when docked and billow under sail, and the flag waves.
+- The sailor is tinted and posed in all three states and all break activities. Sailors without a complete set stay procedural, and the procedural helm and bell sit beside sprite parts.
+- The quarters' cabin-room sprite shows the sea through its porthole.
+
+**Gemini grading, verified in session 4** with Gemini's answers faked by Playwright's network interception (no real key and no call to Google):
+- Settings saves the key and **Check key** works.
+- The Captain's Log shows "Grading with Gemini…", then Gemini's grade (72% on the respiration sample), its advice and the misconception it caught.
+- A faked HTTP 429 falls back to the offline grade (19%) with a note saying why.
+- The key only ever travels in the `x-goog-api-key` header, never in a URL, and backups don't contain it.
+- Gemini's real API answers a browser preflight from `http://localhost:5173` with CORS allowed, so direct calls from the page work.
+
 **Never checked for real:**
-- A real Canvas, Todoist or Drive account, a real Parchment file or `study.json`, real YouTube, or a real Gemini key.
+- A real Canvas, Todoist or Drive account, a real Parchment file or `study.json`, real YouTube, or a real Gemini key (for the Lookout or for blurt grading).
 - The Lookout's options page has a **Check key** button for Gemini.
 - Parchment's Swift source still needs comparing (see session 2 notes).
 
-Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23, esbuild 0.28, @types/chrome 0.3.
+Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23 (crew server and web scripts), esbuild 0.28, @types/chrome 0.3, @types/node 26.6.
 
-## Build plan
+## Next steps (from the 2026-10-28 spec)
 
-All seven steps are done. What's left is checking against real accounts and files (above), and the ideas under "Next ideas" at the end of the session 3 notes.
+Do these in order.
+
+1. ✅ **Lock the sprite contracts** (session 4). See "Decisions made in session 4".
+   - The shapes are in `shared-types/sprite.ts`: `SpriteRef`, `SpritePlacement`, `SpriteManifest` and the layer names.
+   - The sheet specs (sizes and anchors) and `validateManifest` are in `ship-theme-kit/sprites.ts`.
+2. ✅ **Sprite compositor** (session 4). Each part draws its sprite when its set is complete, and its procedural art otherwise.
+   - It kept bobbing, parallax, particles, hit regions, the three avatar states, and the `drawShip`, `HullLayout` and `AvatarRenderer` APIs.
+   - **Still to do:** once a ship or sailor layer has a complete sprite set *and the user is happy with it*, delete its procedural code.
+3. **Asset pipeline (the graphics AI).** The brief is written: `docs/art-brief.md`, plus the generated checklist `docs/sprite-list.md`.
+   - **The starter pack**, all on transparent backgrounds with anchors in the manifests:
+     - the Woolly Wanderer's hull layers and rigging;
+     - the square sails, billowing and furled;
+     - the ram figurehead and the Sun-Hat Skull flag;
+     - the citrus tree in its three states, plus a fruit and a blossom;
+     - the starter sailor's layers and the Captain's Desk.
+   - **When art arrives:** put it in `apps/web/public/assets/<sheet>/` with a `manifest.json`, run `npm run assets -w @ship/web`, then `npm test`, then look at it in the galleries.
+4. **The Lookout (Gemini).** Built in session 3. It still needs testing with a real key.
+5. ✅ **Gemini blurt grading** (session 4). See "Gemini blurt grading" under "Decisions made in session 4". It still needs a try with a real key; Settings has a **Check key** button.
+
+Also still to do: try everything with real accounts and files (see "Never checked for real" above).
+
+## Build plan (the original seven steps, all done)
 
 1. ✅ **ship-theme-kit**: the 16 ships below as `ShipDefinition`s, the parts catalogs, the avatar catalog, prices and level gates, and a `validateLoadout()`.
 2. ✅ **active-recall-engine** (with tests):
@@ -114,11 +186,11 @@ All seven steps are done. What's left is checking against real accounts and file
 The brief named One Piece ships (Going Merry, Thousand Sunny, Baratie, Polar Tang, Red Force) and "Nami's Orange Grove". Those names and designs belong to Eiichiro Oda/Shueisha/Toei. Ship uses **original ships that keep the same vibe**, so the app is safe to share. Don't reintroduce the trademarked names.
 
 Buccaneer Fleet (the One Piece-inspired set):
-- **Woolly Wanderer**: small caravel, ram figurehead, grassy lawn deck. The free starter ship.
-- **Golden Mane**: sunny brig, lion figurehead, lawn deck, a swing.
-- **Floating Galley**: fish-shaped kitchen barge with fins and a kitchen chimney.
-- **Sunfish**: round yellow submarine with portholes and a periscope.
-- **Crimson Corsair**: red galleon with cannons.
+- **Woolly Wanderer**: the free starter ship. A small caravel with a smiling ram figurehead, a grassy lawn deck and a rustic wooden cabin.
+- **Golden Mane**: a sunny brigantine with a lion sunburst figurehead, a lawn deck and a mast swing.
+- **Floating Galley**: a fish-shaped ocean kitchen barge with fin stabilizers and a smoking chimney.
+- **Sunfish**: a round yellow submersible with brass portholes and a periscope.
+- **Crimson Corsair**: a deep red galleon with brass cannons and velvet captain's quarters.
 
 Navy & Military:
 - **Admiralty Battleship**: white and navy steel, turrets.
@@ -127,17 +199,20 @@ Navy & Military:
 - **Thunder Dreadnought**: brass telescopes and a war-room desk.
 
 Mythic (names from the brief, all generic or public-domain):
-- **Pegasus Celestial Cloud-Galleon**: wings, feathered sails, a twilight cloud sea, stardust. Aviator goggles suit it.
-- **Merfolk Coral Caravel**: bioluminescent, coral rails, deck mikan trees that drop zest coins when clicked.
+- **Pegasus Celestial Cloud-Galleon**: wings, feathered sails, a twilight cloud sea and stardust effects. Aviator goggles suit it.
+- **Merfolk Coral Caravel**: bioluminescent coral rails, and deck orange trees that drop zest coins when clicked.
 - **Chalkydri Solar Ark**: 12 fiery sails, brass astrolabe, stained-glass solarium.
 - **Alebrijes Spirit Galleon**: neon folk-art chimeras, papel picado sails, paper lanterns, copal smoke.
 - **Kaiju Behemoth Carrier**: a scrap barge with a friendly leviathan swimming alongside in neon mist.
 - **Gorgon Stone Trireme**: marble deck, oars, ivy, olive leaves.
 - **Sasquatch Cedar Timber-Brig**: redwood logs, a cabin woodstove, pine needles.
 
+**Decided (2026-10-28):** the 2026-10-28 spec lists only five Mythic ships, but the user chose to **keep** the Gorgon Stone Trireme and the Sasquatch Cedar Timber-Brig. All 16 ships stay.
+
 ## Web app design
 
 - **Rendering**: Canvas 2D, a side-on cartoon "2.5D" view. The deck is drawn as a thin top-down band so avatars can stand on it.
+  - **Ships, sailors and scenery are composed from the graphics AI's sprite layers.** Until those exist, the procedural art from session 3 fills in (see "Next steps").
   - Ship local units: length 1000, deck at y=0, keel at about +140, mast tops at about −560. Scale to fit the viewport.
   - Animate the hull bob, waves (layered sines with parallax), drifting clouds, billowing sails, a waving flag and flickering lanterns.
   - Use hit-regions for interactive parts, recomputed each frame:
@@ -161,9 +236,10 @@ Mythic (names from the brief, all generic or public-domain):
 - **Bridge content script** on the Ship web app (`http://localhost/*` and `http://127.0.0.1/*`; only active if `<meta name="ship-app">` is present). It relays the voyage state and a few due flashcards to the extension, and sends reward events back. The messages are the `WebToLookout` / `LookoutToWeb` types in `shared-types/lookout.ts`. The web app pays each reward event once (by id), then acks it.
 - **Guarding** happens only while a focus block runs:
   - YouTube home, Shorts and feeds are always blocked.
-  - A YouTube watch page is judged by **Gemini Flash** from its title, channel, description, an optional transcript excerpt and the thumbnail, checked against the active assignment. The answer is PROCEED or BLOCKED with a reason. Verdicts are cached per video.
+  - A YouTube watch page is judged by **Gemini Flash** from its title, channel, description, an optional transcript excerpt and the thumbnail, checked against the active assignment. Verdicts are cached per video.
+  - **The answer's shape:** the spec writes it as `{ "verdict": "PROCEED" | "BLOCKED", "confidence": number, "reason": string }`. The code asks Gemini for `decision` instead, to match `LookoutVerdict.decision` in shared-types, and accepts either name.
   - With no API key, a keyword heuristic decides and is labeled as such.
-- **Gemini setup**: the user types their own key on the options page. The model name is a setting, because Gemini model IDs change. Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with header `x-goog-api-key`, using `responseMimeType: application/json`.
+- **Gemini setup**: the user types their own key on the options page. The model name is a setting, because Gemini model IDs change. Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with header `x-goog-api-key`, using `responseMimeType: application/json`. The call itself goes through the shared client in `@ship/integrations` (`generateGeminiJson`); the Lookout's prompt and verdict parsing stay in `apps/extension/src/core/gemini.ts`.
 - **Siren Friction Gate**: a Shadow-DOM overlay with a cartoon pirate. It offers two choices:
   - Answer 2 flashcards correctly (typed) for a 5-minute leisure pass.
   - Steer back to the ship for +50 doubloons.
@@ -197,6 +273,7 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - Flashcards live in Parchment's `study.json` (`{ decks, cards, pageSchedules, reviewLog }`). Swift `JSONEncoder` writes its dates as seconds since 2001-01-01.
 - **Paper** (the user's art app, ~/Downloads/ForgePaper): undecided. Probably imports exported text or images only.
 - **CSV/TSV** flashcard import.
+- **Gemini** (`gemini.ts`): the shared client for every Gemini call: URLs, model-id cleanup, timeouts, refusals and loose JSON parsing. Any failure becomes a `GeminiError`. `geminiBlurt.ts` grades Captain's Log blurts (see session 4).
 
 ## Decisions made in session 2
 
@@ -311,7 +388,10 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - The default sailor's straw hat has a **blue** ribbon, with brown hair and a blue shirt.
   - The Sun-Hat Skull flag (a teal-banded sun hat over crossed quills) is restyled so it can't be mistaken for the Straw Hat Jolly Roger.
 
-### Web app: art
+### Web app: art (interim procedural art)
+
+This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI's sprites; keep it as the fallback until each sprite set is complete. Its layout points (helm, citrus tree, desk, tables, `bounds`) are a good starting point for the sprite anchors.
+
 - **Ship art files** (`src/ships/`):
   - One file per hull family, with shared helpers in `kit.ts`, `hullKit.ts` and `warship.ts`.
   - `parts/` holds the sails, figureheads, flags, extras and the leviathan; `decor.ts` holds the 16 cabin items.
@@ -359,11 +439,142 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - The transcript excerpt is always `null`, because YouTube's caption URLs are signed.
 - **Dev pages:** `dist/dev/gate.html?scenario=gemini|heuristic|shorts|few-cards|blocklist|cleared`, plus `dist/dev/popup.html` and `dist/dev/options.html`. Serve `dist/` over http to view them.
 
-### Next ideas
-- Try everything with real accounts and files, then fix what breaks (Canvas at the user's school, Todoist, a Parchment export, a real Gemini key).
+### Next ideas (after the "Next steps" above)
 - Compare SM-2 and the Parchment parsers with Parchment's Swift source.
 - Decide on Paper (the art app) imports and on a neutral `"file"` IntegrationId for plain text.
+- **Audio:** the spec's asset folders include "audio ambiance". The sea sound is synthesized today. Recorded ambience could replace it, but sound must stay off by default.
 - Possible additions: install as an app (PWA), cross-device sync, a weekly "voyage report", and recording your own sessions as ghosts for friends.
+
+## Decisions made in session 4
+
+### Sprite contracts (`shared-types/sprite.ts`, `ship-theme-kit/sprites.ts`)
+
+**Where the art lives**
+- Art lives in `apps/web/public/assets/`, one folder per sheet, each with its own `manifest.json` (a `SpriteManifest`).
+- Folders (`SPRITE_FOLDERS`): `ships/<shipId>`, `sails`, `figureheads`, `flags`, `props`, `avatars` and `environment/<envId>`.
+- `index.json` lists the folders that have art. The app reads it first, and fetches nothing else while it's empty. `npm run assets -w @ship/web` writes it.
+
+**Coordinates:** at density 1, one image pixel is one scene unit. That means ship units on deck, station units for sailors and room units in the quarters. `"density": 2` marks double-size art.
+
+**Sizes** (exact, and checked):
+
+| Sprite | Size | Anchor |
+|---|---|---|
+| hull layers | 1000×300 | (500, 150): the deck line at the ship's middle |
+| rigging | 1200×700 | (600, 700) |
+| sails | 320×320 | the top yard; the engine fits each set to its mast's canvas from `rigFor` |
+| figureheads | 160×160 | the mount, (24, 96), facing right |
+| flags | 120×72 | the hoist's top corner; drawn flat |
+| avatar layers, desks, galley table | 256×256, the station frame | (128, 246): the floor under the desk |
+| cabin-room | 1000×640 | |
+| environment sky | 1920×1080 | |
+| clouds, wave bands | 2048×512 | waves sit on their crest row |
+
+**Where per-ship offsets live (a deviation from the spec)**
+- Each ship's offsets are in its own `manifest.json`, next to the art: `layout` overrides on top of the built-in `HullLayout`, and `placements`. The spec put them in the theme kit.
+- The theme kit holds:
+  - what every sheet must contain (`spriteSheetSpecs()`);
+  - the checks (`validateManifest`, which also checks the shape of every `layout` key, and `sheetProgress`);
+  - the sailor's layer lookup (`avatarSpriteSlots`, `missingAvatarSprites`).
+
+**Rigging is its own sprite.** The spec only sizes hulls. Masts reach −560, which a 300-tall hull can't hold, so the masts, yards, crow's nest and flag pole are a separate 1200×700 sprite. Anything more than about 30 units below the waterline is hidden by the front waves, so 300 is tall enough for the hull itself.
+
+**Ship stacking** (`SHIP_Z`): hull-back 10, rigging 20, sails 30, deck details 40, props and sailors 50, hull-front 60, figurehead 70, flag 80. On a tie, the manifest's sprites go first.
+
+**Sailor layers**, bottom to top (`AVATAR_LAYER_ORDER`): hair-back, body, coat, [desk], tool, head, eyes, mouth, hair-front, hat, accessory, arms, hands.
+- Arms come last so a cup or spyglass covers the face, and folded arms cover a sleeping head.
+- **Arm poses:** writing, typing, relaxed, sipping, stretching, spyglass and resting.
+- **Eyes:** open, focus, blink, happy and sleep.
+- **Mouths:** smile, flat, open, sip and sleep.
+- The procedural pose has more faces; they map onto these (squeeze and wink become happy, yawn becomes open, and so on).
+
+**Tinting**
+- Skin, hair, coats and sleeves are drawn in greys and marked `tintable`. The engine colors them with "hard-light" over the chosen color, so `#808080` becomes the color itself.
+- A variant id wins over tinting when it exists: `body:<skin>`, `head:<skin>`, `arms:<pose>:<coat>` or `hands:<pose>:<skin>`.
+
+### Compositor (`apps/web/src/ship-engine/sprites/`)
+
+**Loading** (`store.ts`) is lazy:
+- `index.json` is read once, by `sprites.start()` in ShipCanvas.
+- A sheet's manifest and images load the first time something asks for that sheet.
+- A sheet appears only when all of its images are in.
+- Sprites that fail validation are dropped with a console warning. A folder is fetched once, even if it fails.
+- `sprites.version` goes up as each sheet arrives. That clears `shipLayout`'s cache and the cache of which sailors are ready.
+- The galleries call `preloadAll()`.
+
+**The switch-over happens per part**, at the existing drawing entry points: `drawShip`, `drawSails`, `drawFigurehead`, `drawFlag`, `drawHelm`, `drawCitrusTree`, `drawBell`, `drawDesk`, `drawGalleyTableBody`, `drawCabinDecor`, `drawSky`, `drawClouds`, `drawSeaBack`/`drawSeaFront`, the quarters' room and `AvatarRenderer`. A part switches when its set is complete:
+- **A ship:** once `hull-back`, `rigging` and `hull-front` are all in. Its manifest `layout` then applies too. On a sprite ship, bare masts get no procedural yards.
+- **A sail style:** once both looks are in. Sails are furled while the wind is under 0.45 (docked) and billow above it (shore leave and sailing).
+- **The citrus tree:** once all three looks, the fruit and the blossom are in. The engine hangs one fruit sprite per ripe fruit.
+- **The helm:** once the stand and the wheel are in; the wheel turns. The bell swings around its anchor.
+- **The sea:** once all three wave bands are in. They ride the procedural wave layers' heights, so the ship's bobbing still matches the water.
+- **A sailor:** only when `missingAvatarSprites` is empty for their loadout, so no sailor is half sprite and half procedural. Desks switch on their own.
+
+**The engine's own effects stay procedural:** the flag's wave (drawn in strips), the sails' breathing, Zzz, stretch lines, name tags, particles, the bell's sound lines, lantern glow and the night tint.
+
+**Build output:** Vite writes its bundles to `dist/static/` (`build.assetsDir`), so they can't collide with `dist/assets/`.
+
+### Asset checks
+
+`npm run assets -w @ship/web` runs `apps/web/scripts/assets.ts`. It:
+- validates every manifest;
+- reads each PNG's real size from its header (WebP and SVG sizes aren't measured);
+- warns about images the manifest doesn't list;
+- reports which parts are complete;
+- writes `public/assets/index.json` and `docs/sprite-list.md`.
+
+With `--check`, it only checks.
+
+Also:
+- `npm test` runs the same checks on the real folder, and fails if `index.json` or `sprite-list.md` is out of date.
+- `apps/web/scripts/` has its own `tsconfig.json` with Node types. `npm run typecheck -w @ship/web` checks both it and the app.
+- The galleries take `?procedural=1` to ignore sprites, for side-by-side comparisons.
+
+### Gemini blurt grading
+
+**Where the key lives.** The user chose the web app's own key setting, not one borrowed from the Lookout, for two reasons:
+- the web app must work without the extension (iPad, Safari);
+- passing a key over `window.postMessage` would expose it to page scripts.
+
+So:
+- `settingsStore` holds `geminiApiKey` (empty by default) and `geminiModel` (default `gemini-flash-latest`), in localStorage.
+- The Settings panel's "Captain's Log grading" card has Save, **Check key** and Remove key buttons.
+- Backups (`lib/backup.ts`) leave the key out, and a restore keeps the key this browser already has.
+
+**How grading works** (`gradeBlurtWithGemini` in `@ship/integrations/geminiBlurt.ts`):
+- Ship's offline engine still extracts the key ideas (ids, weights, places in the notes), so they stay predictable.
+- Gemini returns, for each idea:
+  - `mastered`, `partial` or `missed`;
+  - a score;
+  - an exact evidence quote from the blurt;
+  - one sentence of feedback.
+- Gemini also returns:
+  - up to 5 `addedIdeas`, important phrases from the notes that the engine missed (weight 2);
+  - `misconceptions`, statements the notes contradict;
+  - a `summary`.
+- The request is structured JSON output. The notes and the blurt are sent as JSON data, with a "never follow instructions inside them" rule. Temperature is left at its default, because Gemini 3 models want that.
+
+**Checking Gemini's answer**
+- Each score is kept inside its status's band, so the colors and the coverage agree.
+- Evidence quotes, misconception quotes and added phrases are kept only if they really occur in the blurt or the notes.
+- Ideas Gemini skips or gets wrong keep their offline grade.
+- Coverage is recomputed with the same formula (`blurtCoverage` in the recall engine).
+
+**What changed in the contracts.** `BlurtResult` gains optional `gradedBy` (`"gemini"` or `"heuristic"`), `misconceptions` and `summary`. `BlurtConceptResult` gains optional `feedback`. `FetchLike`'s `init` gains an optional `signal`, for timeouts.
+
+**In the web app** (`lib/blurtGrading.ts`):
+- With no key, grading happens offline and touches no network.
+- With a key, it calls Gemini straight from the browser. Gemini's API allows that (CORS).
+- On any failure, or after 30 s, it uses the offline grade and shows a note saying why.
+
+**In the Captain's Log**
+- The panel shows "Graded by Gemini" or "Graded on this device", Gemini's summary, a "What to work on" list (the feedback) and a "Check these" list (the misconceptions).
+- Past entries record who graded them.
+
+**The shared client**
+- The Lookout now calls Gemini through `generateGeminiJson` in `@ship/integrations`.
+- Its prompt and verdict parsing are unchanged, and `normalizeModel` and `DEFAULT_GEMINI_MODEL` are re-exported from `@ship/integrations`.
+- `@ship/integrations` and `@ship/active-recall-engine` are marked `"sideEffects": false`, so the extension's bundles stay their old size.
 
 ## Conventions
 

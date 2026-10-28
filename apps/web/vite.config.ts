@@ -8,4 +8,6 @@ export default defineConfig({
   // fighting over one dependency cache.
   cacheDir: process.env.VITE_CACHE_DIR ?? "node_modules/.vite",
   server: { port: 5173, strictPort: true, open: false },
+  // public/assets/ holds the graphics AI's sprites, so the build's own files go elsewhere.
+  build: { assetsDir: "static" },
 });

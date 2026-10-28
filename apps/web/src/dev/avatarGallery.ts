@@ -8,6 +8,7 @@ import { ACCESSORIES, COATS, COAT_COLORS, DEFAULT_AVATAR, DESKS, HAIR_COLORS, HA
 import { drawAvatarPreview, drawGalleyTable, drawStudyStation } from "../ship-engine/AvatarRenderer.js";
 import { breakActivityAt, BREAK_SEGMENT, type BreakActivity } from "../ship-engine/avatar/pose.js";
 import { hashString } from "../ship-engine/draw.js";
+import { sprites } from "../ship-engine/sprites/store.js";
 import { STILL_FRAME, type Ctx, type FrameInfo } from "../ship-engine/types.js";
 
 const params = new URLSearchParams(location.search);
@@ -317,15 +318,19 @@ function tick(now: number): void {
   last = t;
   requestAnimationFrame(tick);
 }
-if (still) {
-  render(list, STILL_FRAME);
-  document.body.dataset.ready = "1";
-} else if (fixedT !== null) {
-  render(list, { t: fixedT, dt: 0, reducedMotion: false, wind: 0.5 });
-  document.body.dataset.ready = "1";
-} else {
-  requestAnimationFrame((now) => {
-    tick(now);
+function begin(): void {
+  if (still) {
+    render(list, STILL_FRAME);
     document.body.dataset.ready = "1";
-  });
+  } else if (fixedT !== null) {
+    render(list, { t: fixedT, dt: 0, reducedMotion: false, wind: 0.5 });
+    document.body.dataset.ready = "1";
+  } else {
+    requestAnimationFrame((now) => {
+      tick(now);
+      document.body.dataset.ready = "1";
+    });
+  }
 }
+// Sprites first (unless ?procedural), so a still frame shows them.
+void (params.has("procedural") ? Promise.resolve() : sprites.preloadAll()).then(begin);
