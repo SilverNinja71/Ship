@@ -129,17 +129,11 @@ export function drawTorso(ctx: Ctx, look: Look, coat: CoatId, turn: number): Sle
       // The white shirt and its ruffled jabot inside the open coat.
       const shirt = (c: Ctx) => curvyPath(c, [[cx - 10, -2], [cx + 10, -2], [cx + 8, 40], [cx, 62], [cx - 8, 40]], 0.4);
       paintShaded(ctx, shirt, WHITE, null, null, { width: 2.6 });
-      const ruffle: CurvePt[] = [[cx - 2, 0]];
-      for (let i = 0; i < 5; i++) {
-        ruffle.push([cx - 7 - (i % 2), 4 + i * 4.5]);
-        ruffle.push([cx - 3, 6 + i * 4.5, 1]);
+      // Three soft frills.
+      for (let i = 2; i >= 0; i--) {
+        const y = 4 + i * 6.5;
+        paintShaded(ctx, (c) => curvyPath(c, [[cx - 7.5, y + 2], [cx - 4, y - 3], [cx, y - 1, 1], [cx + 4, y - 3], [cx + 7.5, y + 2], [cx + 3.5, y + 5], [cx, y + 3.5, 1], [cx - 3.5, y + 5]], 0.55), "#FFFDF7", "#EDE8F0", (c) => c.rect(cx - 9, y + 2.5, 18, 4), { width: 1.7, stroke: "#B9B2C4" });
       }
-      for (let i = 4; i >= 0; i--) {
-        ruffle.push([cx + 3, 6 + i * 4.5, 1]);
-        ruffle.push([cx + 7 + (i % 2), 4 + i * 4.5]);
-      }
-      ruffle.push([cx + 2, 0]);
-      paintShaded(ctx, (c) => curvyPath(c, ruffle, 0.5), "#FFFDF7", null, null, { width: 2, stroke: "#9B95A0" });
       // Gold trim down both front edges of the coat.
       for (const s of [-1, 1]) {
         strokePath(ctx, (c) => {

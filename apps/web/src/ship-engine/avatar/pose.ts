@@ -27,6 +27,8 @@ export interface ArmPose {
   hold: Hold;
   /** Rotation of whatever the hand holds (radians). */
   angle: number;
+  /** Rising from the lap: hide whatever is still below the desk's far edge. */
+  fromLap?: boolean;
 }
 
 export interface Pose {
@@ -267,7 +269,6 @@ function breakPose(p: Pose, time: number, tm: number, ph: number, seed: number, 
   p.eyes = blink ? "blink" : "open";
   p.mouth = "smile";
 
-  const layerFor = (hand: Point, up: ArmLayer, threshold = -84): ArmLayer => (hand.y > threshold ? "under" : up);
 
   if (activity === "sip") {
     // Up to the lips, a long sip, down to the chest for a breath, another sip.
@@ -276,12 +277,12 @@ function breakPose(p: Pose, time: number, tm: number, ph: number, seed: number, 
     p.sip = a * sipping;
     const tea = drink === "tea";
     const mouth = headToStation({ ...p, headRot: p.headRot }, { x: p.turn + 1, y: 17 });
-    const atLips = tea ? { x: mouth.x + 10, y: mouth.y + 5 } : { x: mouth.x + 2, y: mouth.y + 27 };
-    const atChest = tea ? { x: 13, y: -88 + torso.y } : { x: 9, y: -86 + torso.y };
+    const atLips = tea ? { x: mouth.x + 10, y: mouth.y + 5 } : { x: mouth.x + 2.5, y: mouth.y + 30 };
+    const atChest = tea ? { x: 13, y: -88 + torso.y } : { x: 10, y: -84 + torso.y };
     const held = lerpPt(atChest, atLips, sipping);
     const hand = lerpPt(lapR, held, a);
     const angle = tea ? -0.45 * p.sip : -0.06;
-    p.arms = [arm(-1, torso, lapL, "under"), arm(1, torso, hand, layerFor(hand, "front", tea ? -82 : -96), drink, angle)];
+    p.arms = [arm(-1, torso, lapL, "under"), { ...arm(1, torso, hand, "front", drink, angle), fromLap: true }];
     p.eyes = p.sip > 0.6 ? "happy" : blink ? "blink" : "open";
     p.mouth = p.sip > 0.6 ? "sip" : "cat";
     p.headRot += tea ? -0.04 * p.sip : 0;
@@ -299,11 +300,12 @@ function breakPose(p: Pose, time: number, tm: number, ph: number, seed: number, 
     const up = (side: -1 | 1): ArmPose => {
       const s = sh(side);
       const lap = side < 0 ? lapL : lapR;
-      const top = { x: torso.x + side * 15 + wig * 3, y: -184 + torso.y };
+      // A "V" stretch: hands up and out, so the arms show beside even big hair.
+      const top = { x: torso.x + side * 31 + wig * 3, y: -183 + torso.y };
       const hand = lerpPt(lap, top, a);
-      const elbowUp = { x: torso.x + side * 43 + wig * 1.5, y: -140 + torso.y };
+      const elbowUp = { x: torso.x + side * 47 + wig * 1.5, y: -137 + torso.y };
       const elbow = a < 0.5 ? solveElbow(s, hand, side) : lerpPt(solveElbow(s, hand, side), elbowUp, smoothstep(0.5, 0.9, a));
-      return { shoulder: s, elbow, hand, layer: layerFor(hand, "back"), hold: "none", angle: 0 };
+      return { shoulder: s, elbow, hand, layer: "back", hold: "none", angle: 0, fromLap: true };
     };
     p.arms = [up(-1), up(1)];
     p.head = headAt(torso, wig * 2, -1.5 * a);
@@ -321,7 +323,7 @@ function breakPose(p: Pose, time: number, tm: number, ph: number, seed: number, 
   const eye = headToStation(p, { x: p.turn + 13, y: 6 });
   const grip = { x: eye.x + 10 * Math.cos(p.pan), y: eye.y + 10 * Math.sin(p.pan) + 2 };
   const hand = lerpPt(lapR, grip, a);
-  p.arms = [arm(-1, torso, lapL, "under"), arm(1, torso, hand, layerFor(hand, "front", -96), "spyglass", lerp(-1.3, p.pan, smoothstep(0.3, 0.8, a)))];
+  p.arms = [arm(-1, torso, lapL, "under"), { ...arm(1, torso, hand, "front", "spyglass", lerp(-1.3, p.pan, smoothstep(0.3, 0.8, a))), fromLap: true }];
   p.eyes = a > 0.6 ? "wink" : blink ? "blink" : "open";
   p.mouth = a > 0.6 ? "grin" : "smile";
   p.look = { x: 0.6, y: 0 };
@@ -345,8 +347,8 @@ function idlePose(p: Pose, tool: StudyToolId, time: number, tm: number, ph: numb
   const sr = { x: SHOULDER.x, y: NECK_Y + torso.y + SHOULDER.y };
   // Forearms folded flat across the desk top, the head pillowed on them.
   p.arms = [
-    { shoulder: sl, elbow: { x: -37, y: -80 + breath * 0.4 }, hand: { x: 9, y: -82 + breath * 0.4 }, layer: "back", hold: "none", angle: 0 },
-    { shoulder: sr, elbow: { x: 37, y: -79 + breath * 0.4 }, hand: { x: -7, y: -81 + breath * 0.4 }, layer: "back", hold: "none", angle: 0 },
+    { shoulder: sl, elbow: { x: -43, y: -79 + breath * 0.4 }, hand: { x: 6, y: -81 + breath * 0.4 }, layer: "back", hold: "none", angle: 0 },
+    { shoulder: sr, elbow: { x: 41, y: -78 + breath * 0.4 }, hand: { x: -4, y: -80 + breath * 0.4 }, layer: "back", hold: "none", angle: 0 },
   ];
   return p;
 }

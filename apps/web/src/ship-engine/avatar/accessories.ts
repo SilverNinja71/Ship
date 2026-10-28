@@ -122,9 +122,11 @@ export function drawParrot(ctx: Ctx, pose: Pose): void {
   const bob = asleep ? Math.sin(pose.t * 1.1) * 0.6 : p.bob * 1.3;
   ctx.save();
   ctx.scale(0.88, 0.88);
-  // Tail feathers hang behind the shoulder.
-  tube(ctx, [{ x: -3, y: -6 }, { x: -7, y: 6 }, { x: -11, y: 18 }], 5.5, "#3B7DD8");
-  tube(ctx, [{ x: -1, y: -6 }, { x: -3, y: 6 }, { x: -5, y: 17 }], 5, red);
+  // Tail feathers fan out behind, away from the sailor.
+  tube(ctx, [{ x: -4, y: -6 }, { x: -10, y: 3 }, { x: -16, y: 10 }], 5.5, "#3B7DD8");
+  tube(ctx, [{ x: -2, y: -6 }, { x: -6, y: 4 }, { x: -10, y: 12 }], 5, red);
+  // Toes gripping the shoulder, tucked under the body.
+  for (const x of [-4.5, 1.5]) paintShaded(ctx, (c) => c.ellipse(x, 0.5, 2.8, 1.7, 0, 0, Math.PI * 2), "#A49CA8", null, null, { width: 1.4 });
   paintShaded(ctx, (c) => c.ellipse(-1.5, -11, 8, 11.5, -0.15, 0, Math.PI * 2), red, shade(red, -0.2), (c) => c.ellipse(-6, -6, 6, 10, 0, 0, Math.PI * 2));
   // Wing, raised a little when it flaps.
   ctx.save();
@@ -148,11 +150,9 @@ export function drawParrot(ctx: Ctx, pose: Pose): void {
     fillPath(ctx, (c) => c.arc(3.7, -1.2, 0.6, 0, Math.PI * 2), "#FFFFFF");
   }
   // Hooked beak.
-  paintShaded(ctx, (c) => curvyPath(c, [[5.5, -3.5], [10.5, -2], [11, 3.5, 1], [8.6, 1.5], [5.5, 2.5]], 0.5), "#F1DDBB", "#4A3A3A", (c) => c.rect(8.4, 1.2, 4, 4), { width: 2.2 });
+  paintShaded(ctx, (c) => curvyPath(c, [[5.5, -3.5], [10.5, -2.6], [11.8, 2.8, 1], [9, 1], [5.5, 2.2]], 0.5), "#F4E6C8", "#CDB894", (c) => c.rect(9.5, 0.5, 4, 4), { width: 1.8, stroke: "#6E5A48" });
   // A little crest.
   paintShaded(ctx, (c) => curvyPath(c, [[-3, -6.5], [-5.5, -11.5, 1], [-1, -8], [0.5, -12, 1], [2, -7.2]], 0.5), red, null, null, { width: 2 });
   ctx.restore();
-  // Feet gripping the shoulder.
-  for (const x of [-4, 2]) paintShaded(ctx, (c) => c.ellipse(x, 0, 2.6, 1.8, 0, 0, Math.PI * 2), "#8E8A92", null, null, { width: 1.6 });
   ctx.restore();
 }

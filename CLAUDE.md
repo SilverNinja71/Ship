@@ -22,12 +22,19 @@ npm workspaces + Turborepo + TypeScript. There is no build step for packages: ea
 ship/
 ├── apps/
 │   ├── web/                 Vite 8 + React 19 + Tailwind 4 + Zustand 5. The main app.
+│   │   ├── dev/             ships.html and avatars.html: art galleries (dev server only)
 │   │   └── src/
-│   │       ├── ship-engine/ ShipCanvas.tsx, ShipRenderer.ts, AvatarRenderer.ts, OceanEngine.ts, ParticleFX.ts
-│   │       ├── ships/       per-hull drawing code (one file per HullStyle family)
-│   │       ├── components/  HUD + modals (Helm/Navigation Map, Captain's Log, Flashcards, Shipwright, Wardrobe, Crew, Fleet Log, Lookout)
-│   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore, settingsStore
-│   │       └── hooks/       useWebRTC, useAmbiance, useKeyboard, useIdleDetection, useLookoutBridge
+│   │       ├── ship-engine/ ShipCanvas.tsx (the frame loop), ShipRenderer.ts (main deck), QuartersRenderer.ts,
+│   │       │                OceanEngine.ts, ParticleFX.ts, props.ts (helm, citrus tree, bell), hitRegions.ts,
+│   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks)
+│   │       ├── ships/       types.ts (the art contract), index.ts (drawShip), one file per HullStyle, parts/, decor.ts
+│   │       ├── components/  Hud, VoyageDock, PanelHost, ui kit, icons, panels/ (Helm, Captain's Log, Flashcards,
+│   │       │                Shipwright, Wardrobe, Crew, Fleet Log, Lookout, Settings)
+│   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore,
+│   │       │                settingsStore, uiStore, activityStore, lookoutStore
+│   │       ├── hooks/       useVoyageTicker, useIdleDetection, useKeyboard, useAmbiance, useLookoutBridge,
+│   │       │                useCrewSync, useWebRTC
+│   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
 │   │   └── src/ background/ content/ popup/ options/
 │   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
@@ -49,27 +56,35 @@ npm run typecheck    # tsc (TypeScript 7) across the repo
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-10-28, end of the second session)
+## Status (2026-10-28, end of the third session)
 
 Work is on the branch `claude/build-foundations` (not merged into `main` yet).
 
-Done:
-- Monorepo scaffold: root `package.json` (workspaces), `turbo.json`, `tsconfig.base.json`, a `package.json` and `tsconfig.json` for every workspace, and `npm install` run with the dependencies below.
-- **`packages/shared-types`**: every contract. Ships and avatars (`ship.ts`), voyages and economy (`voyage.ts`), flashcards and blurt (`recall.ts`), integrations and the relay (`integrations.ts`), the crew wire protocol (`crew.ts`), and the extension bridge (`lookout.ts`). Session 2 added the `swing` extra, `Inventory`, `newReviewSchedule()`, `BLURT_STATUS_COLORS` and `ImportResult.assignments`.
-- **`packages/ship-theme-kit`** (build step 1), with tests.
-- **`packages/active-recall-engine`** (build step 2), with tests.
-- **`apps/signaling-server`** (build step 5), with tests, including an end-to-end test with two real WebSocket clients.
-- **`packages/integrations`** (build step 6), with tests. It is only tested against faked responses and generated fixtures. Nothing has been run against a real Canvas, Todoist or Drive account, or a real Parchment file, yet. A Canvas sync through the real crew-server relay was checked end to end, with a fake Canvas behind it.
+Every build step now has working code:
+- **`packages/shared-types`**: every contract.
+  - Ships and avatars (`ship.ts`), voyages and economy (`voyage.ts`), flashcards and blurt (`recall.ts`), integrations and the relay (`integrations.ts`), the crew wire protocol (`crew.ts`), and the extension bridge (`lookout.ts`).
+  - Session 2 added the `swing` extra, `Inventory`, `newReviewSchedule()`, `BLURT_STATUS_COLORS` and `ImportResult.assignments`.
+- **`packages/ship-theme-kit`** (step 1), **`packages/active-recall-engine`** (step 2), **`apps/signaling-server`** (step 5) and **`packages/integrations`** (step 6), all with tests.
+- **`apps/web`** (step 3), session 3: the scene engine, the 16 ships' artwork, the chibi sailors, every store and every panel. Details below.
+- **`apps/extension`** (step 4), session 3: the Lookout. Details below.
 
-`npm test` runs 267 tests, and all pass. `npm run typecheck` passes for the five finished workspaces. It fails for `@ship/web` and `@ship/extension` with "No inputs were found" until they get source files.
+TEST_COUNTS_PLACEHOLDER
 
-Not started yet: the web app (step 3), the Lookout extension (step 4) and the browser checks (step 7). Their `src/` folders don't exist yet.
+**Verified in session 3** with Playwright's headless Chromium (muted, no pop-ups). Claude Code cloud sessions have no built-in browser pane, so this is the stand-in. Never use the user's own Chrome.
+- Screenshots of the deck, the quarters, every panel and a phone-sized layout, with sample data.
+- Two browser contexts in one crew room against the real crew server: presence, a shout, and a crewmate at the galley table.
+- The built extension loaded into Chromium with the real web app: it connects, the Siren Gate blocks a (faked) YouTube home page during a voyage, and steering back pays exactly 50 doubloons once.
+
+**Never checked for real:**
+- A real Canvas, Todoist or Drive account, a real Parchment file or `study.json`, real YouTube, or a real Gemini key.
+- The Lookout's options page has a **Check key** button for Gemini.
+- Parchment's Swift source still needs comparing (see session 2 notes).
 
 Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23, esbuild 0.28, @types/chrome 0.3.
 
-## Build plan (next steps, in order)
+## Build plan
 
-Steps 1, 2, 5 and 6 are done (see "Decisions made in session 2" below). Next up: 3, then 4, then 7.
+All seven steps are done. What's left is checking against real accounts and files (above), and the ideas under "Next ideas" at the end of the session 3 notes.
 
 1. ✅ **ship-theme-kit**: the 16 ships below as `ShipDefinition`s, the parts catalogs, the avatar catalog, prices and level gates, and a `validateLoadout()`.
 2. ✅ **active-recall-engine** (with tests):
@@ -77,13 +92,11 @@ Steps 1, 2, 5 and 6 are done (see "Decisions made in session 2" below). Next up:
    - FSRS-4.5 with the default weights. Rating mapping: 1–2 → Again, 3 → Hard, 4 → Good, 5 → Easy.
    - Typed-answer grading (normalize, token overlap + Levenshtein) that suggests a rating.
    - Blurt diff: pull weighted key concepts out of reference notes, then fuzzy-match the blurt against them to get mastered / partial / missed and a coverage score. Mastered shows seafoam green; missed shows coral red.
-3. **web app** (the biggest piece; see "Web app design").
-4. **Lookout extension** (see "Lookout design"). The Siren Gate should grade typed answers with `gradeTypedAnswer` from `@ship/active-recall-engine`. Add that package to `apps/extension/package.json` before building (esbuild bundles workspace packages).
+3. ✅ **web app** (see "Web app design" and the session 3 notes).
+4. ✅ **Lookout extension** (see "Lookout design" and the session 3 notes).
 5. ✅ **signaling server** (see "Crew server design").
 6. ✅ **integrations** (see "Integrations").
-7. Verify: unit tests, then run the web app in the built-in browser pane (muted) and take screenshots. Test crew rooms with two tabs. Add a dev page to the extension that mounts the Siren Gate with a fake `chrome` object, so it can be checked in the pane, because the pane can't load extensions.
-
-Steps 4–6 depend only on `shared-types`, so they can be built in parallel by separate agents (Claude or Gemini). Each agent stays inside its own folder and must not run `npm install` while other agents are working. Install new dependencies once, up front, from the root.
+7. ✅ Verify: unit tests, screenshots in a headless browser (muted), crew rooms with two tabs, and the extension's Siren Gate dev page (`apps/extension/dist/dev/gate.html`, served over http) with a fake `chrome` object.
 
 ## Ships (original names on purpose)
 
@@ -249,6 +262,80 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
 - **Parchment needs checking against the real Swift source and a real file:**
   - `.parchment` is assumed to be `PropertyListEncoder` output (plain dicts, native plist dates), with NSKeyedArchiver and JSON as fallbacks.
   - Field names are guessed tolerantly. The lists live in `parchment/archive.ts` and `parchment/study.ts`.
+
+## Decisions made in session 3
+
+### Web app: how the pieces fit
+- **Scene loop:** `ShipCanvas.tsx` runs one `requestAnimationFrame` loop. It reads the stores with `getState()` every frame, so React doesn't re-render per frame.
+- **Each frame draws** sky → scenery → clouds → back waves → the ship (bobbing and tilting with the surface) → front waves → particles. Click regions are rebuilt every frame from the canvas transform.
+- **Ship art contract** (`src/ships/types.ts`):
+  - `shipLayout(ship)` gives the deck range, waterline, mast spots, bow, flag top, and the helm, citrus tree, bell, desk, crew tables, smoke points and orchard. It may also give `surfaces` and `bounds`; the camera fits the ship to `bounds`.
+  - `drawShip(ctx, ship, loadout, frame, onDeck)` draws back → sails → deck → `onDeck` (props and sailors) → front → figurehead → flag.
+- **Sailor art contract** (`AvatarRenderer.ts`):
+  - `drawStudyStation` draws a sailor behind their desk (3/4 front view). It takes `opacity` (ghosts use 0.45) and `scale` (the quarters use 2.05).
+  - `drawGalleyTable` seats two crew. `drawAvatarPreview` is for panels.
+  - `GALLEY_SEAT_X`, `HEAD_TOP` and `GALLEY_SEAT_SCALE` say where to put name tags.
+- **Units:** ship units are scaled to pixels by a camera, and everything else is CSS pixels. Name tags keep a fixed on-screen size.
+- **Art galleries:** `/dev/ships.html` (with `?ship=`, `?still=1` and `?markers=1`) and `/dev/avatars.html` (with `?still=1` and `?t=`).
+  - Run extra dev servers with `VITE_CACHE_DIR=<dir> npx vite --port <n> --strictPort`, so they don't share Vite's cache.
+  - Never pass `--open` to Vite: it treats the next word as a page to open in a browser.
+
+### Web app: rules
+- **Voyages pay as they go.** Each whole focused minute pays 2 doubloons and 10 XP, and finishing adds +25. Abandoning keeps what was already paid, but wilts the citrus tree.
+- **Timing comes from timestamps** (`lib/voyageLogic.ts`), not from counting ticks, so a throttled background tab can't drift.
+- **A hidden tab keeps the voyage running.** The avatar shows `DRIFTING_IDLE`, but the Lookout must keep guarding then, because that's when the user is on YouTube.
+- **Idle:** no input for `idleMinutes` (default 10; 0 turns it off) *while Ship is visible* pauses the voyage (phase `drifting`), and any input resumes it.
+- **The citrus tree** ripens one fruit per 10 planned minutes of a completed voyage, and each fruit pays `ZEST_COIN_VALUE`. Abandoning a voyage wilts it until the next voyage starts.
+- **Streaks** count consecutive local days with a completed voyage. Yesterday's streak stays alive until today ends.
+- **Saved data:** every store persists under a `ship:` key in localStorage. Settings has backup, restore and "start over".
+- **Sound:** WebAudio synthesizes a sea ambience and bell chimes, with no audio files. The `AudioContext` is only created after the user turns sound on; it's off by default.
+- **Crew calls:** mic and camera are off until the user toggles them, and friends' voices stay muted until "Hear crew" is clicked.
+  - Every pair of crewmates connects directly ("mesh"), using perfect negotiation and Google's public STUN server.
+  - Ghosts are recorded from crewmates' state timelines when they leave (at least 60 s), and replay at galley tables while they're away.
+- **Network:**
+  - Canvas always goes through the crew server's relay.
+  - Todoist tries the browser first, then the relay.
+  - Google Drive uses Google Identity Services' token client with the user's own client ID. Its sign-in window only opens from a click.
+- **Not copying One Piece:**
+  - The default sailor's straw hat has a **blue** ribbon, with brown hair and a blue shirt.
+  - The Sun-Hat Skull flag (a teal-banded sun hat over crossed quills) is restyled so it can't be mistaken for the Straw Hat Jolly Roger.
+
+### Web app: art
+ART_NOTES_PLACEHOLDER
+
+### Lookout extension
+- **Internals:**
+  - Logic with no Chrome calls lives in `src/core`. The worker logic in `src/background/lookout.ts` gets Chrome passed in, so tests can fake it.
+  - State lives in `chrome.storage.local`, and every change runs under a lock. A one-minute alarm handles staleness, the midnight reset, passes and the toolbar badge.
+- **Permissions:**
+  - `storage`, `alarms` and `scripting`.
+  - Hosts: YouTube, `i.ytimg.com`, Gemini, and `http://localhost/*` / `http://127.0.0.1/*` (every port).
+  - User-added sites use optional host permissions, requested from the options page.
+- **Bridge rules the web app follows:**
+  - Treat any Lookout `hello` as connected, and re-send `voyage` and `cards`.
+  - Keep `guarding: true` while the Ship tab is hidden.
+  - Send a heartbeat at least every 3 minutes (the extension stops guarding after 3 minutes without one, or 2 minutes after `endsAt`).
+  - Each `cards` message replaces the set (at most 50).
+  - Pay each reward id once, then ack it.
+- **Rewards:** `steer-back` pays 50, or 0 if one was already paid in the last 10 minutes. `blocked` and `gate-passed` pay 0.
+- **What it blocks:**
+  - YouTube home, Shorts, `/feed/*`, gaming, trending and hashtag pages.
+  - Search, channels and playlists are allowed.
+- **Gemini:**
+  - The default model is `gemini-flash-latest`; it's never been called with a real key, so check it with the options page's Check key button.
+  - Only Gemini verdicts are cached (12 h, per video and study context).
+  - After an error or 15 s, the keyword check decides, and is labeled as such.
+- **The Siren Gate:**
+  - It lives in a closed shadow DOM with no `innerHTML`, which is safe under YouTube's Trusted Types.
+  - "Close" answers count as right. A leisure pass opens the whole site.
+  - The transcript excerpt is always `null`, because YouTube's caption URLs are signed.
+- **Dev pages:** `dist/dev/gate.html?scenario=gemini|heuristic|shorts|few-cards|blocklist|cleared`, plus `dist/dev/popup.html` and `dist/dev/options.html`. Serve `dist/` over http to view them.
+
+### Next ideas
+- Try everything with real accounts and files, then fix what breaks (Canvas at the user's school, Todoist, a Parchment export, a real Gemini key).
+- Compare SM-2 and the Parchment parsers with Parchment's Swift source.
+- Decide on Paper (the art app) imports and on a neutral `"file"` IntegrationId for plain text.
+- Possible additions: install as an app (PWA), cross-device sync, a weekly "voyage report", and recording your own sessions as ghosts for friends.
 
 ## Conventions
 

@@ -92,13 +92,23 @@ export function drawGalleyTable(ctx: Ctx, at: Point, seats: [CrewSeat | null, Cr
 export function drawAvatarPreview(ctx: Ctx, avatar: AvatarLoadout, state: AvatarState, cx: number, cy: number, size: number, frame: FrameInfo): void {
   const seed = hashString(avatar.name);
   const pose = computePose(state, avatar.tool, frame.t, seed, frame.reducedMotion);
-  // The sailor plus a hint of desk spans about x -62..62, y -198..-52.
-  const s = size / 152;
+  // Big previews show the sailor and a hint of desk (about y -198..-52); small
+  // ones crop to head and shoulders so the face stays readable.
+  const small = size < 64;
+  const s = size / (small ? 116 : 152);
+  const centerY = small ? -140 : -125;
   withTransform(ctx, { x: cx, y: cy, scale: s }, () => {
-    withTransform(ctx, { y: 125 }, () => {
+    ctx.save();
+    if (small) {
+      ctx.beginPath();
+      ctx.rect(-58, -58, 116, 116);
+      ctx.clip();
+    }
+    withTransform(ctx, { y: -centerY }, () => {
       deskHint(ctx);
       drawSailor(ctx, { avatar, pose, frame, seed, desk: "clip" });
     });
+    ctx.restore();
   });
 }
 

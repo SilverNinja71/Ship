@@ -51,6 +51,8 @@ export function drawHeadShape(ctx: Ctx, look: Look, pose: Pose, hairShadow: ((c:
 }
 
 const MOUTH = "#5B2737";
+/** How much of a focused eye the lowered lid covers. */
+const LID = 0.36;
 const TONGUE = "#F07A8A";
 
 export function drawFace(ctx: Ctx, look: Look, pose: Pose, hideEye: -1 | 0 | 1 = 0): void {
@@ -160,11 +162,11 @@ function drawEye(ctx: Ctx, look: Look, pose: Pose, x: number, y: number, rx: num
   fillPath(ctx, (c) => c.ellipse(cx, cy + ery * 0.85, rx * 1.1, ery * 0.75, 0, 0, Math.PI * 2), tint);
   if (focus) {
     // A lowered lid: the top of the eye is covered by skin.
-    fillPath(ctx, (c) => c.rect(cx - rx - 1, cy - ery - 1, rx * 2 + 2, ery * 0.55 + 1), look.skin);
+    fillPath(ctx, (c) => c.rect(cx - rx - 1, cy - ery - 1, rx * 2 + 2, ery * LID + 1), look.skin);
   }
   ctx.restore();
   // Upper lash line, thick, with a flick at the outer corner.
-  const top = focus ? cy - ery + ery * 0.55 : cy - ery * 0.55;
+  const top = focus ? cy - ery + ery * LID : cy - ery * 0.55;
   strokePath(ctx, (c) => {
     if (focus) {
       c.moveTo(cx - rx - 0.6, top + 0.4);

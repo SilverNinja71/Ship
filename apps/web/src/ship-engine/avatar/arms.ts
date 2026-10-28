@@ -29,7 +29,7 @@ export function drawArm(ctx: Ctx, look: Look, sleeve: SleeveStyle, arm: ArmPose,
     if (sleeve.cuff) {
       const len = sleeve.cuffWide ? 6.5 : 3.2;
       const c0 = { x: wrist.x - dir.x * len, y: wrist.y - dir.y * len };
-      tube(ctx, [c0, wrist], SLEEVE_W + (sleeve.cuffWide ? 2.5 : 0.5), sleeve.cuff, { cap: "butt" });
+      tube(ctx, [c0, wrist], SLEEVE_W + (sleeve.cuffWide ? 2.5 : 0.5), sleeve.cuff);
     }
   }
 
@@ -37,11 +37,15 @@ export function drawArm(ctx: Ctx, look: Look, sleeve: SleeveStyle, arm: ArmPose,
   drawHand(ctx, look, h, side, arm);
 }
 
-function drawHand(ctx: Ctx, look: Look, h: Point, side: -1 | 1, arm: ArmPose): void {
+/** A round mitten hand with a hint of a thumb on the inner side. */
+export function drawHand(ctx: Ctx, look: Look, h: Point, side: -1 | 1, arm: Pick<ArmPose, "hold">): void {
   const holding = arm.hold === "quill" || arm.hold === "stylus";
-  paintShaded(ctx, (c) => c.ellipse(h.x, h.y, HAND_R, HAND_R * (holding ? 0.95 : 0.88), 0, 0, Math.PI * 2), look.skin, look.skinShade, (c) => c.ellipse(h.x - side * 2, h.y + 4.5, HAND_R, 3.5, 0, 0, Math.PI * 2), { stroke: look.skinLine });
-  // A thumb bump on the inner side.
-  paintShaded(ctx, (c) => c.ellipse(h.x - side * (HAND_R * 0.75), h.y - 1.2, 2.6, 2.2, 0, 0, Math.PI * 2), look.skin, null, null, { stroke: look.skinLine, width: 2 });
+  const ry = HAND_R * (holding ? 0.95 : 0.86);
+  paintShaded(ctx, (c) => c.ellipse(h.x, h.y, HAND_R, ry, 0, 0, Math.PI * 2), look.skin, alpha(look.skinShade, 0.8), (c) => c.ellipse(h.x + side * 1.5, h.y + ry + 1.2, HAND_R, 2.6, 0, 0, Math.PI * 2), { stroke: look.skinLine, width: 3 });
+  strokePath(ctx, (c) => {
+    c.moveTo(h.x - side * HAND_R * 0.15, h.y - ry * 0.35);
+    c.quadraticCurveTo(h.x - side * HAND_R * 0.7, h.y - ry * 0.2, h.x - side * HAND_R * 0.62, h.y + ry * 0.35);
+  }, alpha(look.skinLine, 0.55), 1.3);
 }
 
 function drawHeld(ctx: Ctx, look: Look, arm: ArmPose, pose: Pose): void {
@@ -79,19 +83,19 @@ function drawHeld(ctx: Ctx, look: Look, arm: ArmPose, pose: Pose): void {
 /** A quill feather, nib at the bottom-left of the hand, vane rising behind it. */
 export function quill(ctx: Ctx): void {
   const vane = (c: Ctx) =>
-    curvyPath(c, [[-0.5, -2, 1], [4, -12], [10, -24], [15.5, -33, 1], [15, -22], [11.5, -12], [5, -1]], 0.5);
-  paintShaded(ctx, vane, "#FBF6EA", "#E3DCCB", (c) => c.ellipse(12, -14, 4.5, 16, 0.4, 0, Math.PI * 2), { stroke: "#8E8473", width: 2.6 });
+    curvyPath(c, [[0, -3, 1], [-2.5, -10], [-1, -17], [0.5, -19.5, 1], [1, -22], [5, -28], [12, -32, 1], [13.5, -26], [12.5, -21, 1], [14, -18], [11, -10], [4.5, -2.5]], 0.5);
+  paintShaded(ctx, vane, "#FFFDF6", "#EEE6D4", (c) => c.ellipse(-2, -8, 6, 9, 0, 0, Math.PI * 2), { stroke: "#B3A792", width: 2.2 });
+  // A soft blue tip.
+  ctx.save();
+  ctx.beginPath();
+  vane(ctx);
+  ctx.clip();
+  fillPath(ctx, (c) => c.ellipse(12, -31, 7, 6, 0.5, 0, Math.PI * 2), "#9CCFE0");
+  ctx.restore();
   strokePath(ctx, (c) => {
     c.moveTo(-3.5, 6.5);
-    c.quadraticCurveTo(5, -10, 15.5, -33);
-  }, "#B8AE9A", 1.4);
-  // Barb notches.
-  for (const [x, y] of [[9, -17], [12.5, -24]] as const) {
-    strokePath(ctx, (c) => {
-      c.moveTo(x, y);
-      c.lineTo(x + 3, y + 1.5);
-    }, "#C9C0AE", 1.1);
-  }
+    c.quadraticCurveTo(3, -12, 12, -31);
+  }, "#C9BEA8", 1.2);
   paintShaded(ctx, (c) => {
     c.moveTo(-4.4, 7.4);
     c.lineTo(-2.2, 2);
@@ -101,6 +105,7 @@ export function quill(ctx: Ctx): void {
 }
 
 function boba(ctx: Ctx, look: Look, pose: Pose): void {
+  ctx.scale(1.12, 1.12);
   const cup = (c: Ctx) => {
     c.moveTo(-8.5, -10);
     c.lineTo(8.5, -10);
@@ -111,7 +116,7 @@ function boba(ctx: Ctx, look: Look, pose: Pose): void {
   // Straw first so the lid sits over its base; it runs up to the lips.
   const straw = (c: Ctx) => {
     c.moveTo(2, -6);
-    c.lineTo(-2, -27);
+    c.lineTo(-2.2, -26.8);
   };
   ctx.save();
   ctx.lineCap = "round";
@@ -121,7 +126,7 @@ function boba(ctx: Ctx, look: Look, pose: Pose): void {
   if (pose.sip > 0.6) {
     // A pearl riding up the straw.
     const u = fract(pose.t * 0.9);
-    fillPath(ctx, (c) => c.arc(2 - 4 * u, -8 - 18 * u, 1.3, 0, Math.PI * 2), "#3B2A2E");
+    fillPath(ctx, (c) => c.arc(2 - 4 * u, -8 - 17 * u, 1.3, 0, Math.PI * 2), "#3B2A2E");
   }
   paintShaded(ctx, cup, "#EADFD6", "#D9A97A", (c) => c.rect(-10, -4 + pose.sip * 2, 20, 18), { stroke: "#8B6E5D" });
   ctx.save();

@@ -9,6 +9,7 @@
 //   ?markers=1     dots, labels and footprints at every layout point
 //   ?crew=1        stand-in props and placeholder sailors at the stations
 //   ?w=<px>        cell width
+//   ?fw=<px>       flag cell width; ?flag=<id> shows one flag
 
 import type { FigureheadId, FlagId, SailStyle, ShipDefinition, ShipLoadout } from "@ship/shared-types";
 import { CABIN_DECOR, DEFAULT_AVATAR, ENVIRONMENTS, FIGUREHEADS, FLAGS, SAILS, SHIPS, defaultLoadout, getShip } from "@ship/ship-theme-kit";
@@ -296,12 +297,14 @@ if (!only && (view === "all" || view === "figureheads")) {
 if (!only && (view === "all" || view === "flags")) {
   const grid = section("Flags");
   const host = getShip("woolly-wanderer")!;
-  for (const f of FLAGS) {
-    cell(grid, `${f.id} (${f.name})`, 260, 200, (ctx, w, h, frame) => {
+  const fw = Number(q.get("fw") ?? 260);
+  const flags = q.get("flag") ? FLAGS.filter((f) => f.id === q.get("flag")) : FLAGS;
+  for (const f of flags) {
+    cell(grid, `${f.id} (${f.name})`, fw, Math.round(fw * 0.77), (ctx, w, h, frame) => {
       sky(ctx, w, h, ENVIRONMENTS["tropical-sea"]);
       ctx.save();
       ctx.translate(w * 0.72, h * 0.2);
-      ctx.scale(1.4, 1.4);
+      ctx.scale((1.4 * w) / 260, (1.4 * w) / 260);
       paint(ctx, (c) => roundRectPath(c, -4, -6, 8, 140, 3), "#8B5A2B");
       drawFlag(ctx, f.id as FlagId, { x: 0, y: 0 }, frame, host);
       ctx.restore();

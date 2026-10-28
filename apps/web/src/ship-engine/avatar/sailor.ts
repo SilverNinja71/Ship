@@ -8,14 +8,14 @@ import type { AvatarLoadout } from "@ship/shared-types";
 import { withTransform } from "../draw.js";
 import type { Ctx, FrameInfo } from "../types.js";
 import { drawEarring, drawEyepatch, drawGlasses, drawGoggles, drawParrot, drawScarf } from "./accessories.js";
-import { drawArm, drawSteam } from "./arms.js";
+import { drawArm, drawHand, drawSteam } from "./arms.js";
 import { drawTorso, type SleeveStyle } from "./coats.js";
 import { drawStretchLines, drawZzz } from "./fx.js";
 import { drawHairBack, drawHairFront, hairShadow } from "./hair.js";
 import { drawEar, drawFace, drawHeadShape } from "./head.js";
 import { drawHat, hatInfo } from "./hats.js";
 import { rotPt, withClip } from "./kit.js";
-import { DESK_FAR, NECK_Y, resolveLook, type Look } from "./look.js";
+import { DESK_FAR, DESK_NEAR, NECK_Y, resolveLook, type Look } from "./look.js";
 import type { ArmLayer, Pose } from "./pose.js";
 import { drawToolOver, drawToolUnder } from "./tools.js";
 
@@ -68,7 +68,8 @@ function paintSailor(ctx: Ctx, look: Look, o: SailorOptions, dir: 1 | -1): void 
 
   arms(ctx, look, sleeve, pose, "back");
 
-  inHead(ctx, pose, () => {
+  // Nothing on the head (braids, long locks) hangs past the desk's front edge.
+  withClip(ctx, (c) => c.rect(-400, -600, 800, 600 + DESK_NEAR), () => inHead(ctx, pose, () => {
     drawEar(ctx, look);
     if (av.accessory === "earring" && !hairCoversEar(av.hair)) drawEarring(ctx);
     const shadow = hairShadow(av.hair, hairCtx);
@@ -80,10 +81,13 @@ function paintSailor(ctx: Ctx, look: Look, o: SailorOptions, dir: 1 | -1): void 
     drawHat(ctx, av.hat, pose.turn, pose.t);
     if (av.accessory === "aviator-goggles") drawGoggles(ctx, hat, pose.turn);
     if (av.accessory === "earring" && hairCoversEar(av.hair)) drawEarring(ctx);
-  });
+  }));
+
+  // Hands raised in a stretch show above the hair and hat.
+  if (pose.stretch > 0.4) pose.arms.forEach((arm, i) => drawHand(ctx, look, arm.hand, i === 0 ? -1 : 1, arm));
 
   if (av.accessory === "parrot") {
-    withTransform(ctx, { x: pose.torso.x - 31, y: NECK_Y + pose.torso.y + 2 + (pose.stretch ? -3 * pose.stretch : 0) }, () => drawParrot(ctx, pose));
+    withTransform(ctx, { x: pose.torso.x - 28, y: NECK_Y + pose.torso.y + 5 - 3 * pose.stretch }, () => drawParrot(ctx, pose));
   }
 
   const tc = { pose, seed: o.seed, screenSide: o.screenSide ?? 1 };
@@ -103,7 +107,7 @@ function paintSailor(ctx: Ctx, look: Look, o: SailorOptions, dir: 1 | -1): void 
     drawStretchLines(ctx, pose.arms[1].hand, 1, pose.stretch, pose.t);
   }
   if (pose.zzz !== null) {
-    const from = { x: pose.head.x + 22, y: pose.head.y - 28 };
+    const from = { x: pose.head.x + 26, y: pose.head.y - 32 };
     drawZzz(ctx, from, pose.zzz, dir);
   }
 }
@@ -114,7 +118,11 @@ function inHead(ctx: Ctx, pose: Pose, fn: () => void): void {
 
 function arms(ctx: Ctx, look: Look, sleeve: SleeveStyle, pose: Pose, layer: ArmLayer): void {
   pose.arms.forEach((arm, i) => {
-    if (arm.layer === layer) drawArm(ctx, look, sleeve, arm, i === 0 ? -1 : 1, pose);
+    if (arm.layer !== layer) return;
+    const draw = () => drawArm(ctx, look, sleeve, arm, i === 0 ? -1 : 1, pose);
+    // An arm coming up from the lap is still behind the desk below its far edge.
+    if (arm.fromLap) withClip(ctx, (c) => c.rect(-400, -600, 800, 600 + DESK_FAR - 2), draw);
+    else draw();
   });
 }
 

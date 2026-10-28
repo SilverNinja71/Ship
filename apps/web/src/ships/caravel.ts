@@ -11,11 +11,11 @@ import type { Arranged } from "./kit.js";
 import { capRail, drawBowspritSpar, drawDecks, drawFarBulwarks, drawRaisedRails, drawRig, hullPath, paintHull, steppedTop, sternPost } from "./hullKit.js";
 import type { HullDrawer, HullLayout } from "./types.js";
 
-const CASTLE = { from: -490, to: -322, y: -58 };
+const CASTLE = { from: -490, to: -322, y: -66 };
 const WAIST = { from: -318, to: 328 };
-const FORE = { from: 334, to: 462, y: -36 };
-const STEM = { x: 484, y: -52 };
-const BOWSPRIT = { from: { x: 440, y: -46 }, to: { x: 566, y: -122 } };
+const FORE = { from: 334, to: 462, y: -40 };
+const STEM = { x: 488, y: -74 };
+const BOWSPRIT = { from: { x: 440, y: -52 }, to: { x: 570, y: -134 } };
 
 function stations(ship: ShipDefinition): Arranged {
   const coral = ship.id === "merfolk-coral-caravel";
@@ -35,10 +35,10 @@ function layout(ship: ShipDefinition): HullLayout {
   const bell = { x: s.helm.x + 4, y: CASTLE.y - 206 };
   return {
     deck: { from: WAIST.from, to: WAIST.to },
-    waterline: 86,
-    keel: 146,
+    waterline: 104,
+    keel: 168,
     masts,
-    bow: { x: 482, y: -30, angle: -0.42 },
+    bow: { x: 486, y: -34, angle: -0.42 },
     flag: { x: masts[0].x, y: masts[0].top },
     helm: s.helm,
     citrusTree: s.citrusTree,
@@ -48,16 +48,16 @@ function layout(ship: ShipDefinition): HullLayout {
     smoke: [],
     orchard: s.orchard,
     surfaces: s.surfaces,
-    bounds: { left: -560, top: -566, right: 600, bottom: 150 },
+    bounds: { left: -560, top: -566, right: 610, bottom: 170 },
   };
 }
 
 const outline = (c: Ctx) =>
-  hullPath(c, steppedTop({ stern: { x: -506, y: -70 }, castle: { to: CASTLE.to, y: CASTLE.y }, waist: -4, fore: { from: FORE.from, y: FORE.y }, stem: STEM }), (cc) => {
-    cc.bezierCurveTo(508, 0, 492, 70, 430, 112);
-    cc.bezierCurveTo(330, 150, 80, 152, -150, 148);
-    cc.bezierCurveTo(-360, 146, -452, 120, -478, 70);
-    cc.bezierCurveTo(-496, 30, -512, -20, -506, -70);
+  hullPath(c, steppedTop({ stern: { x: -512, y: -92 }, castle: { to: CASTLE.to, y: CASTLE.y }, waist: -4, fore: { from: FORE.from, y: FORE.y }, stem: STEM }), (cc) => {
+    cc.bezierCurveTo(514, -14, 500, 76, 436, 124);
+    cc.bezierCurveTo(340, 170, 90, 172, -150, 168);
+    cc.bezierCurveTo(-360, 166, -458, 140, -482, 84);
+    cc.bezierCurveTo(-500, 40, -520, -30, -512, -92);
   });
 
 function look(ship: ShipDefinition) {
@@ -95,9 +95,9 @@ const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
   paintHull(ctx, ship, outline, {
     fill: p.hull,
     low: p.hullDark,
-    lowFrom: 58,
-    planks: L.coral ? undefined : { spacing: 15 },
-    stripes: [[16, 26, p.trim]],
+    lowFrom: 76,
+    planks: L.coral ? undefined : { spacing: 16 },
+    stripes: [[22, 33, p.trim]],
     inner: () => {
       if (L.coral) coralSkin(ctx, ship, frame);
       // A painted band along the castle's side.
@@ -105,7 +105,9 @@ const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
     },
   });
   // Stern cabin windows: the Captain's Quarters.
-  [-462, -414, -366].forEach((x, k) => cabinWindow(ctx, x, CASTLE.y + 20, 26, 26, L.coral ? p.trim : p.accent, ship, frame, k));
+  [-460, -412, -364].forEach((x, k) => cabinWindow(ctx, x, CASTLE.y + 20, 26, 30, L.coral ? p.trim : p.accent, ship, frame, k));
+  scroll(ctx, -500, -84, 13, L.coral ? p.trim : p.accent, -1);
+  scroll(ctx, STEM.x - 6, STEM.y + 10, 11, L.coral ? p.trim : p.accent, 1);
   capRail(ctx, CASTLE.from - 8, CASTLE.to + 2, CASTLE.y, p.trim);
   capRail(ctx, CASTLE.to - 2, FORE.from + 2, -4, p.trim);
   capRail(ctx, FORE.from - 2, STEM.x - 18, FORE.y, p.trim);
@@ -115,20 +117,58 @@ const drawFront: HullDrawer["drawFront"] = (ctx, ship, l, frame) => {
   if (ship.extras.includes("lanterns")) lantern(ctx, FORE.to - 6, FORE.y - 34, ship, frame, { hang: 0, size: 0.9, seed: 11 });
 };
 
-/** Puffy wool scallops along the waist: the Woolly Wanderer's signature. */
+/** A fleecy wool trim along the waist: the Woolly Wanderer's signature. */
 function woolTrim(ctx: Ctx, ship: ShipDefinition): void {
   const wool = "#FFFDF5";
   const r = rng(hashString(ship.id));
-  for (let x = WAIST.from + 4; x < FORE.from - 4; x += 15) {
-    const rr = 8 + r() * 2.5;
-    paint(ctx, (c) => circlePath(c, x, 6 + r() * 2, rr), wool, { stroke: outlineFor(ship.palette.hullDark), width: 2.4 });
-  }
-  for (let x = WAIST.from + 10; x < FORE.from - 10; x += 15) {
+  const puffs: [number, number, number][] = [];
+  for (let x = WAIST.from + 6; x < FORE.from - 6; x += 13 + r() * 6) puffs.push([x, 9 + (r() - 0.5) * 6, 9 + r() * 5]);
+  // Outline every puff first, then fill them all: they merge into one fleece.
+  ctx.beginPath();
+  for (const [x, y, rr] of puffs) circlePath(ctx, x, y, rr);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = outlineFor(ship.palette.hullDark);
+  ctx.stroke();
+  ctx.fillStyle = wool;
+  ctx.fill();
+  ctx.fillStyle = shade(wool, -0.07);
+  for (const [x, y, rr] of puffs) {
     ctx.beginPath();
-    circlePath(ctx, x - 2, 3, 2.4);
-    ctx.fillStyle = alpha("#FFFFFF", 0.9);
+    ellipsePath(ctx, x + rr * 0.15, y + rr * 0.45, rr * 0.75, rr * 0.4);
     ctx.fill();
   }
+  ctx.fillStyle = "#FFFFFF";
+  for (const [x, y, rr] of puffs) {
+    ctx.beginPath();
+    circlePath(ctx, x - rr * 0.3, y - rr * 0.35, rr * 0.28);
+    ctx.fill();
+  }
+}
+
+/** A carved spiral scroll, the cartoon flourish at stern and stem. */
+function scroll(ctx: Ctx, x: number, y: number, r: number, color: string, dir: 1 | -1): void {
+  const path = (c: Ctx) => {
+    for (let k = 0; k <= 28; k++) {
+      const a = (k / 28) * Math.PI * 3.2;
+      const rr = r * (1 - k / 34);
+      const px = x + dir * Math.cos(a) * rr;
+      const py = y - Math.sin(a) * rr;
+      if (k === 0) c.moveTo(px, py);
+      else c.lineTo(px, py);
+    }
+  };
+  ctx.beginPath();
+  path(ctx);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = outlineFor(color);
+  ctx.lineWidth = 8;
+  ctx.stroke();
+  ctx.beginPath();
+  path(ctx);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.stroke();
 }
 
 /** Bioluminescent freckles and scalloped scales on the coral hull. */

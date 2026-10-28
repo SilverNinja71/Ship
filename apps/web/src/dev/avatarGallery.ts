@@ -108,7 +108,7 @@ function sheets(): Sheet[] {
     id: "accessories",
     title: "Accessories",
     cols: 7,
-    cells: ACCESSORIES.map((a, i) => ({ label: a.name, draw: station(look(a.name, { accessory: a.id, hat: i === 1 ? "aviator-cap" : "none", hair: "messy", coat: "hoodie", coatColor: COAT_COLORS[i] })) })),
+    cells: ACCESSORIES.map((a, i) => ({ label: a.name, draw: station(look(a.name, { accessory: a.id, hat: "none", hair: "messy", coat: "hoodie", coatColor: COAT_COLORS[i] })) })),
   });
   const states: AvatarState[] = ["SAILING_FOCUS", "SHORE_LEAVE_BREAK", "DRIFTING_IDLE"];
   out.push({
@@ -177,10 +177,10 @@ function sheets(): Sheet[] {
     cells: [
       {
         label: "",
-        w: 1100,
+        w: 1320,
         draw: (ctx, frame, x0, floor) => {
           const sizes = [32, 48, 64, 96, 128];
-          let x = x0 - 530;
+          let x = x0 - 640;
           for (const [i, a] of [CREW[0], CREW[3], CREW[4]].entries()) {
             for (const size of sizes) {
               ctx.fillStyle = "rgba(42,34,56,0.06)";
@@ -199,7 +199,7 @@ function sheets(): Sheet[] {
     title: "Captain's Quarters zoom (2.5×)",
     cols: 2,
     px: 0.95,
-    h: 500,
+    h: 560,
     background: "cabin",
     cells: [
       { label: "focus", w: 400, draw: (ctx, frame, x, floor) => drawStudyStation(ctx, { avatar: CREW[4], state: "SAILING_FOCUS", desk: "captains-desk", at: { x, y: floor }, scale: 2.5 }, frame) },

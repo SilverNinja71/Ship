@@ -21,7 +21,13 @@ const TOP_LIMIT = -40.5;
 /** Under a hat, anything above the crown line is pressed down onto it. */
 function flatten(pts: CurvePt[], hatted: boolean): CurvePt[] {
   if (!hatted) return pts;
-  return pts.map((p) => (p[1] < TOP_LIMIT ? ([p[0] * 0.92, TOP_LIMIT] as const) : p));
+  return pts.map((p) => {
+    const y = Math.max(p[1], TOP_LIMIT);
+    // Keep tufts and spikes inside a dome the hat covers, so none poke out like horns.
+    const lim = y < -16 ? 41 * Math.sqrt(Math.max(0, 1 - ((y + 5) / 37) ** 2)) : Infinity;
+    if (p[1] === y && Math.abs(p[0]) <= lim) return p;
+    return [Math.sign(p[0]) * Math.min(Math.abs(p[0]), lim), y] as const;
+  });
 }
 
 /** Shift the bangs towards the turn so the parting follows the face. */
@@ -63,10 +69,7 @@ const STYLES: Record<HairStyle, StyleDef> = {
       [37, 19, 1],
       [40, 4],
       [40.5, -10],
-      [44, -17, 1],
-      [37.5, -24],
-      ...flatten([[30, -33], [16, -40], [0, -42.5], [-16, -40], [-31, -32]], h.hatted),
-      [-39, -22],
+      ...flatten([[44, -17, 1], [37.5, -24], [30, -33], [16, -40], [0, -42.5], [-16, -40], [-31, -32], [-39, -22]], h.hatted),
       [-45, -14, 1],
       [-41, -5],
       [-41, 7],
@@ -225,12 +228,12 @@ const STYLES: Record<HairStyle, StyleDef> = {
       for (const side of [-1, 1] as const) {
         const x0 = side * 35.5;
         const sw = Math.sin(h.t * 1.4 + side) * 0.8;
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 3; i++) {
           const y = 15 + i * 9.5;
           const x = x0 + side * (i * 0.6) + sw * i * 0.3;
           paintShaded(ctx, (c) => c.ellipse(x, y, 6.6 - i * 0.3, 6.2, side * 0.25, 0, Math.PI * 2), look.hair, look.hairShade, (c) => c.rect(x - 8, y + 1.5, 16, 8), { stroke: look.hairLine });
         }
-        const by = 15 + 4 * 9.5;
+        const by = 15 + 3 * 9.5;
         const bx = x0 + side * 2.4 + sw * 1.2;
         // Ribbon tie and brush end.
         paintShaded(ctx, (c) => curvyPath(c, [[bx - 3.5, by - 2], [bx + 3.5, by - 2], [bx + 5, by + 9, 1], [bx, by + 6], [bx - 5, by + 9, 1]], 0.5), look.hair, null, null, { stroke: look.hairLine });
@@ -280,11 +283,7 @@ const STYLES: Record<HairStyle, StyleDef> = {
       [37, 14, 1],
       [40, 1],
       [48, -8, 1],
-      [39, -18],
-      [47, -32, 1],
-      ...flatten([[31, -36], [27, -51, 1], [15, -41], [2, -58, 1], [-9, -41], [-24, -53, 1], [-29, -37]], h.hatted),
-      [-47, -33, 1],
-      [-39, -20],
+      ...flatten([[39, -18], [47, -32, 1], [31, -36], [27, -51, 1], [15, -41], [2, -58, 1], [-9, -41], [-24, -53, 1], [-29, -37], [-47, -33, 1], [-39, -20]], h.hatted),
       [-49, -9, 1],
       [-40, 0],
       [-38, 14, 1],

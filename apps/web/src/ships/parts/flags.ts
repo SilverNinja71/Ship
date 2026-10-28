@@ -126,12 +126,12 @@ function emblem(ctx: Ctx, id: FlagId, cloth: Cloth, off: (u: number) => number, 
     case "straw-skull":
       // The Sun-Hat Skull: a lilac sun hat with a teal band and a daisy, round
       // study glasses and a wink, over big crossed quills (never bones).
-      on(0.5, 0.56, () => {
-        studyQuill(ctx, 0, 12, 1.02);
-        studyQuill(ctx, 0, 12, -1.02);
-        skull(ctx, 0, 1, 0.9, "#F6F0DE", true);
-        studyGlasses(ctx, 0, 1, 0.9);
-        sunHat(ctx, 0, -12);
+      on(0.5, 0.53, () => {
+        studyQuill(ctx, 0, 13, 0.8);
+        studyQuill(ctx, 0, 13, -0.8);
+        skull(ctx, 0, 3, 1, "#F6F0DE", true);
+        studyGlasses(ctx, 0, 3, 0.95);
+        sunHat(ctx, 0, -14);
       });
       break;
     case "crossed-quills":
@@ -252,39 +252,123 @@ function crossbones(ctx: Ctx, x: number, y: number, s: number, bone: string): vo
   }
 }
 
-/** A wide, floppy sun hat with a ribbon and a daisy. Deliberately not a straw boater. */
+/** A wide, floppy lilac sun hat with a teal band and a daisy. Deliberately not a straw hat. */
 function sunHat(ctx: Ctx, x: number, y: number): void {
-  const hat = "#F49A7A";
+  const hat = "#C9B6F2";
+  const teal = "#3FB59A";
   const brim: Point[] = [];
-  for (let k = 0; k < 14; k++) {
-    const a = (k / 14) * Math.PI * 2;
-    const wav = 1 + 0.08 * Math.sin(a * 5);
-    brim.push({ x: x + Math.cos(a) * 27 * wav, y: y + Math.sin(a) * 6.5 * wav + (Math.cos(a) > 0.6 || Math.cos(a) < -0.6 ? 2.5 : 0) });
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const wav = 1 + 0.1 * Math.sin(a * 6);
+    // Floppy: the brim dips at both ends.
+    brim.push({ x: x + Math.cos(a) * 23 * wav, y: y + Math.sin(a) * 5.4 * wav + 3.5 * Math.abs(Math.cos(a)) ** 3 });
   }
-  paint(ctx, (c) => smoothClosedPath(c, brim), hat, { width: 2.4 });
+  paint(ctx, (c) => smoothClosedPath(c, brim), hat, { width: 2.6 });
   paint(ctx, (c) => {
-    c.moveTo(x - 13, y);
-    c.bezierCurveTo(x - 14, y - 15, x + 14, y - 15, x + 13, y);
+    c.moveTo(x - 11, y);
+    c.bezierCurveTo(x - 13, y - 15, x + 13, y - 15, x + 11, y);
     c.closePath();
-  }, shade(hat, 0.08), { width: 2.4 });
+  }, shade(hat, 0.12), { width: 2.6 });
   paint(ctx, (c) => {
-    c.moveTo(x - 13.5, y - 1);
-    c.quadraticCurveTo(x, y + 2, x + 13.5, y - 1);
-    c.lineTo(x + 13, y - 5);
-    c.quadraticCurveTo(x, y - 2, x - 13, y - 5);
+    c.moveTo(x - 11.6, y);
+    c.quadraticCurveTo(x, y + 3, x + 11.6, y);
+    c.lineTo(x + 11, y - 5.5);
+    c.quadraticCurveTo(x, y - 2.5, x - 11, y - 5.5);
     c.closePath();
-  }, "#FFF4E0", { width: 1.6 });
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2;
+  }, teal, { width: 1.8 });
+  // A daisy tucked into the band.
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI * 2;
+    paint(ctx, (c) => ellipsePath(c, x + 8 + Math.cos(a) * 3.6, y - 4 + Math.sin(a) * 3.6, 2.8, 1.7, a), "#FFFFFF", { width: 1 });
+  }
+  paint(ctx, (c) => circlePath(c, x + 8, y - 4, 2), "#FFC93C", { width: 1 });
+}
+
+/** Round study glasses on the skull, with a cheeky wink. */
+function studyGlasses(ctx: Ctx, x: number, y: number, s: number): void {
+  const gold = "#F2C14E";
+  for (const side of [-1, 1]) {
+    const ex = x + side * 5.6 * s;
+    const ey = y - 2 * s;
     ctx.beginPath();
-    ellipsePath(ctx, x + 8 + Math.cos(a) * 3, y - 3 + Math.sin(a) * 3, 2.2, 1.4, a);
-    ctx.fillStyle = "#FFFFFF";
+    circlePath(ctx, ex, ey, 5.6 * s);
+    ctx.fillStyle = "#E3F4F1";
     ctx.fill();
+    ctx.lineWidth = 4.6;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = gold;
+    ctx.stroke();
   }
+  ctx.lineCap = "round";
   ctx.beginPath();
-  circlePath(ctx, x + 8, y - 3, 1.6);
-  ctx.fillStyle = "#FFC93C";
+  ctx.moveTo(x - 1.4 * s, y - 2.6 * s);
+  ctx.quadraticCurveTo(x, y - 4 * s, x + 1.4 * s, y - 2.6 * s);
+  ctx.moveTo(x - 11.2 * s, y - 3 * s);
+  ctx.lineTo(x - 13 * s, y - 5 * s);
+  ctx.moveTo(x + 11.2 * s, y - 3 * s);
+  ctx.lineTo(x + 13 * s, y - 5 * s);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  // Left eye winks, right eye looks out.
+  ctx.beginPath();
+  ctx.moveTo(x - 8.4 * s, y - 1.4 * s);
+  ctx.quadraticCurveTo(x - 5.6 * s, y - 4.6 * s, x - 2.8 * s, y - 1.4 * s);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  circlePath(ctx, x + 5.6 * s, y - 2 * s, 2.3 * s);
+  ctx.fillStyle = INK;
   ctx.fill();
+}
+
+/** A big writing quill: a notched, teal-tinted feather vane, a bare shaft and an ink-dipped nib. */
+function studyQuill(ctx: Ctx, x: number, y: number, angle: number): void {
+  const vane = "#A8E6D6";
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  paint(ctx, (c) => {
+    c.moveTo(0, -50);
+    c.bezierCurveTo(8, -45, 11, -32, 10, -22);
+    c.lineTo(6.5, -19);
+    c.lineTo(9.5, -15);
+    c.bezierCurveTo(8.5, -6, 5, 2, 1.4, 6);
+    c.lineTo(-1.4, 6);
+    c.bezierCurveTo(-5, 0, -7.5, -8, -7.5, -16);
+    c.lineTo(-4.8, -20);
+    c.lineTo(-7.5, -24);
+    c.bezierCurveTo(-7.5, -36, -4, -45, 0, -50);
+    c.closePath();
+  }, vane, { width: 2.2 });
+  ctx.strokeStyle = shade(vane, -0.4);
+  ctx.lineCap = "round";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  for (let k = 0; k < 7; k++) {
+    const yy = -42 + k * 7;
+    ctx.moveTo(0, yy + 2);
+    ctx.lineTo(7, yy - 3);
+    ctx.moveTo(0, yy + 4);
+    ctx.lineTo(-5.5, yy);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(0, -48);
+  ctx.lineTo(0, 15);
+  ctx.stroke();
+  paint(ctx, (c) => roundRectPath(c, -2, 6, 4, 10, 1.5), "#F4EAD0", { width: 1.6 });
+  paint(ctx, (c) => {
+    c.moveTo(-2.8, 15);
+    c.lineTo(2.8, 15);
+    c.lineTo(0, 25);
+    c.closePath();
+  }, "#1A1A22", { stroke: "#0A0A10", width: 1.6 });
+  ctx.restore();
 }
 
 function quill(ctx: Ctx, x: number, y: number, angle: number, s: number): void {

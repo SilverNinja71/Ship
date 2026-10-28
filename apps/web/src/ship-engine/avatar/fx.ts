@@ -15,9 +15,9 @@ export function drawZzz(ctx: Ctx, from: Point, t: number, flip: 1 | -1 = 1): voi
     const u = fract(t * 0.36 + i / 3);
     const a = smoothstep(0, 0.12, u) * (1 - smoothstep(0.62, 1, u));
     if (a <= 0.01) continue;
-    const x = from.x + u * 26 + Math.sin(u * 7 + i) * 3.5;
-    const y = from.y - u * 52;
-    const r = 4.2 + u * 4.2;
+    const x = from.x + u * 28 + Math.sin(u * 7 + i) * 3.5;
+    const y = from.y - u * 56;
+    const r = 6 + u * 5.5;
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(flip, 1);
@@ -29,7 +29,7 @@ export function drawZzz(ctx: Ctx, from: Point, t: number, flip: 1 | -1 = 1): voi
       c.lineTo(z * 0.8, -z * 0.75);
       c.lineTo(-z * 0.8, z * 0.75);
       c.lineTo(z * 0.8, z * 0.75);
-    }, Z_INK, Math.max(1.4, r * 0.24));
+    }, Z_INK, Math.max(1.8, r * 0.26));
     ctx.restore();
   }
 }
