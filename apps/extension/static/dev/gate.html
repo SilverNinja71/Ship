@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Siren Gate dev page</title>
+    <link rel="stylesheet" href="../lookout.css" />
+    <style>
+      body { background: #e9e4da; }
+      .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; padding: 16px; }
+      .browser { border-radius: 14px; overflow: hidden; border: 2px solid #c8bfae; background: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+      .urlbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #f1ede6; border-bottom: 1px solid #ddd5c6; font: 13px system-ui, sans-serif; color: #444; }
+      .urlbar span { flex: 1; padding: 4px 10px; border-radius: 999px; background: #fff; border: 1px solid #ddd5c6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* transform makes this the box that position:fixed children (the gate, the toast) sit in. */
+      .frame { position: relative; height: 700px; overflow: hidden; transform: translateZ(0); }
+      .fakepage { height: 100%; padding: 16px 20px; font: 14px Roboto, Arial, sans-serif; color: #0f0f0f; background: #fff; }
+      .yt-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+      .yt-logo { width: 90px; height: 20px; border-radius: 4px; background: #d8d2c8; }
+      .yt-search { flex: 1; max-width: 520px; height: 36px; border-radius: 999px; border: 1px solid #ccc; }
+      .yt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
+      .yt-card .thumb { aspect-ratio: 16 / 9; border-radius: 12px; }
+      .yt-card .t1 { height: 12px; margin-top: 10px; border-radius: 6px; background: #e5e5e5; }
+      .yt-card .t2 { height: 12px; width: 60%; margin-top: 6px; border-radius: 6px; background: #eee; }
+      .statepanel { background: #fffdf7; border: 2px solid #e4d3ae; border-radius: 16px; padding: 12px 14px; align-self: start; font-size: 13px; }
+      .statepanel h2 { font-size: 15px; margin-bottom: 6px; }
+      .statepanel h3 { font-size: 13px; margin: 12px 0 4px; }
+      .statepanel p { margin: 2px 0; }
+      .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+      .small { font-size: 11px; color: #666; }
+      @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div id="devbar" class="devbar"><strong>Siren Gate dev page</strong><span class="note">fake chrome, no network</span></div>
+    <div class="layout">
+      <div class="browser">
+        <div class="urlbar">◀ ▶ ⟳ <span id="page-url"></span></div>
+        <div id="frame" class="frame">
+          <div id="fakepage" class="fakepage" aria-label="Pretend web page">
+            <div class="yt-head"><div class="yt-logo"></div><div class="yt-search"></div></div>
+            <div class="yt-grid">
+              <div class="yt-card"><div class="thumb" style="background: #f4a261"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #2a9d8f"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #e76f51"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #8ab17d"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #e9c46a"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #577590"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #b5838d"></div><div class="t1"></div><div class="t2"></div></div>
+              <div class="yt-card"><div class="thumb" style="background: #6d597a"></div><div class="t1"></div><div class="t2"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside id="state" class="statepanel" aria-live="polite"></aside>
+    </div>
+    <script src="gate.js"></script>
+  </body>
+</html>

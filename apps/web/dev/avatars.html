@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ship: sailor gallery</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4ecdd;
+        --ink: #2a2238;
+        --muted: #6b6070;
+      }
+      body {
+        margin: 0;
+        padding: 16px 20px 40px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      p.hint {
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+      section {
+        margin: 0 0 22px;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 6px;
+      }
+      canvas {
+        display: block;
+        border-radius: 10px;
+        box-shadow: 0 1px 0 rgba(42, 34, 56, 0.15);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sailor gallery</h1>
+    <p class="hint">
+      Query options: <code>?still=1</code> freezes on STILL_FRAME, <code>?t=12.5</code> renders one exact moment,
+      <code>?only=hair</code> shows one sheet, <code>?px=0.58</code> sets units-to-pixels for the deck-size sheets.
+    </p>
+    <main id="sheets"></main>
+    <script type="module" src="/src/dev/avatarGallery.ts"></script>
+  </body>
+</html>

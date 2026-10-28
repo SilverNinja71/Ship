@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/* Ship's palette: navy night sea, cream canvas, brass fittings, seafoam and coral for right and wrong. */
+@theme {
+  --color-navy-950: #0F1729;
+  --color-navy-900: #1D2B4A;
+  --color-navy-800: #26385E;
+  --color-navy-700: #33497A;
+  --color-navy-600: #46609A;
+  --color-cream-50: #FFFDF7;
+  --color-cream-100: #FBF5E6;
+  --color-cream-200: #F4EBD9;
+  --color-cream-300: #E8DAC0;
+  --color-brass-300: #F2D27A;
+  --color-brass-400: #E3B341;
+  --color-brass-500: #C9962A;
+  --color-brass-700: #8A6417;
+  --color-seafoam-400: #5FCBB0;
+  --color-seafoam-500: #3FB59A;
+  --color-seafoam-700: #237A66;
+  --color-coral-400: #EE8070;
+  --color-coral-500: #E2604F;
+  --color-coral-700: #A63A2C;
+  --color-amber-sail: #E0A63A;
+  --color-ink: #2A2238;
+
+  --font-display: ui-rounded, "SF Pro Rounded", "Nunito", "Quicksand", system-ui, sans-serif;
+  --font-body: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --shadow-card: 0 2px 0 0 rgb(42 34 56 / 0.25), 0 10px 30px -10px rgb(15 23 41 / 0.5);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--color-navy-950);
+  color: var(--color-cream-100);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

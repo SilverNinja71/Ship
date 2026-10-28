@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Lookout settings</title>
+    <link rel="stylesheet" href="lookout.css" />
+  </head>
+  <body class="options">
+    <div class="page">
+      <header class="brand">
+        <img src="icons/icon48.png" alt="" width="40" height="40" />
+        <div>
+          <h1>The Lookout</h1>
+          <p>Settings for Ship's focus guard</p>
+        </div>
+      </header>
+
+      <section aria-labelledby="gemini-h">
+        <h2 id="gemini-h">Gemini, the video judge</h2>
+        <p class="lede">
+          During a focus block, the Lookout asks Gemini whether a YouTube video fits the assignment you're working on. Without a key, a simpler
+          keyword check decides, and says so.
+        </p>
+        <form id="gemini-form">
+          <div class="field">
+            <label for="gemini-key">Gemini API key</label>
+            <div class="inline">
+              <input id="gemini-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" />
+              <button id="show-key" class="btn ghost" type="button" aria-pressed="false">Show</button>
+            </div>
+            <p class="hint">
+              Get a free key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. It is
+              kept only in this browser and sent only to Google's Gemini API.
+            </p>
+          </div>
+          <div class="field">
+            <label for="gemini-model">Model</label>
+            <input id="gemini-model" type="text" autocomplete="off" spellcheck="false" />
+            <p class="hint">
+              <code>gemini-flash-latest</code> always points at Google's newest Flash model. Model names change, so you can pin a specific one
+              here instead.
+            </p>
+          </div>
+          <div class="inline">
+            <button class="btn" type="submit">Save Gemini settings</button>
+            <button id="check-key" class="btn ghost" type="button">Check key</button>
+          </div>
+          <p id="gemini-status" class="status" role="status"></p>
+        </form>
+      </section>
+
+      <section aria-labelledby="ship-h">
+        <h2 id="ship-h">Your Ship</h2>
+        <p class="lede">Where "Steer back to the ship" sails to. The Lookout also listens for your voyages on this page.</p>
+        <form id="ship-form">
+          <div class="field">
+            <label for="ship-url">Ship web app address</label>
+            <div class="inline">
+              <input id="ship-url" type="text" inputmode="url" autocomplete="off" spellcheck="false" />
+              <button class="btn" type="submit">Save</button>
+            </div>
+            <p class="hint">Usually <code>http://localhost:5173</code> while you run <code>npm run dev</code>.</p>
+          </div>
+          <p id="ship-status" class="status" role="status"></p>
+        </form>
+      </section>
+
+      <section aria-labelledby="sites-h">
+        <h2 id="sites-h">Blocked sites</h2>
+        <p class="lede">These are blocked only while a focus block is running. Subdomains count too, so reddit.com covers old.reddit.com.</p>
+        <form id="site-form" class="inline">
+          <label class="sr-only" for="site-input">Site to block</label>
+          <input id="site-input" type="text" autocomplete="off" spellcheck="false" placeholder="reddit.com" />
+          <button class="btn" type="submit">Add site</button>
+        </form>
+        <p class="hint muted">Chrome will ask to let the Lookout see that site, so it can put up the gate there.</p>
+        <ul id="site-list" class="sites" aria-label="Blocked sites"></ul>
+        <p id="site-status" class="status" role="status"></p>
+        <div class="rules">
+          <strong>Always on during focus blocks, no setup needed:</strong>
+          <ul>
+            <li>YouTube home, Shorts and feeds (subscriptions, trending, explore) are blocked.</li>
+            <li>YouTube videos are judged against your assignment. Search, channels and playlists stay open so you can find lectures.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>

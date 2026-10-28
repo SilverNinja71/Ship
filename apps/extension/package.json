@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@ship/active-recall-engine": "*",
     "@ship/shared-types": "*"
   },
   "devDependencies": {

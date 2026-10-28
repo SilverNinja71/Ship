@@ -112,7 +112,8 @@ export type ShipExtra =
   | "ivy"
   | "telescope"
   | "rivets"
-  | "flight-deck";
+  | "flight-deck"
+  | "swing";
 
 export interface ShipPalette {
   hull: string;
@@ -145,6 +146,21 @@ export interface ShipDefinition {
   particles: ParticleKind[];
   palette: ShipPalette;
   extras: ShipExtra[];
+}
+
+export type PartKind = "sails" | "figurehead" | "flag" | "desk";
+export type AvatarItemKind = "hair" | "hat" | "coat" | "accessory" | "tool";
+
+/**
+ * What the player owns. Free and starter items belong to everyone and are
+ * never listed. Crew-quest figureheads land in `parts` like bought ones.
+ */
+export interface Inventory {
+  ships: string[];
+  /** `${PartKind}:${id}`, e.g. "sails:feathered". */
+  parts: string[];
+  /** `${AvatarItemKind}:${id}`, e.g. "hat:tricorn". */
+  avatarItems: string[];
 }
 
 /** The player's chosen ship and the parts they swapped onto it. */

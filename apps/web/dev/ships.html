@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ship gallery</title>
+    <style>
+      :root {
+        --bg: #1d2b4a;
+        --panel: #24365c;
+        --ink: #f4ebd9;
+        --muted: #a9b6cf;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 14px/1.4 system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 24px 0 8px;
+        color: var(--muted);
+      }
+      nav a {
+        color: var(--ink);
+        margin-right: 12px;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      figure {
+        margin: 0;
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 8px;
+      }
+      figcaption {
+        font-size: 12px;
+        color: var(--muted);
+        padding: 4px 2px 0;
+      }
+      canvas {
+        display: block;
+        border-radius: 6px;
+        max-width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ship gallery</h1>
+    <nav id="nav"></nav>
+    <main id="root"></main>
+    <script type="module" src="/src/dev/shipGallery.ts"></script>
+  </body>
+</html>

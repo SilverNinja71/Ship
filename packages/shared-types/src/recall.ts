@@ -31,6 +31,11 @@ export interface ReviewSchedule {
   difficulty?: number;
 }
 
+/** The schedule every new card starts with: due now, nothing learned yet. */
+export function newReviewSchedule(): ReviewSchedule {
+  return { ease: 2.5, interval: 0, repetitions: 0, lapses: 0, due: 0, lastReviewed: null };
+}
+
 export type DeckSource = "manual" | "parchment" | "csv" | "paper" | "blurt";
 
 export interface Deck {
@@ -70,6 +75,13 @@ export interface BlurtConceptResult {
   /** The words in the blurt that matched, if any. */
   matchedWith: string[];
 }
+
+/** Mastered is seafoam green, missed is coral red. */
+export const BLURT_STATUS_COLORS: Record<BlurtConceptResult["status"], string> = {
+  mastered: "#3FB59A",
+  partial: "#E0A63A",
+  missed: "#E2604F",
+};
 
 export interface BlurtResult {
   /** Weighted share of concepts recalled, 0..1. */
