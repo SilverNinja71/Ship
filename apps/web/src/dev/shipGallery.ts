@@ -290,7 +290,7 @@ if (!only && (view === "all" || view === "figureheads")) {
   const host = getShip("golden-mane")!;
   for (const f of FIGUREHEADS) {
     if (f.id === "none") continue;
-    cell(grid, f.id, 300, 260, shipScene(host, { ...defaultLoadout(host), figurehead: f.id as FigureheadId }, { left: 300, top: -230, right: 660, bottom: 90 }));
+    cell(grid, f.id, 300, 260, shipScene(host, { ...defaultLoadout(host), figurehead: f.id as FigureheadId }, { left: 370, top: -170, right: 640, bottom: 60 }));
   }
 }
 

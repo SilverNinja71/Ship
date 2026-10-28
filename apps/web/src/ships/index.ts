@@ -4,7 +4,18 @@
 import type { HullStyle, ShipDefinition, ShipLoadout } from "@ship/shared-types";
 import { shipCanFitFigurehead, shipCanFitSails } from "@ship/ship-theme-kit";
 import type { Ctx, FrameInfo, Point } from "../ship-engine/types.js";
+import { battleship } from "./battleship.js";
+import { brig } from "./brig.js";
 import { caravel } from "./caravel.js";
+import { carrierBarge } from "./carrierBarge.js";
+import { dreadnought } from "./dreadnought.js";
+import { galleon } from "./galleon.js";
+import { ironclad } from "./ironclad.js";
+import { kitchenBarge } from "./kitchenBarge.js";
+import { skyGalleon } from "./skyGalleon.js";
+import { solarArk } from "./solarArk.js";
+import { submarine } from "./submarine.js";
+import { trireme } from "./trireme.js";
 import { drawCabinDecor as drawDecor } from "./decor.js";
 import { drawFigurehead } from "./parts/figureheads.js";
 import { drawFlag } from "./parts/flags.js";
@@ -15,17 +26,17 @@ export * from "./types.js";
 
 const HULLS: Record<HullStyle, HullDrawer> = {
   caravel,
-  brig: caravel,
-  galleon: caravel,
-  "kitchen-barge": caravel,
-  submarine: caravel,
-  battleship: caravel,
-  dreadnought: caravel,
-  ironclad: caravel,
-  trireme: caravel,
-  "sky-galleon": caravel,
-  "solar-ark": caravel,
-  "carrier-barge": caravel,
+  brig,
+  galleon,
+  "kitchen-barge": kitchenBarge,
+  submarine,
+  battleship,
+  dreadnought,
+  ironclad,
+  trireme,
+  "sky-galleon": skyGalleon,
+  "solar-ark": solarArk,
+  "carrier-barge": carrierBarge,
 };
 
 export function hullDrawer(ship: ShipDefinition): HullDrawer {

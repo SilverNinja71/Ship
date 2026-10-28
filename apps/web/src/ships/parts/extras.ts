@@ -354,8 +354,10 @@ export function oarBank(ctx: Ctx, from: number, to: number, y: number, frame: Fr
 
 export interface WingOptions {
   span: number;
-  /** Resting angle of the wing (radians, 0 = pointing straight aft). Negative raises it. */
+  /** Resting angle (radians). 0 points the wing straight aft; positive raises it. */
   angle: number;
+  /** Flap amplitude in radians (default 0.18). */
+  flap?: number;
   /** The far wing is a shade darker: it sits in the hull's shadow. */
   far?: boolean;
   phase?: number;
@@ -363,49 +365,48 @@ export interface WingOptions {
 
 /** A big feathered wing rooted at `root`, reaching aft, flapping gently. */
 export function wing(ctx: Ctx, root: Point, ship: ShipDefinition, frame: FrameInfo, opts: WingOptions): void {
-  const white = opts.far ? ship.palette.sailShade : ship.palette.sail;
-  const shadeC = opts.far ? shade(ship.palette.sailShade, -0.12) : ship.palette.sailShade;
+  const white = opts.far ? mix(ship.palette.sail, ship.palette.sailShade, 0.6) : ship.palette.sail;
+  const shadeC = opts.far ? shade(ship.palette.sailShade, -0.1) : ship.palette.sailShade;
   const gold = ship.palette.trim;
-  const flap = 0.2 * sway(frame.t, 1.3, opts.phase ?? 0, frame.reducedMotion);
+  const flap = (opts.flap ?? 0.18) * sway(frame.t, 1.3, opts.phase ?? 0, frame.reducedMotion);
   const S = opts.span;
-  // Local frame: root at the origin, the wing reaching toward -x.
+  const feather = (bx: number, by: number, dir: number, len: number, w: number, fill: string) => {
+    const tx = bx + Math.cos(dir) * len;
+    const ty = by + Math.sin(dir) * len;
+    const nx = -Math.sin(dir) * w;
+    const ny = Math.cos(dir) * w;
+    paint(ctx, (c) => {
+      c.moveTo(bx - nx * 0.6, by - ny * 0.6);
+      c.quadraticCurveTo(bx + (tx - bx) * 0.55 - nx, by + (ty - by) * 0.55 - ny, tx, ty);
+      c.quadraticCurveTo(bx + (tx - bx) * 0.6 + nx, by + (ty - by) * 0.6 + ny, bx + nx * 0.6, by + ny * 0.6);
+      c.closePath();
+    }, fill, { width: 2.4 });
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + (tx - bx) * 0.8, by + (ty - by) * 0.8);
+    ctx.strokeStyle = alpha(shade(shadeC, -0.3), 0.5);
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  };
+  // Local frame: root at the origin, the wing's arm running toward -x.
   withTransform(ctx, { x: root.x, y: root.y, rotate: opts.angle + flap }, () => {
-    ctx.scale(1, 0.92 + 0.08 * Math.cos(flap * 5));
-    // Primaries fanning at the tip.
-    const n = 7;
-    for (let k = n - 1; k >= 0; k--) {
-      const t = k / (n - 1);
-      const bx = -S * (0.45 + 0.5 * t);
-      const by = -S * 0.06 * t;
-      const len = S * (0.26 + 0.18 * t);
-      const a = Math.PI * (0.38 - 0.42 * t);
-      paint(ctx, (c) => {
-        const tx = bx + Math.cos(a + Math.PI / 2) * len;
-        const ty = by + Math.sin(a + Math.PI / 2) * len;
-        c.moveTo(bx - 7, by);
-        c.quadraticCurveTo((bx + tx) / 2 - 9, (by + ty) / 2, tx, ty);
-        c.quadraticCurveTo((bx + tx) / 2 + 9, (by + ty) / 2, bx + 7, by);
-        c.closePath();
-      }, k % 2 ? shadeC : white, { width: 2.4 });
+    // Primaries fan out from the hand: from hanging down to streaming aft.
+    for (let k = 5; k >= 0; k--) {
+      const t = k / 5;
+      const dir = Math.PI * (0.58 + 0.38 * t);
+      feather(-S * (0.5 + 0.09 * k), -S * 0.03 * k, dir, S * (0.3 + 0.07 * t), S * 0.045, k % 2 ? shadeC : white);
     }
-    // Secondaries along the arm.
-    for (let k = 0; k < 5; k++) {
-      const bx = -S * (0.08 + k * 0.085);
-      const len = S * (0.22 - k * 0.006);
-      paint(ctx, (c) => {
-        c.moveTo(bx - 8, 0);
-        c.quadraticCurveTo(bx - 12, len * 0.6, bx - 4, len);
-        c.quadraticCurveTo(bx + 6, len * 0.6, bx + 8, 0);
-        c.closePath();
-      }, k % 2 ? white : shadeC, { width: 2.2 });
+    // Secondaries hang along the arm.
+    for (let k = 4; k >= 0; k--) {
+      feather(-S * (0.1 + 0.095 * k), S * 0.02, Math.PI * (0.52 + 0.012 * k), S * 0.24, S * 0.05, k % 2 ? white : shadeC);
     }
-    // Coverts and the leading edge.
+    // Coverts over the arm, with two rows of scalloped little feathers.
     paintIn(
       ctx,
       (c) => {
-        c.moveTo(8, 6);
-        c.bezierCurveTo(-S * 0.2, -S * 0.2, -S * 0.7, -S * 0.16, -S * 0.98, -S * 0.04);
-        c.bezierCurveTo(-S * 0.7, S * 0.04, -S * 0.3, S * 0.12, 6, S * 0.12);
+        c.moveTo(10, 8);
+        c.bezierCurveTo(-S * 0.12, -S * 0.16, -S * 0.5, -S * 0.17, -S * 0.86, -S * 0.12);
+        c.bezierCurveTo(-S * 0.7, -S * 0.02, -S * 0.4, S * 0.1, 6, S * 0.12);
         c.closePath();
       },
       white,
@@ -414,10 +415,10 @@ export function wing(ctx: Ctx, root: Point, ship: ShipDefinition, frame: FrameIn
         ctx.lineWidth = 1.6;
         for (let row = 0; row < 2; row++) {
           ctx.beginPath();
-          for (let x = -10; x > -S * 0.85; x -= 16) {
-            const y = row * 12 - x * 0.08 + 6;
-            ctx.moveTo(x + 8, y - 4);
-            ctx.quadraticCurveTo(x, y + 8, x - 8, y - 4);
+          for (let x = -14; x > -S * 0.75; x -= 18) {
+            const y = -S * 0.05 + row * S * 0.07 - x * 0.04;
+            ctx.moveTo(x + 9, y - 4);
+            ctx.quadraticCurveTo(x, y + 9, x - 9, y - 4);
           }
           ctx.stroke();
         }
@@ -425,10 +426,11 @@ export function wing(ctx: Ctx, root: Point, ship: ShipDefinition, frame: FrameIn
       { width: 2.8 },
     );
     ctx.beginPath();
-    ctx.moveTo(4, 2);
-    ctx.bezierCurveTo(-S * 0.2, -S * 0.17, -S * 0.68, -S * 0.13, -S * 0.94, -S * 0.04);
+    ctx.moveTo(8, 4);
+    ctx.bezierCurveTo(-S * 0.12, -S * 0.15, -S * 0.5, -S * 0.16, -S * 0.84, -S * 0.12);
     ctx.strokeStyle = gold;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = "round";
     ctx.stroke();
   });
 }

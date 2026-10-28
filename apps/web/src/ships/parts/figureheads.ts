@@ -138,66 +138,77 @@ const lion: Drawer = (ctx) => {
   const gold = "#F2B43C";
   const mane = "#E8743B";
   const maneDark = "#C2552A";
-  // A mane of rolling wave-curls streaming back.
-  const curl = (x: number, y: number, s: number, color: string) =>
-    paint(ctx, (c) => {
-      c.moveTo(x + 22 * s, y + 8 * s);
-      c.bezierCurveTo(x + 22 * s, y - 16 * s, x - 6 * s, y - 22 * s, x - 18 * s, y - 8 * s);
-      c.bezierCurveTo(x - 26 * s, y + 2 * s, x - 14 * s, y + 12 * s, x - 6 * s, y + 4 * s);
-      c.bezierCurveTo(x - 2 * s, y - 2 * s, x - 8 * s, y - 6 * s, x - 10 * s, y - 2 * s);
-      c.bezierCurveTo(x - 4 * s, y - 14 * s, x + 12 * s, y - 10 * s, x + 10 * s, y + 8 * s);
-      c.closePath();
-    }, color, { width: 2.8 });
-  curl(4, 8, 1.1, maneDark);
-  curl(18, -30, 1.15, maneDark);
-  curl(10, -10, 1.2, mane);
-  curl(30, -52, 1, mane);
-  curl(34, -20, 1.25, mane);
-  curl(48, -46, 0.9, maneDark);
-  // Head in profile.
+  const muzzle = "#FFE3A3";
+  const cx = 58;
+  const cy = -30;
+  // A mane of rolling wave-curls framing the head from crown to chin.
+  const curl = (a: number, r: number, s: number, color: string) => {
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    withTransform(ctx, { x, y, rotate: a + Math.PI / 2 }, () =>
+      paint(ctx, (c) => {
+        c.moveTo(-14 * s, 6 * s);
+        c.bezierCurveTo(-16 * s, -14 * s, 10 * s, -22 * s, 16 * s, -6 * s);
+        c.bezierCurveTo(20 * s, 6 * s, 6 * s, 10 * s, 2 * s, 2 * s);
+        c.bezierCurveTo(0, -4 * s, 8 * s, -6 * s, 8 * s, 0);
+        c.bezierCurveTo(8 * s, 8 * s, -2 * s, 14 * s, -14 * s, 6 * s);
+        c.closePath();
+      }, color, { width: 2.6 }),
+    );
+  };
+  for (let k = 0; k < 9; k++) curl(-1.9 - k * 0.42, 42, 1.15, maneDark);
+  for (let k = 0; k < 8; k++) curl(-1.7 - k * 0.42, 30, 1.05, mane);
+  // Head in profile: round brow, broad muzzle.
   paintIn(
     ctx,
     (c) => {
-      c.moveTo(44, -48);
-      c.bezierCurveTo(62, -58, 84, -46, 88, -32);
-      c.bezierCurveTo(98, -30, 102, -20, 96, -12);
-      c.bezierCurveTo(92, -2, 80, 2, 70, 2);
-      c.bezierCurveTo(56, 4, 42, -6, 40, -22);
-      c.bezierCurveTo(38, -34, 38, -44, 44, -48);
+      c.moveTo(38, -40);
+      c.bezierCurveTo(44, -62, 76, -64, 86, -46);
+      c.bezierCurveTo(92, -40, 100, -38, 102, -28);
+      c.bezierCurveTo(104, -16, 96, -6, 84, -4);
+      c.bezierCurveTo(70, -2, 56, -4, 46, -12);
+      c.bezierCurveTo(36, -20, 34, -32, 38, -40);
       c.closePath();
     },
     gold,
     () => {
       ctx.beginPath();
-      ellipsePath(ctx, 84, -8, 18, 10);
-      ctx.fillStyle = shade(gold, 0.35);
+      ellipsePath(ctx, 88, -18, 16, 12);
+      ctx.fillStyle = muzzle;
+      ctx.fill();
+      ctx.beginPath();
+      ellipsePath(ctx, 56, -14, 20, 8);
+      ctx.fillStyle = shade(gold, -0.1);
       ctx.fill();
     },
     { width: 3.2 },
   );
+  paint(ctx, (c) => ellipsePath(c, 48, -54, 8, 9, -0.3), gold, { width: 2.6 });
+  paint(ctx, (c) => ellipsePath(c, 48, -53, 3.5, 4.5, -0.3), maneDark, { stroke: false });
+  // Nose, a little "w" mouth and whisker dots.
   paint(ctx, (c) => {
-    c.moveTo(94, -26);
-    c.quadraticCurveTo(102, -24, 100, -18);
-    c.quadraticCurveTo(95, -17, 92, -21);
+    c.moveTo(94, -32);
+    c.quadraticCurveTo(104, -32, 103, -25);
+    c.quadraticCurveTo(97, -23, 93, -27);
     c.closePath();
   }, "#7A3B1E", { width: 2 });
   ctx.beginPath();
-  ctx.moveTo(98, -14);
-  ctx.quadraticCurveTo(90, -4, 80, -8);
+  ctx.moveTo(100, -22);
+  ctx.quadraticCurveTo(96, -14, 90, -17);
+  ctx.quadraticCurveTo(86, -12, 81, -16);
   ctx.strokeStyle = "#7A3B1E";
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.2;
   ctx.lineCap = "round";
   ctx.stroke();
   ctx.fillStyle = shade(gold, -0.45);
   for (const [x, y] of [
-    [84, -14],
-    [88, -10],
-    [82, -9],
+    [86, -24],
+    [90, -21],
+    [84, -20],
   ])
     ctx.fillRect(x, y, 2, 2);
-  eye(ctx, 72, -34, 5.5, 0.4);
-  line(ctx, [{ x: 64, y: -42 }, { x: 78, y: -42 }], "#7A3B1E", 2.6);
-  paint(ctx, (c) => ellipsePath(c, 52, -50, 7, 9, -0.4), shade(gold, -0.08), { width: 2.4 });
+  eye(ctx, 74, -38, 5.5, 0.45);
+  line(ctx, [{ x: 66, y: -47 }, { x: 80, y: -46 }], "#7A3B1E", 2.6);
 };
 
 const pegasus: Drawer = (ctx, frame) => {
@@ -760,14 +771,21 @@ const gorgon: Drawer = (ctx, frame) => {
       ctx.fill();
     });
   }
-  // Shoulders and neck.
+  // Neck and a draped stone shawl.
+  paint(ctx, (c) => roundRectPath(c, 36, -22, 22, 30, 8), shade(stone, -0.08), { width: 3 });
   paint(ctx, (c) => {
-    c.moveTo(-12, 16);
-    c.bezierCurveTo(0, -6, 30, -14, 50, -10);
-    c.lineTo(54, 10);
-    c.bezierCurveTo(30, 20, 4, 22, -12, 16);
+    c.moveTo(-10, 12);
+    c.bezierCurveTo(4, -2, 26, -8, 40, -2);
+    c.bezierCurveTo(52, 2, 62, 4, 66, 12);
+    c.bezierCurveTo(44, 22, 12, 24, -10, 12);
     c.closePath();
-  }, shade(stone, -0.05), { width: 3 });
+  }, shade(stone, -0.14), { width: 3 });
+  ctx.beginPath();
+  ctx.moveTo(8, 10);
+  ctx.quadraticCurveTo(30, 2, 52, 10);
+  ctx.strokeStyle = alpha(shade(stone, -0.5), 0.5);
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
   // Face in serene profile.
   paintIn(
     ctx,

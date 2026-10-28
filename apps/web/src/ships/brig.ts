@@ -50,7 +50,7 @@ function layout(ship: ShipDefinition): HullLayout {
     bell: { x: s.helm.x + 2, y: QUARTER.y - 204 },
     desk: s.desk,
     tables: s.tables,
-    smoke: isCedar(ship) ? [{ x: QUARTER.from + 14, y: QUARTER.y - 196 }] : [],
+    smoke: isCedar(ship) ? [{ x: Math.round((s.helm.x + s.citrusTree.x) / 2), y: QUARTER.y - 196 }] : [],
     orchard: s.orchard,
     surfaces: s.surfaces,
     bounds: { left: -560, top: -566, right: 640, bottom: 165 },
