@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { ShipDefinition, ShipLoadout } from "@ship/shared-types";
 import { ENVIRONMENTS, defaultLoadout } from "@ship/ship-theme-kit";
-import { linearGradient } from "../ship-engine/draw.js";
+import { alpha, linearGradient } from "../ship-engine/draw.js";
 import { STILL_FRAME } from "../ship-engine/types.js";
 import { drawShip, shipLayout } from "../ships/index.js";
 
@@ -35,10 +35,44 @@ export function ShipThumbnail({ ship, loadout, width = 240, height = 150, classN
     ctx.scale(unit, unit);
     drawShip(ctx, ship, loadout ?? defaultLoadout(ship), STILL_FRAME);
     ctx.restore();
-    ctx.fillStyle = env.sea[2];
-    ctx.fillRect(0, seaY, width, height - seaY);
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
-    ctx.fillRect(0, seaY, width, 2);
+
+    // Stylized sea / cloud-sea foreground matching the environment
+    const seaColor = env.sea[2];
+    ctx.fillStyle = linearGradient(ctx, 0, seaY, 0, height, [
+      [0, seaColor],
+      [1, env.sea[1] ?? seaColor],
+    ]);
+    if (env.cloudSea) {
+      const cr = 14 * (width / 240);
+      const step = cr * 1.35;
+      ctx.beginPath();
+      for (let x = -cr; x <= width + cr; x += step) {
+        ctx.moveTo(x + cr, seaY);
+        ctx.arc(x, seaY, cr, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-10, height + 10);
+    const waveAmp = env.cloudSea ? 2.5 : 2;
+    for (let x = -10; x <= width + 10; x += 6) {
+      const y = seaY + Math.sin(x * 0.04) * waveAmp;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(width + 10, height + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Stylized foam crest
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = env.foam ? alpha(env.foam, 0.75) : "rgba(255,255,255,0.6)";
+    ctx.beginPath();
+    for (let x = -10; x <= width + 10; x += 6) {
+      const y = seaY + Math.sin(x * 0.04) * waveAmp;
+      if (x === -10) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
   }, [ship, key, width, height]);
 
   const style = fluid ? { width: "100%", height: "auto", aspectRatio: `${width} / ${height}` } : { width, height };

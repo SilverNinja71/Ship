@@ -596,7 +596,9 @@ export function drawShrouds(ctx: Ctx, ship: ShipDefinition, layout: HullLayout, 
     ctx.strokeStyle = alpha(rope, 0.5);
     ctx.lineWidth = 1.3;
     ctx.stroke();
-    paint(ctx, (cc) => roundRectPath(cc, b1.x - 4 + side * 6, deck - 6, 34 - 12, 6, 3), shade(rope, 0.1), { width: 1.5 });
+    const xMin = Math.min(b1.x, b2.x) - 5;
+    const chW = Math.abs(b2.x - b1.x) + 10;
+    paint(ctx, (cc) => roundRectPath(cc, xMin, deck - 6, chW, 6, 3), shade(rope, 0.1), { width: 1.5 });
   }
 }
 

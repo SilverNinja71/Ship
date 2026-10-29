@@ -92,7 +92,7 @@ export class ParticleField {
     const any = (pts: Point[]) => pts[Math.floor(r() * pts.length)];
     switch (kind) {
       case "sea-spray":
-        this.add({ kind, x: e.bow.x + (r() - 0.5) * 30 * u, y: e.hull.waterY - 4 * u, vx: (40 + r() * 80) * u, vy: -(90 + r() * 120) * u, life: 0.8 + r() * 0.5, size: (2 + r() * 3) * u });
+        this.add({ kind, x: e.bow.x + (r() - 0.5) * 30 * u, y: e.hull.waterY - 4 * u, vx: -(15 + r() * 50) * u, vy: -(70 + r() * 110) * u, life: 0.8 + r() * 0.5, size: (2 + r() * 3) * u });
         break;
       case "bubbles":
         this.add({ kind, x: e.hull.left + r() * (e.hull.right - e.hull.left), y: e.height + 10, vx: 0, vy: -(30 + r() * 40) * u, life: 12, size: (3 + r() * 6) * u, ceiling: e.seaY + 10 * u });
@@ -211,12 +211,25 @@ function drawParticle(ctx: Ctx, p: Particle, a: number): void {
       ctx.restore();
       break;
     }
-    case "cannon-smoke":
-      ctx.fillStyle = alpha("#D9DCE0", 0.45 * a);
+    case "cannon-smoke": {
+      // Puffy cartoon smoke with soft cel shading and highlight
+      const r1 = s * 0.75;
+      const r2 = s * 0.6;
+      ctx.save();
+      ctx.fillStyle = alpha("#CBD2D9", 0.35 * a);
       ctx.beginPath();
       ctx.arc(p.x, p.y, s, 0, Math.PI * 2);
+      ctx.arc(p.x - r1 * 0.4, p.y + r1 * 0.3, r1, 0, Math.PI * 2);
+      ctx.arc(p.x + r2 * 0.5, p.y + r2 * 0.2, r2, 0, Math.PI * 2);
       ctx.fill();
+      // Highlight on top-left of the puff
+      ctx.fillStyle = alpha("#FFFFFF", 0.25 * a);
+      ctx.beginPath();
+      ctx.arc(p.x - s * 0.25, p.y - s * 0.25, s * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
       break;
+    }
     case "embers":
     case "neon-motes": {
       const color = p.kind === "embers" ? "#FF9A4D" : "#39FF88";

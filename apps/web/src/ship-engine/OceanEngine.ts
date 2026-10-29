@@ -87,11 +87,43 @@ export function drawSky(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame
     ]);
     ctx.fillRect(cx - r * 3.2, cy - r * 3.2, r * 6.4, r * 6.4);
     paint(ctx, (c) => circlePath(c, cx, cy, r), env.celestialColor, { stroke: false });
-    if (env.celestial === "moon") {
-      // Two soft craters keep the moon from reading as a second sun.
+    if (env.celestial === "sun") {
+      // Soft stylized sunbeams radiating outward with gentle motion.
+      const rays = 12;
+      const rot = frame.t * motion(frame) * 0.08;
+      const pulse = 1 + 0.05 * Math.sin(frame.t * motion(frame) * 1.5);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.fillStyle = alpha(env.celestialColor, 0.18);
+      for (let k = 0; k < rays; k++) {
+        const a = (k / rays) * Math.PI * 2;
+        const len = r * (1.8 + (k % 2 === 0 ? 0.4 : 0)) * pulse;
+        const halfW = 0.06;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a - halfW) * r * 0.95, Math.sin(a - halfW) * r * 0.95);
+        ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+        ctx.lineTo(Math.cos(a + halfW) * r * 0.95, Math.sin(a + halfW) * r * 0.95);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      // Bright core highlight on the sun disk.
+      ctx.fillStyle = alpha("#FFFFFF", 0.45);
+      ctx.beginPath();
+      ctx.arc(cx - r * 0.25, cy - r * 0.25, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (env.celestial === "moon") {
+      // Two soft craters and a soft crescent highlight keep the moon reading as a luminous orb.
       const crater = shade(env.celestialColor, -0.12);
       paint(ctx, (c) => circlePath(c, cx - r * 0.3, cy - r * 0.15, r * 0.22), crater, { stroke: false });
       paint(ctx, (c) => circlePath(c, cx + r * 0.25, cy + r * 0.3, r * 0.14), crater, { stroke: false });
+      ctx.fillStyle = alpha("#FFFFFF", 0.25);
+      ctx.beginPath();
+      ctx.arc(cx - r * 0.15, cy - r * 0.15, r * 0.8, -Math.PI * 0.7, Math.PI * 0.1);
+      ctx.arc(cx - r * 0.05, cy - r * 0.05, r * 0.7, Math.PI * 0.1, -Math.PI * 0.7, true);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 }
@@ -108,6 +140,18 @@ function drawStars(ctx: Ctx, geo: SeaGeometry, frame: FrameInfo): void {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
+    // A few brighter stars have a gentle four-point twinkle cross.
+    if (i % 6 === 0 && twinkle > 0.65) {
+      const sp = r * 2.2;
+      ctx.strokeStyle = `rgba(255,250,230,${0.35 * twinkle})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x - sp, y);
+      ctx.lineTo(x + sp, y);
+      ctx.moveTo(x, y - sp);
+      ctx.lineTo(x, y + sp);
+      ctx.stroke();
+    }
   }
 }
 
@@ -279,9 +323,26 @@ export function drawScenery(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, f
       break;
     }
     case "deep-reef": {
-      // Coral rocks breaking the surface and light shafts.
+      // Coral rocks breaking the surface with branching sea-fan coral silhouettes.
       for (const [px, pw, ph] of [[0.1, 80, 40], [0.88, 110, 55]]) {
-        paint(ctx, (c) => c.ellipse(w * px, horizon, pw * u, ph * u, 0, Math.PI, 0), mix(far, "#E58A8A", 0.4), { stroke: false });
+        const cx = w * px;
+        paint(ctx, (c) => c.ellipse(cx, horizon, pw * u, ph * u, 0, Math.PI, 0), mix(far, "#E58A8A", 0.4), { stroke: false });
+        // Branching coral silhouettes rising from the reef
+        ctx.strokeStyle = mix(far, "#D96868", 0.55);
+        ctx.lineWidth = 2.4 * u;
+        ctx.lineCap = "round";
+        for (const dx of [-0.3, 0.15, 0.45]) {
+          const bx = cx + dx * pw * u;
+          const by = horizon - ph * u * (1 - Math.abs(dx) * 0.8);
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx + dx * 8 * u, by - 16 * u);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(bx + dx * 8 * u, by - 10 * u);
+          ctx.lineTo(bx + dx * 16 * u, by - 22 * u);
+          ctx.stroke();
+        }
       }
       break;
     }
@@ -359,6 +420,22 @@ export function drawSeaBack(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, f
     layerPath(ctx, i, geo, frame, geo.height + 10);
     ctx.fillStyle = color;
     ctx.fill();
+    // A soft foam highlight on the middle wave layer gives layered depth behind the hull.
+    if (!env.cloudSea && i === 1) {
+      const step = Math.max(8, geo.width / 120);
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineWidth = 1.6 * geo.unit;
+      ctx.strokeStyle = alpha(env.foam, 0.25);
+      ctx.beginPath();
+      for (let x = -10; x <= geo.width + 10; x += step) {
+        const y = waveY(i, x, geo, frame) + 1.2 * geo.unit;
+        if (x === -10) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   }
   if (!env.cloudSea) drawGlints(ctx, env, geo, frame);
 }
@@ -416,8 +493,8 @@ export function drawSeaFront(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, 
   ctx.strokeStyle = alpha(env.foam, 0.85);
   for (let k = -1, x0 = -spacing + drift; x0 < geo.width + spacing; x0 += spacing, k++) {
     // Each cap is a short arc of crest, a different length each time.
-    const len = (28 + ((k * 37) % 5) * 9) * geo.unit;
-    const jitter = ((k * 53) % 7) * 6 * geo.unit;
+    const len = (28 + Math.abs((k * 37) % 5) * 9) * geo.unit;
+    const jitter = Math.abs((k * 53) % 7) * 6 * geo.unit;
     ctx.beginPath();
     for (let x = x0 + jitter; x <= x0 + jitter + len; x += step / 2) {
       const y = waveY(i, x, geo, frame) + 2 * geo.unit;
