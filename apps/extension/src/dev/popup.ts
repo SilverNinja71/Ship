@@ -1,5 +1,5 @@
 // dist/dev/popup.html: the real popup over a fake background with a voyage
-// underway. ?gemini=0 shows the keyword-check state; ?voyage=docked shows
+// underway. ?gemini=0 shows the no-key state; ?voyage=docked shows
 // the popup between voyages.
 
 import { WEB_SOURCE, type LookoutRewardEvent } from "@ship/shared-types";

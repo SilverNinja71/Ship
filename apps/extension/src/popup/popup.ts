@@ -41,7 +41,7 @@ function render(doc: Document, root: HTMLElement, state: PopupState, clockNow: n
 
   const info = el(doc, "section", "card info");
   const gemini = el(doc, "p", `dot ${stats.geminiReady ? "good" : "warn"}`);
-  gemini.textContent = stats.geminiReady ? `Gemini ready · ${state.geminiModel}` : "No Gemini key: watch pages get the keyword check (heuristic)";
+  gemini.textContent = stats.geminiReady ? `Gemini ready · ${state.geminiModel}` : "No Gemini key: the Lookout's video groups judge watch pages";
   info.append(gemini);
   if (state.geminiError && stats.geminiReady) {
     info.append(el(doc, "p", "small bad", `Last Gemini call failed ${formatAgo(clockNow - state.geminiError.at)}: ${state.geminiError.message}`));

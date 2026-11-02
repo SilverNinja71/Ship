@@ -61,7 +61,7 @@ export async function startOptions(doc: Document = document, fetchImpl: LookoutF
     modelInput.value = settings.geminiModel;
     say(
       geminiStatus,
-      settings.geminiApiKey ? `Saved. Watch pages will be judged by ${settings.geminiModel}.` : "Saved. With no key, the keyword check judges watch pages.",
+      settings.geminiApiKey ? `Saved. When the video groups aren't sure, ${settings.geminiModel} decides.` : "Saved. With no key, the Lookout's video groups judge every watch page.",
       "good",
     );
   });

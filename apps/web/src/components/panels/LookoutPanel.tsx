@@ -32,7 +32,7 @@ export function LookoutPanel({ onClose }: { onClose: () => void }) {
               <Stat label="Blocked today" value={stats.blockedToday} />
               <Stat label="Steered back" value={stats.steeredBackToday} />
               <Stat label="Leisure passes" value={stats.leisurePassesToday} />
-              <Stat label="Gemini judge" value={stats.geminiReady ? "Ready" : "Keywords"} />
+              <Stat label="Gemini second opinion" value={stats.geminiReady ? "Ready" : "Off"} />
             </div>
           )}
         </Card>
@@ -41,7 +41,7 @@ export function LookoutPanel({ onClose }: { onClose: () => void }) {
           <h3 className="font-display font-extrabold">What it does</h3>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink/80">
             <li>During a voyage, YouTube's home page, Shorts and feeds are blocked, along with any sites you add.</li>
-            <li>A YouTube video is checked against what you're studying: by Gemini Flash if you add your own API key in the extension's options, or by a simple keyword check if not.</li>
+            <li>A YouTube video is sorted against what you're studying by the Lookout's video groups (subjects, lessons, study audio and the usual distractions). When they aren't sure, Gemini decides, if you add your own API key in the extension's options.</li>
             <li>The Siren Gate offers a deal: answer 2 of your flashcards for a 5-minute pass, or steer back to the ship for +50 doubloons.</li>
           </ul>
         </Card>

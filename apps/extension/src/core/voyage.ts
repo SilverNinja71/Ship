@@ -36,7 +36,7 @@ export function isGuarding(stored: StoredVoyage | null, now: number): boolean {
   return guardStatus(stored, now) === "guarding";
 }
 
-/** What the sailor is studying, for Gemini and the keyword check. */
+/** What the sailor is studying, for the video groups and Gemini. */
 export interface StudyContext {
   assignment: string | null;
   course: string | null;

@@ -51,11 +51,11 @@ describe("settings", () => {
 });
 
 describe("labels", () => {
-  it("always says when the keyword check made the call", () => {
-    expect(verdictSourceLabel({ source: "heuristic" }, "gemini-flash-latest")).toMatch(/keyword check/i);
+  it("always says when the video groups made the call", () => {
+    expect(verdictSourceLabel({ source: "heuristic" }, "gemini-flash-latest")).toMatch(/video groups, not Gemini/i);
     expect(verdictSourceLabel({ source: "gemini" }, "gemini-flash-latest")).toBe("Judged by Gemini (gemini-flash-latest)");
     expect(verdictSourceLabel({ source: "cache" }, null)).toMatch(/earlier verdict/);
-    expect(verdictSourceShort({ source: "heuristic" })).toMatch(/keyword check/);
+    expect(verdictSourceShort({ source: "heuristic" })).toMatch(/video groups/);
   });
 
   it("formats time left", () => {
