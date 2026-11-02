@@ -53,7 +53,6 @@ const outline = (c: Ctx) =>
 
 const drawBack: HullDrawer["drawBack"] = (ctx, ship, l, frame) => {
   const colors = rigColors(ship);
-  // The far wing rises behind everything.
   // The far wing rises between the mizzen and main masts, behind the canvas.
   if (ship.extras.includes("wings")) wing(ctx, { x: (l.masts[0].x + l.masts[1].x) / 2 + 20, y: -60 }, ship, frame, { span: 380, angle: 1.22, flap: 0.12, far: true, phase: 0.5 });
   drawFarBulwarks(ctx, l.surfaces ?? [], shade(ship.palette.hull, -0.08), ship.palette.trim, 16);

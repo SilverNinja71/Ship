@@ -64,7 +64,7 @@ function look(ship: ShipDefinition) {
   const coral = ship.id === "merfolk-coral-caravel";
   return {
     coral,
-    rail: coral ? ship.palette.trim : ship.palette.trim,
+    rail: ship.palette.trim,
     bulwark: coral ? shade(ship.palette.hull, -0.12) : mix(ship.palette.hull, ship.palette.trim, 0.25),
     raisedDeck: coral ? undefined : shade(ship.palette.deck, -0.04),
   };
@@ -73,7 +73,7 @@ function look(ship: ShipDefinition) {
 const drawBack: HullDrawer["drawBack"] = (ctx, ship, l, frame) => {
   const L = look(ship);
   const colors = rigColors(ship);
-  drawFarBulwarks(ctx, l.surfaces ?? [], L.bulwark, L.coral ? ship.palette.trim : ship.palette.trim);
+  drawFarBulwarks(ctx, l.surfaces ?? [], L.bulwark, L.rail);
   const post = sternPost(ctx, CASTLE.from + 6, CASTLE.y - 20, CASTLE.y - 236, l.bell, colors.wood, colors.iron);
   if (ship.extras.includes("lanterns")) lantern(ctx, post.x, post.y - 4, ship, frame, { hang: 0, size: 1.1, seed: 3 });
   drawBowspritSpar(ctx, BOWSPRIT.from, BOWSPRIT.to, colors.wood, colors.iron);

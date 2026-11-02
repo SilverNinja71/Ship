@@ -62,7 +62,7 @@ const drawBack: HullDrawer["drawBack"] = (ctx, ship, l, frame) => {
   const colors = rigColors(ship);
   const look = lookOf(ship);
   const bulwark = look === "spirit" ? shade(ship.palette.hull, 0.12) : mix(ship.palette.hull, ship.palette.trim, look === "navy" ? 0.15 : 0.1);
-  drawFarBulwarks(ctx, l.surfaces ?? [], bulwark, look === "navy" ? ship.palette.trim : ship.palette.trim, 18);
+  drawFarBulwarks(ctx, l.surfaces ?? [], bulwark, ship.palette.trim, 18);
   drawBowspritSpar(ctx, BOWSPRIT.from, BOWSPRIT.to, colors.wood, colors.iron);
   drawRig(ctx, ship, l, { mast: { wood: colors.wood, iron: colors.iron }, bowsprit: BOWSPRIT });
   // The bell hangs off the mizzen on an arm over the helm.

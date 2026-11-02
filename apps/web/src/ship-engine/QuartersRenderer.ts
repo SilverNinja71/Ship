@@ -12,7 +12,7 @@ import { STATION_HEIGHT, drawStudyStation } from "./AvatarRenderer.js";
 import { INK, alpha, circlePath, clamp, mix, paint, radialGradient, rng, roundRectPath, shade, sway, withTransform } from "./draw.js";
 import { rectRegion } from "./hitRegions.js";
 import type { HitRegion } from "./hitRegions.js";
-import { drawSeaBack, drawSeaFront, drawSky } from "./OceanEngine.js";
+import { drawClouds, drawLightShafts, drawMist, drawScenery, drawSeaBack, drawSeaFront, drawSky } from "./OceanEngine.js";
 import type { Viewport } from "./ShipRenderer.js";
 import { drawSprite } from "./sprites/paint.js";
 import { sprites } from "./sprites/store.js";
@@ -138,8 +138,12 @@ function drawPortholeView(ctx: Ctx, env: EnvironmentTheme, frame: FrameInfo, u: 
   const size = 2 * r * u;
   const geo = { width: size, height: size, seaY: size * 0.58, unit: u * 0.7 };
   drawSky(ctx, env, geo, frame);
+  drawClouds(ctx, env, geo, frame);
+  drawScenery(ctx, env, geo, frame);
   drawSeaBack(ctx, env, geo, frame);
   drawSeaFront(ctx, env, geo, frame);
+  drawMist(ctx, env, geo, frame);
+  drawLightShafts(ctx, env, geo, frame);
   ctx.restore();
   // Glass glare.
   ctx.fillStyle = alpha("#FFFFFF", 0.18);
