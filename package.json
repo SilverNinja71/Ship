@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
+    "build:site": "sh scripts/build-site.sh",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },

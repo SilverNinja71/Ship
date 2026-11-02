@@ -15,7 +15,7 @@ export interface LookoutSettings {
   blockedSites: string[];
 }
 
-export const DEFAULT_SHIP_URL = "http://localhost:5173";
+export const DEFAULT_SHIP_URL = "https://silverninja71.github.io/Ship";
 
 export const DEFAULT_SETTINGS: LookoutSettings = {
   geminiApiKey: "",
@@ -86,7 +86,10 @@ export function shipTabPatterns(shipUrl: string): string[] {
 
 export function isShipTabUrl(tabUrl: string, shipUrl: string): boolean {
   try {
-    return shipOrigins(shipUrl).includes(new URL(tabUrl).origin);
+    const tab = new URL(tabUrl);
+    // GitHub Pages puts many sites on one host, so a tab must also be inside Ship's own path.
+    const home = new URL(shipUrl).pathname.replace(/\/+$/, "");
+    return shipOrigins(shipUrl).includes(tab.origin) && (tab.pathname === home || tab.pathname.startsWith(`${home}/`));
   } catch {
     return false;
   }
@@ -96,4 +99,10 @@ export function isShipTabUrl(tabUrl: string, shipUrl: string): boolean {
 export function customShipOriginPattern(shipUrl: string): string | null {
   const url = new URL(shipUrl);
   return isLoopbackHost(url.hostname) ? null : `${url.protocol}//${url.hostname}/*`;
+}
+
+/** Where the bridge runs for that Ship: only its own path, not every site on a shared host. */
+export function customShipBridgePattern(shipUrl: string): string | null {
+  const url = new URL(shipUrl);
+  return isLoopbackHost(url.hostname) ? null : `${url.protocol}//${url.hostname}${url.pathname.replace(/\/+$/, "")}/*`;
 }

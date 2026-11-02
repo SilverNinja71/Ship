@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { DEFAULT_GEMINI_MODEL, GEMINI_KEY_URL, checkGeminiModel, normalizeGeminiModel } from "@ship/integrations";
 import { PANEL_KEYS } from "../../hooks/useKeyboard.js";
 import { makeBackup, restoreBackup } from "../../lib/backup.js";
+import { isHostedSite } from "../../lib/hosting.js";
 import { browserFetch } from "../../lib/network.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import type { MotionPreference } from "../../stores/settingsStore.js";
@@ -100,7 +101,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <Card>
           <h3 className="mb-2 font-display font-extrabold">Crew server</h3>
-          <Field label="Address" hint="Crew rooms and the Canvas relay live here. npm run dev starts one at http://localhost:8787.">
+          <Field label="Address" hint={isHostedSite ? "Crew rooms live here. This website doesn't have a server yet, so you only need this if a friend runs one." : "Crew rooms and the Canvas relay live here. npm run dev starts one at http://localhost:8787."}>
             <div className="flex gap-2">
               <TextInput value={server} onChange={(e) => setServer(e.target.value)} />
               <Button onClick={() => s.set({ crewServer: server.trim() || s.crewServer })} disabled={server.trim() === s.crewServer}>

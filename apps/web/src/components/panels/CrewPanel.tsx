@@ -8,6 +8,7 @@ import { FIGUREHEADS, shipOrStarter } from "@ship/ship-theme-kit";
 import { myCrewInfo } from "../../hooks/useCrewSync.js";
 import { toggleCamera, toggleMic, useMedia } from "../../hooks/useWebRTC.js";
 import { formatMinutes, relativeTime } from "../../lib/format.js";
+import { isHostedSite, needsCrewServerAddress } from "../../lib/hosting.js";
 import { useCrew } from "../../stores/crewStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import { AvatarPreview } from "../AvatarPreview.js";
@@ -39,7 +40,8 @@ function JoinRoom() {
   const leave = useCrew((s) => s.leave);
   const server = useSettings((s) => s.crewServer);
   const [room, setRoom] = useState(lastRoom || "");
-  const valid = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(room.trim().toLowerCase());
+  const noServer = needsCrewServerAddress(server);
+  const valid = !noServer && /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(room.trim().toLowerCase());
 
   return (
     <div className="space-y-3">
@@ -60,9 +62,13 @@ function JoinRoom() {
       </div>
       {status === "connecting" && <p className="text-sm font-bold text-brass-700">Hailing the crew server at {server}…</p>}
       {error && <p className="rounded-xl bg-coral-500/15 px-3 py-2 text-sm font-bold text-coral-700">{error}</p>}
-      <p className="text-xs text-ink/60">
-        Crew rooms need the crew server running (it starts with <code>npm run dev</code>). Server: {server} (change it in Settings).
-      </p>
+      {noServer ? (
+        <p className="rounded-xl bg-coral-500/15 px-3 py-2 text-sm font-bold text-coral-700">Crew rooms need a crew server, and this website doesn't have one yet. If a friend runs one, put its address in Settings.</p>
+      ) : (
+        <p className="text-xs text-ink/60">
+          {isHostedSite ? "Crew server" : <>Crew rooms need the crew server running (it starts with <code>npm run dev</code>). Server</>}: {server} (change it in Settings).
+        </p>
+      )}
     </div>
   );
 }

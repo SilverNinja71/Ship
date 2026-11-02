@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import type { IntegrationId } from "@ship/shared-types";
 import { relativeTime } from "../../lib/format.js";
+import { isHostedSite } from "../../lib/hosting.js";
 import { useFleet } from "../../stores/fleetStore.js";
 import type { ImportSummary } from "../../stores/fleetStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
@@ -67,32 +68,42 @@ function Connections() {
 
       <ServiceCard
         title="Canvas"
-        connected={Boolean(fleet.settings.canvas)}
+        connected={!isHostedSite && Boolean(fleet.settings.canvas)}
         help={
+          isHostedSite ? (
+            <>
+              Canvas blocks requests from websites, so syncing it only works when you run Ship on your own computer. On this website, save your Canvas calendar feed as an .ics file and add it under <b>Import files</b>.
+            </>
+          ) : (
           <>
             In Canvas: Account → Settings → <b>+ New Access Token</b>. Canvas blocks requests from web pages, so Ship sends them through your crew server at {crewServer} (run <code>npm run dev</code>). If your school's
             Canvas address doesn't end in <code>.instructure.com</code>, add it to the server's <code>CANVAS_HOSTS</code>.
           </>
+          )
         }
       >
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Field label="Canvas address">
-            <TextInput value={canvasUrl} onChange={(e) => setCanvasUrl(e.target.value)} placeholder="https://school.instructure.com" />
-          </Field>
-          <Field label="Access token">
-            <TextInput type="password" autoComplete="off" value={canvasToken} onChange={(e) => setCanvasToken(e.target.value)} placeholder="Paste your token" />
-          </Field>
-        </div>
-        <Actions
-          canSave={Boolean(canvasUrl.trim() && canvasToken.trim())}
-          onSave={() => {
-            fleet.setCanvas(canvasUrl, canvasToken);
-            void useFleet.getState().syncCanvas();
-          }}
-          onSync={fleet.settings.canvas ? () => void fleet.syncCanvas() : undefined}
-          onDisconnect={fleet.settings.canvas ? () => fleet.disconnect("canvas") : undefined}
-        />
-        <Status id="canvas" />
+        {!isHostedSite && (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Field label="Canvas address">
+                <TextInput value={canvasUrl} onChange={(e) => setCanvasUrl(e.target.value)} placeholder="https://school.instructure.com" />
+              </Field>
+              <Field label="Access token">
+                <TextInput type="password" autoComplete="off" value={canvasToken} onChange={(e) => setCanvasToken(e.target.value)} placeholder="Paste your token" />
+              </Field>
+            </div>
+            <Actions
+              canSave={Boolean(canvasUrl.trim() && canvasToken.trim())}
+              onSave={() => {
+                fleet.setCanvas(canvasUrl, canvasToken);
+                void useFleet.getState().syncCanvas();
+              }}
+              onSync={fleet.settings.canvas ? () => void fleet.syncCanvas() : undefined}
+              onDisconnect={fleet.settings.canvas ? () => fleet.disconnect("canvas") : undefined}
+            />
+            <Status id="canvas" />
+          </>
+        )}
       </ServiceCard>
 
       <ServiceCard title="Todoist" connected={Boolean(fleet.settings.todoist)} help={<>In Todoist: Settings → Integrations → Developer → copy your <b>API token</b>.</>}>

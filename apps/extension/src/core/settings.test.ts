@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cleanYouTubeTitle, collapse } from "../content/youtubePage.js";
 import { formatClock, formatTimeLeft, verdictSourceLabel, verdictSourceShort } from "./labels.js";
 import { bytesToBase64 } from "./net.js";
-import { customShipOriginPattern, DEFAULT_SETTINGS, isShipTabUrl, normalizeModel, normalizeSettings, normalizeShipUrl, shipTabPatterns } from "./settings.js";
+import { customShipBridgePattern, customShipOriginPattern, DEFAULT_SETTINGS, isShipTabUrl, normalizeModel, normalizeSettings, normalizeShipUrl, shipTabPatterns } from "./settings.js";
 
 describe("settings", () => {
   it.each([
@@ -47,6 +47,17 @@ describe("settings", () => {
   it("needs an extra permission only for a Ship outside this computer", () => {
     expect(customShipOriginPattern("http://localhost:5173")).toBeNull();
     expect(customShipOriginPattern("https://ship.example.com/deck")).toBe("https://ship.example.com/*");
+  });
+
+  it("keeps to Ship's own path on a host shared with other sites", () => {
+    const ship = "https://silverninja71.github.io/Ship";
+    expect(isShipTabUrl("https://silverninja71.github.io/Ship/", ship)).toBe(true);
+    expect(isShipTabUrl("https://silverninja71.github.io/Ship", ship)).toBe(true);
+    expect(isShipTabUrl("https://silverninja71.github.io/Penguin-League/", ship)).toBe(false);
+    expect(isShipTabUrl("https://silverninja71.github.io/Shipwreck/", ship)).toBe(false);
+    expect(customShipBridgePattern(ship)).toBe("https://silverninja71.github.io/Ship/*");
+    expect(customShipBridgePattern("https://ship.example.com")).toBe("https://ship.example.com/*");
+    expect(customShipBridgePattern("http://localhost:5173")).toBeNull();
   });
 });
 

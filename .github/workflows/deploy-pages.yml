@@ -1,0 +1,54 @@
+name: Publish the website
+
+# Every merge into main tests Ship, rebuilds the website and puts it on the
+# gh-pages branch, which GitHub Pages serves at https://silverninja71.github.io/Ship/.
+on:
+  push:
+    branches:
+      - main
+      - claude/github-pages
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build the website
+        run: npm run build:site
+
+      - name: Publish to gh-pages
+        working-directory: apps/web/dist
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Publish $GITHUB_SHA"
+          git push -f "https://x-access-token:$TOKEN@github.com/$GITHUB_REPOSITORY.git" gh-pages

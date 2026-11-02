@@ -79,7 +79,7 @@ export async function startOptions(doc: Document = document, fetchImpl: LookoutF
   byId<HTMLFormElement>(doc, "ship-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const url = normalizeShipUrl(shipInput.value);
-    if (!url) return say(shipStatus, "That isn't a web address. Try http://localhost:5173.", "bad");
+    if (!url) return say(shipStatus, "That isn't a web address. Try https://silverninja71.github.io/Ship.", "bad");
     const custom = customShipOriginPattern(url);
     // permissions.request must run inside the click, before any await.
     const granted = custom ? chrome.permissions.request({ origins: [custom] }) : Promise.resolve(true);

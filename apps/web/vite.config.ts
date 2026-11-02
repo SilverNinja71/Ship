@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Relative file paths, so the build works in a subfolder such as GitHub Pages' /Ship/.
+  base: "./",
   // Lets several dev servers (e.g. the art galleries) run at once without
   // fighting over one dependency cache.
   cacheDir: process.env.VITE_CACHE_DIR ?? "node_modules/.vite",

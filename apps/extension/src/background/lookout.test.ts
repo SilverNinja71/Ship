@@ -214,7 +214,7 @@ describe("gate outcomes and rewards", () => {
     const h = harness();
     await h.voyage();
     expect(await h.send({ t: "steer-back", url: "https://www.youtube.com/" })).toEqual({ doubloons: STEER_BACK_BONUS, focusedExistingTab: false });
-    expect(h.opened).toEqual([{ tabId: 7, url: "http://localhost:5173" }]);
+    expect(h.opened).toEqual([{ tabId: 7, url: "https://silverninja71.github.io/Ship" }]);
     h.advance(MIN);
     expect(await h.send({ t: "steer-back", url: "https://www.youtube.com/" })).toMatchObject({ doubloons: 0 });
     const { events } = (await h.web({ t: "claim-rewards" })) as Extract<LookoutToWeb, { t: "rewards" }>;
@@ -393,7 +393,7 @@ describe("housekeeping", () => {
       pendingRewards: 1,
       pendingDoubloons: 50,
       cards: 1,
-      shipUrl: "http://localhost:5173",
+      shipUrl: "https://silverninja71.github.io/Ship",
       geminiModel: "gemini-flash-latest",
     });
   });

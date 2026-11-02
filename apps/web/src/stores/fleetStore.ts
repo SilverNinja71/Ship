@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Assignment, IntegrationId, IntegrationSettings, IntegrationStatus, LibraryItem, NoteDocument } from "@ship/shared-types";
 import { HttpError, importFile, parseIcs, requestText, syncCanvas, syncGoogleDrive, syncTodoist } from "@ship/integrations";
+import { isHostedSite } from "../lib/hosting.js";
 import { browserFetch, describeError, directThenRelay, relayFetch, requestDriveToken } from "../lib/network.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 import { useRecall } from "./recallStore.js";
@@ -56,6 +57,7 @@ function friendly(e: unknown, service: string): string {
     return e.message;
   }
   if (e instanceof TypeError) {
+    if (isHostedSite) return `Couldn't reach ${service}. It may block requests from websites. Try the Import files tab, or run Ship on your own computer.`;
     const server = useSettings.getState().crewServer;
     return `Couldn't reach ${service}. If it goes through the crew server, make sure it's running at ${server} (npm run dev).`;
   }
@@ -135,6 +137,7 @@ export const useFleet = create<FleetState>()(
           run("canvas", "Canvas", async () => {
             const canvas = get().settings.canvas;
             if (!canvas) throw new Error("Add your Canvas address and token first.");
+            if (isHostedSite) throw new Error("Canvas only syncs when Ship runs on your own computer.");
             const result = await syncCanvas(relayFetch(), canvas);
             replaceFrom("canvas", result.assignments);
             return result.warnings;
@@ -187,7 +190,7 @@ export const useFleet = create<FleetState>()(
         syncAll: async () => {
           const s = get();
           await Promise.all([
-            s.settings.canvas && s.syncCanvas(),
+            !isHostedSite && s.settings.canvas && s.syncCanvas(),
             s.settings.todoist && s.syncTodoist(),
             s.calendarFeedUrl && s.syncCalendar(),
             s.settings.googleDrive?.accessToken && s.syncDrive(),
