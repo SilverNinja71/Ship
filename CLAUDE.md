@@ -82,18 +82,20 @@ npm install          # once
 npm run dev          # web app on http://localhost:5173 + crew server on :8787 + extension watch build
 npm test             # every package's Vitest tests
 npm run typecheck    # tsc (TypeScript 7) across the repo
+npm run build:site   # the public website in apps/web/dist, with the Lookout as lookout.zip
 npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/index.json and docs/sprite-list.md
 ```
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-10-28, after the fifth session)
+## Status (2026-11-02)
 
-Sessions 1–4 are merged into `main`:
+Sessions 1–5 are merged into `main`:
 - pull request #1: sessions 1–3;
-- pull request #2: the CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading.
+- pull request #2: the CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading;
+- pull request #3: the Lookout's video groups.
 
-Session 5 (the Lookout's video groups) is on branch `claude/build-foundations`, not yet in a pull request.
+The website work (see "The public website") is on branch `claude/github-pages`.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -111,7 +113,7 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 744 tests, and all pass:
+`npm test` runs 756 tests, and all pass:
 
 | Package | Tests |
 |---|---|
@@ -119,8 +121,8 @@ Every build step now has working code:
 | active-recall-engine | 41 |
 | crew server | 100 |
 | integrations (incl. Gemini client and blurt grader 15) | 119 |
-| extension (incl. video groups 25) | 186 |
-| web (ship art 147, sailor art 68, stores and voyage rules 23, sprite engine 11, asset checks 6, Gemini grading and backups 7) | 262 |
+| extension (incl. video groups 25) | 187 |
+| web (ship art 147, sailor art 68, stores and voyage rules 23, sprite engine 11, hosting 11, asset checks 6, Gemini grading and backups 7) | 273 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
 
@@ -626,6 +628,37 @@ The user asked for the grouping to be done ahead of time ("you don't have to use
 **What changed in the contracts:** `VideoInspection` gains optional `category`. `LookoutVerdict.source` keeps `"heuristic"`, now documented as the video groups. The old keyword check (`heuristic.ts`) is gone; `topicKeywords` lives in `videoSort.ts`.
 
 **Wording:** the labels and the options, popup and Lookout panel texts say "video groups" instead of "keyword check", and call Gemini a second opinion.
+
+## The public website (2026-11-02)
+
+Ship is published at https://silverninja71.github.io/Ship/.
+
+**How it publishes**
+- `.github/workflows/deploy-pages.yml` runs on every push to `main`: typecheck, test, `npm run build:site`, then a force-push of the built files to the `gh-pages` branch.
+- GitHub Pages must be set to **Deploy from a branch → `gh-pages` / root** (Settings → Pages). Set to `main`, it shows the README as a web page instead of the app.
+- `gh-pages` holds only generated files and its history is replaced on each publish, so never work on it by hand.
+- `base: "./"` in `vite.config.ts` makes every file path relative, so the build runs from `/Ship/`.
+
+**What's different on the website** (`apps/web/src/lib/hosting.ts`; `isHostedSite` is true unless the host is localhost, 127.0.0.1 or [::1])
+- **Crew rooms:** Join stays off, with a note, until Settings has a crew server address other than this computer. The site never contacts `localhost` by itself, because browsers may show visitors a permission prompt for that.
+- **Canvas:** the form is replaced by a note. The relay refuses every page outside localhost on purpose, because it carries login tokens; don't open it up without a real design for that.
+- **Todoist and calendar feeds:** browser requests only, with no relay fallback.
+- **The Lookout panel:** offers `lookout.zip`, which leaves out the extension's dev pages.
+
+**Testing website behavior locally:** serve the build inside a `Ship/` folder and open `http://ship.localhost:<port>/Ship/`. That hostname reaches this computer but counts as hosted.
+
+**The Lookout**
+- `DEFAULT_SHIP_URL` is now the website. Anyone running locally sets `http://localhost:5173` on the options page, or steering back opens the website.
+- The manifest has a host permission for `silverninja71.github.io`. The bridge for that site is registered at run time (`customShipBridgePattern`) and only covers `/Ship/*`.
+- `isShipTabUrl` checks the path too, so a game tab on the same host doesn't count as Ship.
+
+**One shared address:** every GitHub Pages site of this account lives on `silverninja71.github.io`, so they all share one localStorage. Ship's keys all start with `ship:`, and "Start over" only removes those. No game under `~/Downloads/mace-split` called `localStorage.clear()` when checked on 2026-11-02. But any page on that address can read Ship's saved Gemini, Todoist and Drive tokens. A custom domain would separate them.
+
+**Verified:** all tests; the published build in the built-in pane at `ship.localhost`, including file loading from `/Ship/`, the crew, Fleet Log, Lookout and Settings panels, the zip download, starting a voyage and surviving a reload, with no console errors; and one real run of the workflow.
+
+**Not verified:** a screenshot of the scene (the pane was hidden), the real extension against the real website, Todoist or Drive from the website, and phones.
+
+**To make crew rooms work on the website:** host `apps/signaling-server` somewhere with a `wss://` address, then make that the default `crewServer` on the website.
 
 ## Conventions
 

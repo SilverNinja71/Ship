@@ -5,6 +5,7 @@
 import type { FetchLike } from "@ship/shared-types";
 import { GOOGLE_DRIVE_READONLY_SCOPE, createRelayFetch } from "@ship/integrations";
 import { useSettings } from "../stores/settingsStore.js";
+import { isHostedSite } from "./hosting.js";
 
 export const browserFetch: FetchLike = (url, init) => fetch(url, init);
 
@@ -18,7 +19,9 @@ export function directThenRelay(): FetchLike {
   return async (url, init) => {
     try {
       return await browserFetch(url, init);
-    } catch {
+    } catch (e) {
+      // The relay only serves pages on this computer, so the website has nothing to fall back on.
+      if (isHostedSite) throw e;
       return relay(url, init);
     }
   };

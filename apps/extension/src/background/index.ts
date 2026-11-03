@@ -4,7 +4,7 @@
 import { YOUTUBE_MATCHES, YOUTUBE_SITE, originPatternsFor } from "../core/classify.js";
 import { TICK_ALARM } from "../core/constants.js";
 import type { LookoutFetch } from "../core/net.js";
-import { customShipOriginPattern, isShipTabUrl, normalizeSettings, shipTabPatterns } from "../core/settings.js";
+import { customShipBridgePattern, customShipOriginPattern, isShipTabUrl, normalizeSettings, shipTabPatterns } from "../core/settings.js";
 import type { ToContent } from "../shared/messages.js";
 import { createLookout } from "./lookout.js";
 
@@ -32,7 +32,7 @@ async function openShip(tabId: number | null, shipUrl: string): Promise<void> {
 
 async function broadcast(message: ToContent, to: "guards" | "bridges"): Promise<void> {
   const settings = await currentSettings();
-  const custom = customShipOriginPattern(settings.shipUrl);
+  const custom = customShipBridgePattern(settings.shipUrl);
   const patterns =
     to === "guards" ? [...YOUTUBE_MATCHES, ...settings.blockedSites.flatMap(originPatternsFor)] : [...BRIDGE_MATCHES, ...(custom ? [custom] : [])];
   const tabs = await chrome.tabs.query({ url: patterns });
@@ -73,8 +73,9 @@ async function syncDynamicScripts(): Promise<void> {
     }
   }
   const custom = customShipOriginPattern(settings.shipUrl);
-  if (custom && (await chrome.permissions.contains({ origins: [custom] }))) {
-    wanted.push({ id: "bridge-custom", matches: [custom], js: ["content/bridge.js"], runAt: "document_start" });
+  const bridge = customShipBridgePattern(settings.shipUrl);
+  if (custom && bridge && (await chrome.permissions.contains({ origins: [custom] }))) {
+    wanted.push({ id: "bridge-custom", matches: [bridge], js: ["content/bridge.js"], runAt: "document_start" });
   }
   const existing = await chrome.scripting.getRegisteredContentScripts();
   if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });

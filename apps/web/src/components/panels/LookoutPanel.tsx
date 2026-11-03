@@ -1,6 +1,7 @@
 // The Lookout: the browser extension that guards distractions during voyages.
 
 import { relativeTime } from "../../lib/format.js";
+import { isHostedSite } from "../../lib/hosting.js";
 import { useEconomy } from "../../stores/economyStore.js";
 import { useLookout } from "../../stores/lookoutStore.js";
 import { Doubloon, IconSpyglass } from "../icons.js";
@@ -50,14 +51,23 @@ export function LookoutPanel({ onClose }: { onClose: () => void }) {
           <Card>
             <h3 className="font-display font-extrabold">Install it (Chrome)</h3>
             <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm text-ink/80">
-              <li>
-                Build it: <code>npm run build</code> in <code>apps/extension</code> (or keep <code>npm run dev</code> running).
-              </li>
+              {isHostedSite ? (
+                <li>
+                  <a className="font-bold underline" href={`${import.meta.env.BASE_URL}lookout.zip`} download>
+                    Download the Lookout
+                  </a>{" "}
+                  and unzip it.
+                </li>
+              ) : (
+                <li>
+                  Build it: <code>npm run build</code> in <code>apps/extension</code> (or keep <code>npm run dev</code> running).
+                </li>
+              )}
               <li>
                 Open <code>chrome://extensions</code> and switch on <b>Developer mode</b>.
               </li>
               <li>
-                Click <b>Load unpacked</b> and choose the <code>apps/extension/dist</code> folder.
+                Click <b>Load unpacked</b> and choose {isHostedSite ? "the unzipped folder" : <>the <code>apps/extension/dist</code> folder</>}.
               </li>
               <li>Reload this page. The dot in the top bar turns green when the Lookout says hello.</li>
             </ol>
