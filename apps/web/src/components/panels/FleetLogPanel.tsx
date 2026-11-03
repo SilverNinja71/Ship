@@ -1,5 +1,6 @@
 // The Fleet Log: connect Canvas, Todoist, calendars and Google Drive, and
-// import Parchment notebooks, study decks and calendar files.
+// bring in coursework (PDF, Word, PowerPoint, images and links), Parchment
+// notebooks, study decks and calendar files.
 
 import { useRef, useState } from "react";
 import type { IntegrationId } from "@ship/shared-types";
@@ -9,7 +10,7 @@ import { useFleet } from "../../stores/fleetStore.js";
 import type { ImportSummary } from "../../stores/fleetStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import { IconRefresh, IconScroll, IconUpload } from "../icons.js";
-import { Badge, Button, Card, EmptyState, Field, Panel, Tabs, TextInput, cx, readFile } from "../ui.js";
+import { Badge, Button, Card, EmptyState, Field, Panel, Tabs, TextArea, TextInput, cx, readFile } from "../ui.js";
 
 type Tab = "connections" | "import" | "notes";
 
@@ -205,22 +206,78 @@ function Actions({ canSave, onSave, onSync, onDisconnect }: { canSave: boolean; 
   );
 }
 
+const counted = (n: number, thing: string) => `${n} ${thing}${n === 1 ? "" : "s"}`;
+
+function importedLine(summary: ImportSummary): string {
+  const parts = [
+    summary.notes > 0 && counted(summary.notes, "note"),
+    summary.cards > 0 && counted(summary.cards, "new card"),
+    summary.decks > 0 && counted(summary.decks, "new deck"),
+    summary.assignments > 0 && counted(summary.assignments, "calendar item"),
+  ].filter(Boolean);
+  return parts.length > 0 ? `Imported ${parts.join(", ")}.` : "Nothing was imported.";
+}
+
 function Import() {
   const importFiles = useFleet((s) => s.importFiles);
+  const importLinks = useFleet((s) => s.importLinks);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [over, setOver] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [links, setLinks] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
   const take = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setSummary(importFiles(await Promise.all([...files].map(readFile))));
+    if (!files?.length || reading) return;
+    setReading(true);
+    try {
+      setSummary(await importFiles(await Promise.all([...files].map(readFile))));
+    } finally {
+      setReading(false);
+      // Lets the same file be chosen again.
+      if (input.current) input.current.value = "";
+    }
+  };
+
+  const readLinks = async () => {
+    if (!links.trim() || reading) return;
+    setReading(true);
+    try {
+      setSummary(await importLinks(links));
+      setLinks("");
+    } finally {
+      setReading(false);
+    }
   };
 
   return (
     <div className="space-y-3">
+      <Field label="Paste a link" hint="A YouTube video, article, web page or PDF. Paste several at once if you like.">
+        <div className="flex gap-2">
+          {/* A one-line box would glue links pasted on separate lines into one. */}
+          <TextArea
+            value={links}
+            onChange={(e) => setLinks(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void readLinks();
+              }
+            }}
+            rows={2}
+            className="min-h-0!"
+            placeholder="https://www.youtube.com/watch?v=…"
+            disabled={reading}
+          />
+          <Button variant="primary" onClick={() => void readLinks()} disabled={reading || !links.trim()}>
+            Read
+          </Button>
+        </div>
+      </Field>
       <button
         type="button"
         onClick={() => input.current?.click()}
+        disabled={reading}
         onDragOver={(e) => {
           e.preventDefault();
           setOver(true);
@@ -234,15 +291,13 @@ function Import() {
         className={cx("flex w-full flex-col items-center gap-2 rounded-3xl border-[3px] border-dashed px-6 py-10 text-center transition", over ? "border-seafoam-500 bg-seafoam-500/10" : "border-ink/25 hover:border-ink/50")}
       >
         <IconUpload size={36} />
-        <span className="font-display text-lg font-extrabold">Drop files here, or click to choose</span>
-        <span className="text-sm text-ink/60">.parchment notebooks · Parchment study.json · .csv / .tsv decks · .ics calendars · .txt / .md notes</span>
+        <span className="font-display text-lg font-extrabold">{reading ? "Reading your files…" : "Drop files here, or click to choose"}</span>
+        <span className="text-sm text-ink/60">PDF, Word (.docx), PowerPoint (.pptx) and image files · .parchment notebooks · Parchment study.json · .csv / .tsv decks · .ics calendars · .txt / .md notes</span>
       </button>
-      <input ref={input} type="file" multiple accept=".parchment,.json,.csv,.tsv,.txt,.md,.ics" className="hidden" onChange={(e) => void take(e.target.files)} />
+      <input ref={input} type="file" multiple accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.heic,.heif,.parchment,.json,.csv,.tsv,.txt,.md,.ics" className="hidden" onChange={(e) => void take(e.target.files)} />
       {summary && (
         <Card>
-          <p className="font-bold">
-            Imported {summary.files} file{summary.files === 1 ? "" : "s"}: {summary.cards} new cards, {summary.decks} new decks, {summary.notes} notes, {summary.assignments} calendar items.
-          </p>
+          <p className="font-bold">{importedLine(summary)}</p>
           {summary.warnings.length > 0 && (
             <ul className="mt-2 list-disc pl-5 text-sm text-ink/70">
               {summary.warnings.slice(0, 12).map((w, i) => (
@@ -252,7 +307,10 @@ function Import() {
           )}
         </Card>
       )}
-      <p className="text-sm text-ink/60">Parchment notebooks bring in their typed text (handwriting that was never converted to text isn't in the file). Notes show up in the Captain's Log for blurting.</p>
+      <p className="text-sm text-ink/60">Everything here shows up in the Captain's Log for blurting. PDF, Word and PowerPoint files stay in your browser, and Ship reads only their words, not pictures, scans or handwriting.</p>
+      <p className="text-sm text-ink/60">
+        Links and images are read by Gemini using your own key, which you add in Settings. That sends them to Google. On Gemini's free plan, Google may use them to improve its products and people may read them, so don't send anything private.
+      </p>
     </div>
   );
 }
@@ -266,16 +324,24 @@ function NotesLibrary() {
       <section>
         <h3 className="mb-2 font-display font-extrabold">Notes</h3>
         {notes.length === 0 ? (
-          <EmptyState title="No notes yet">Import a .parchment notebook or a .txt file to blurt against it in the Captain's Log.</EmptyState>
+          <EmptyState title="No notes yet">Upload a file or paste a link to blurt against it in the Captain's Log.</EmptyState>
         ) : (
           <ul className="space-y-1.5">
             {notes.map((n) => (
               <li key={n.id} className="flex items-center gap-3 rounded-xl border-2 border-ink/10 bg-cream-50 px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-bold">{n.title}</p>
+                  <p className="truncate font-bold">
+                    {n.url && /^https?:/i.test(n.url) ? (
+                      <a href={n.url} target="_blank" rel="noreferrer" className="hover:underline">
+                        {n.title}
+                      </a>
+                    ) : (
+                      n.title
+                    )}
+                  </p>
                   <p className="text-xs text-ink/60">
                     {n.subject ? `${n.subject} · ` : ""}
-                    {n.pages.length} page{n.pages.length === 1 ? "" : "s"} · {n.source}
+                    {n.pages.length} page{n.pages.length === 1 ? "" : "s"} · {n.url ? "from a link" : n.source === "file" ? "uploaded file" : n.source}
                   </p>
                 </div>
                 <button type="button" className="text-sm text-coral-700 hover:underline" onClick={() => removeNote(n.id)}>

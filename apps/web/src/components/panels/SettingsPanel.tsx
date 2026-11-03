@@ -4,9 +4,11 @@
 import { useRef, useState } from "react";
 import { DEFAULT_GEMINI_MODEL, GEMINI_KEY_URL, checkGeminiModel, normalizeGeminiModel } from "@ship/integrations";
 import { PANEL_KEYS } from "../../hooks/useKeyboard.js";
-import { makeBackup, restoreBackup } from "../../lib/backup.js";
+import { makeBackup, notesInBackup, restoreBackup } from "../../lib/backup.js";
 import { isHostedSite } from "../../lib/hosting.js";
 import { browserFetch } from "../../lib/network.js";
+import { clearNotes, saveNotes } from "../../lib/noteVault.js";
+import { useFleet } from "../../stores/fleetStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import type { MotionPreference } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
@@ -22,7 +24,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const file = useRef<HTMLInputElement>(null);
 
   const exportData = () => {
-    const blob = new Blob([JSON.stringify(makeBackup(localStorage), null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(makeBackup(localStorage, new Date(), useFleet.getState().notes), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `ship-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -33,15 +35,18 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const importData = async (f: File | undefined) => {
     if (!f) return;
     try {
-      restoreBackup(localStorage, JSON.parse(await f.text()));
+      const parsed: unknown = JSON.parse(await f.text());
+      restoreBackup(localStorage, parsed);
+      await saveNotes(notesInBackup(parsed));
       location.reload();
     } catch (e) {
       toast(`That file isn't a Ship backup (${e instanceof Error ? e.message : "unreadable"}).`, "warning");
     }
   };
 
-  const reset = () => {
+  const reset = async () => {
     for (const key of Object.keys(localStorage)) if (key.startsWith("ship:")) localStorage.removeItem(key);
+    await clearNotes().catch((e: unknown) => console.warn("Ship couldn't erase its saved notes.", e));
     location.reload();
   };
 
@@ -200,7 +205,7 @@ function GeminiCard() {
             <a href={GEMINI_KEY_URL} target="_blank" rel="noreferrer" className="font-bold underline">
               Google AI Studio
             </a>
-            . It stays in this browser and is sent only to Google. When it's set, grading sends your notes and blurt to Gemini.
+            . It stays in this browser and is sent only to Google. When it's set, grading sends your notes and blurt to Gemini, and the Fleet Log uses it to read links and images.
           </>
         }
       >

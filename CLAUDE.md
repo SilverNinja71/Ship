@@ -88,14 +88,15 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-11-02)
+## Status (2026-11-03)
 
 Sessions 1–5 are merged into `main`:
 - pull request #1: sessions 1–3;
 - pull request #2: the CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading;
-- pull request #3: the Lookout's video groups.
+- pull request #3: the Lookout's video groups;
+- pull request #4: the public website (see "The public website").
 
-The website work (see "The public website") is on branch `claude/github-pages`.
+Uploading coursework, links and images, and matching Parchment's schedule (see "Uploading coursework"), is on branch `claude/coursework-upload`.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -113,16 +114,16 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 756 tests, and all pass:
+`npm test` runs 852 tests, and all pass:
 
 | Package | Tests |
 |---|---|
 | ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
-| active-recall-engine | 41 |
+| active-recall-engine (incl. Parchment's schedule 24) | 65 |
 | crew server | 100 |
-| integrations (incl. Gemini client and blurt grader 15) | 119 |
+| integrations (incl. Gemini client and blurt grader 15, uploaded documents 31, links and images 34) | 184 |
 | extension (incl. video groups 25) | 187 |
-| web (ship art 147, sailor art 68, stores and voyage rules 23, sprite engine 11, hosting 11, asset checks 6, Gemini grading and backups 7) | 273 |
+| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 11) | 280 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
 
@@ -145,12 +146,11 @@ Every build step now has working code:
 - Gemini's real API answers a browser preflight from `http://localhost:5173` with CORS allowed, so direct calls from the page work.
 
 **Never checked for real:**
-- A real Canvas, Todoist or Drive account, a real Parchment file or `study.json`, real YouTube, or a real Gemini key (for the Lookout or for blurt grading).
+- A real Canvas, Todoist or Drive account, a notebook or `study.json` from the actual iPad, real YouTube, or a real Gemini key (for the Lookout or for blurt grading).
 - Whether YouTube watch pages still carry `<meta itemprop="genre">`, the category the video groups read. YouTube was unreachable from the cloud sandbox. Without it the groups simply ignore the category.
 - The Lookout's options page has a **Check key** button for Gemini.
-- Parchment's Swift source still needs comparing (see session 2 notes).
 
-Installed versions: turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23 (crew server and web scripts), esbuild 0.28, @types/chrome 0.3, @types/node 26.6.
+Installed versions: pdfjs-dist 6.4 (exact, a month old when added), fflate 0.8.3, turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23 (crew server and web scripts), esbuild 0.28, @types/chrome 0.3, @types/node 26.6.
 
 ## Next steps (from the 2026-10-28 spec)
 
@@ -301,12 +301,7 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
 - `ENVIRONMENTS` holds the sky and sea palette for each environment. `CABIN_DECOR` names each ship's themed cabin item.
 
 ### active-recall-engine
-- **SM-2 needs checking against Parchment.** Parchment's Swift source wasn't on this machine, so SM-2 follows the formula above plus classic SM-2. When the source is at hand, check these choices against `ReviewSchedule.next()`:
-  - The new interval uses the ease from before the review.
-  - Ease changes on failed reviews too.
-  - A lapse counts only when a learned card (repetitions > 0) fails.
-  - A failed card stores `interval: 0`.
-  - Rating 1 brings the card back in 1 minute, and rating 2 in 10 minutes.
+- **SM-2 copies Parchment's `ReviewSchedule.next()`**, checked against the Swift on 2026-11-03 (see "Uploading coursework"). The earlier guess at classic SM-2 was wrong for Hard and Easy.
 - **FSRS:**
   - A lapse never raises stability; it's capped at the previous value.
   - Cards first reviewed under SM-2 start from stability = interval, with a difficulty mapped from ease.
@@ -341,7 +336,7 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - The login token is dropped when a redirect changes host, so a school's Canvas base URL must be its final domain.
 
 ### integrations
-- **`importFile(name, data)`** is the one entry point for dropped files: `.parchment`, `study.json`, `.csv`/`.tsv`/`.txt` and `.ics`.
+- **`importFile(name, data)`** is the entry point for dropped files: `.parchment`, `study.json`, `.csv`/`.tsv`/`.txt`, `.ics`, `.docx` and `.pptx`. **`importFileAsync`** does the same and also reads PDFs; the web app always uses that one.
   - It never throws; problems come back as `warnings`.
   - `ImportResult` now has `assignments`, for `.ics` files.
 - **IDs and dates:**
@@ -355,10 +350,7 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
   - The docs site wasn't reachable, so the shapes come from the official `@doist/todoist-sdk` types.
   - A task's `deadline` wins over its `due`.
 - **Lodestar** is imported only from an ICS export or feed (no API was invented). Recurring ICS items are imported once, with a warning.
-- **Plain text:** a `.txt` or `.md` file that isn't cards becomes a note with `source: "paper"`, because there is no neutral `IntegrationId` for files. Ask the user whether a `"file"` source is wanted.
-- **Parchment needs checking against the real Swift source and a real file:**
-  - `.parchment` is assumed to be `PropertyListEncoder` output (plain dicts, native plist dates), with NSKeyedArchiver and JSON as fallbacks.
-  - Field names are guessed tolerantly. The lists live in `parchment/archive.ts` and `parchment/study.ts`.
+- **Plain text:** a `.txt` or `.md` file that isn't cards becomes a note with `source: "file"`.
 
 ## Decisions made in session 3
 
@@ -449,8 +441,7 @@ This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI'
 - **Dev pages:** `dist/dev/gate.html?scenario=gemini|heuristic|shorts|few-cards|blocklist|cleared`, plus `dist/dev/popup.html` and `dist/dev/options.html`. Serve `dist/` over http to view them.
 
 ### Next ideas (after the "Next steps" above)
-- Compare SM-2 and the Parchment parsers with Parchment's Swift source.
-- Decide on Paper (the art app) imports and on a neutral `"file"` IntegrationId for plain text.
+- Decide on Paper (the art app) imports.
 - **Audio:** the spec's asset folders include "audio ambiance". The sea sound is synthesized today. Recorded ambience could replace it, but sound must stay off by default.
 - Possible additions: install as an app (PWA), cross-device sync, a weekly "voyage report", and recording your own sessions as ghosts for friends.
 
@@ -654,11 +645,55 @@ Ship is published at https://silverninja71.github.io/Ship/.
 
 **One shared address:** every GitHub Pages site of this account lives on `silverninja71.github.io`, so they all share one localStorage. Ship's keys all start with `ship:`, and "Start over" only removes those. No game under `~/Downloads/mace-split` called `localStorage.clear()` when checked on 2026-11-02. But any page on that address can read Ship's saved Gemini, Todoist and Drive tokens. A custom domain would separate them.
 
-**Verified:** all tests; the published build in the built-in pane at `ship.localhost`, including file loading from `/Ship/`, the crew, Fleet Log, Lookout and Settings panels, the zip download, starting a voyage and surviving a reload, with no console errors; and one real run of the workflow.
+**Verified:** all tests; the published build at `ship.localhost` and, on 2026-11-02, on the live site: file loading from `/Ship/`, the scene (screenshot), the crew, Fleet Log, Lookout and Settings panels, the zip link, starting a voyage and surviving a reload, with no console errors; and one real run of the workflow.
 
-**Not verified:** a screenshot of the scene (the pane was hidden), the real extension against the real website, Todoist or Drive from the website, and phones.
+**Not verified:** the real extension against the real website, Todoist or Drive from the website, and phones.
 
 **To make crew rooms work on the website:** host `apps/signaling-server` somewhere with a `wss://` address, then make that the default `crewServer` on the website.
+
+## Uploading coursework (2026-11-03)
+
+The Fleet Log's Import files tab takes PDF, Word (`.docx`) and PowerPoint (`.pptx`) files, images, and pasted links. They become notes with `source: "file"`, which the Captain's Log can blurt against. PDF, Word and PowerPoint are read in the browser. Images and links go to Gemini.
+
+**The readers** (`packages/integrations/src/documents/`)
+- `pdf.ts` uses pdf.js's legacy build, loaded only when someone imports a PDF. pdf.js gives back positioned scraps, so this rebuilds lines and sentences, turns big text into `# headings`, and removes page numbers and repeated headers and footers. Those would otherwise look like key ideas, because the blurt check scores words by how often they recur. Bullets in symbol fonts (Unicode's private area) become `•`.
+- `docx.ts` and `pptx.ts` read the zip's XML with `officeZip.ts` (fflate) and the small scanner in `xml.ts`. Headings, bold and lists come through as `#`, `**` and `- `, which the blurt check counts as key ideas. A two-column table row becomes `Term - definition`. PowerPoint includes speaker notes and SmartArt text.
+- `.doc`, `.ppt`, `.pages`, `.key`, `.odt`, `.odp` and `.rtf` get a message saying what to save them as. So do Office's `~$` lock files.
+- A note's id comes from its contents, so importing the same file again replaces it, while two classes' different `Lecture 1.pdf` files stay separate.
+
+**Links and images** (`documents/links.ts`, `documents/geminiNotes.ts`)
+- A public website can't fetch most other sites, and browsers can't read a video or photo, so Gemini reads these with the sailor's own key. Without a key they explain what's needed; nothing else in the app changes.
+- They use `generateContent`, not the newer Interactions API in Google's guides. Its preflight refuses the `Api-Revision` header those guides use, so a browser can't send it (checked with curl on 2026-11-03). `generateContent` allows `content-type` and `x-goog-api-key` from GitHub Pages.
+- **YouTube:** `fileData.fileUri` with the video's URL. Public videos only. The free tier allows 8 hours of video a day. YouTube's oEmbed lookup allows browsers, so it supplies the real title and catches a missing video before any quota is spent.
+- **Other links:** the `urlContext` tool, which reads web pages, PDFs and some images, up to 34 MB. It can't read paywalled pages, Google Workspace files, or video and audio. **Notes are thrown away unless `urlContextMetadata` reports `URL_RETRIEVAL_STATUS_SUCCESS`**, because otherwise they could be invented.
+- **Google Docs, Slides and Sheets** export through Drive when it's connected (`exportGoogleDocText`), and say what to do when it isn't. Uploaded files in Drive, and `.docx` or `.pptx` links, can't be read from a link: download and upload them.
+- **Images:** PNG, JPEG, WebP, HEIC and HEIF, up to 14 MB, sent inline because Google's request limit is 20 MB and base64 adds a third. Gemini also reads handwriting in them.
+- Gemini writes notes as `#` topics, `- ` lists, `Term: definition` and `**bold**`, one page per topic. The prompt tells it to use only the material, to ignore instructions inside it, and to answer `UNREADABLE` when it can't read something. Every note says Gemini wrote it and should be checked.
+- **What Google's terms say (read 2026-11-03):** on unpaid keys, Google uses what's sent to improve its products, people may review it, and it advises against sending sensitive or personal information. On paid keys it doesn't. API users must be 18 or older. The Fleet Log says the first part where people upload; don't drop that note.
+- The link box is multi-line on purpose: a one-line box glues links pasted on separate lines into one address.
+
+**Where notes live:** IndexedDB (`apps/web/src/lib/noteVault.ts`), not localStorage. localStorage holds about 5 MB, shared with every page on this address, and filling it would stop voyages from saving. Older notes move across on first load. Backups carry notes in a `notes` field, and Start over erases them.
+
+**The Captain's Log:** a file with more than one page gets From and To page pickers. Files over 20 pages start on the first 10, since the blurt check picks at most 30 key ideas from whatever is chosen. PDF and PowerPoint pages keep their real numbers even when blank ones are left out. Word pages follow Word's own page breaks when the file records them, and are otherwise cut at about 4,000 characters.
+
+**Parchment, checked against its Swift source** (`~/Downloads/Parchment`), using files written by its own `PropertyListEncoder` and `JSONEncoder`:
+- `.parchment` and `study.json` both parse correctly.
+- `sm2.ts` now matches `ReviewSchedule.next()` on all 19,530 rating sequences of up to six. `schedulers.test.ts` keeps 24 of those rows. Before this, Hard × 3 gave 13 days instead of 4, and Easy × 3 gave 16 instead of 25.
+- **`study.json` can't leave the iPad.** It's in Application Support, and Parchment has no way to export it. Fixing that means changing Parchment.
+- Cards drawn by hand have no text, so they're skipped. Page recall schedules aren't imported, and nothing writes back to Parchment.
+
+**Limits**
+- Scanned PDFs have no text to read, and aren't sent to Gemini yet. About 3 in 10 of the PDFs sampled on this computer were like this.
+- Handwriting in Parchment only comes over after Convert to text. PDF pages inside a `.parchment` file still aren't read, though `readPdf` could now do it.
+- Google Drive still doesn't read PDF or `.parchment` files.
+- CJK PDFs relying on Adobe's predefined character maps may come out empty, because the map files aren't shipped. Word footnotes aren't read.
+- Cards still aren't generated from notes directly, only from what a blurt missed.
+
+**Verified:** all tests, including real PDFs read by pdf.js in Node. Real files on this computer through the readers, recording only counts: all 64 Word files and 25 PowerPoint files that weren't lock files gave text, 48 of 70 PDFs did, and the other 22 had no text at all on their first page, only images. Nothing garbled. In the built-in pane at `ship.localhost/Ship/`: uploading PDF, Word and PowerPoint files, the worker loading from `/Ship/static/`, a broken PDF and a scanned page being explained, notes surviving a reload, page ranges, blurting, making cards, removing a note, Start over, and no console errors. GitHub Pages serves `.mjs` as `text/javascript`, checked on Mozilla's pdf.js site there.
+
+**Links and images verified:** tests with Gemini faked, and in the built-in pane at `ship.localhost/Ship/` with Gemini's replies faked inside the page: pasting several links, a real YouTube title lookup, the key in a header and never a URL, a page Gemini couldn't open being refused even with notes attached, an image upload, no-key messages, notes surviving a reload, blurting on them, and Start over. A real request reached Gemini from the browser (403 with no key sent).
+
+**Not verified:** **anything with a real Gemini key, including whether real video, link and image requests work**; real Google Docs links through Drive; uploads on the live site (not published yet); iPad or iPhone Safari, including HEIC photos; a real Word or PowerPoint file in the browser rather than in Node; real Gemini grading of uploads; and restoring a backup with notes through the Settings panel.
 
 ## Conventions
 

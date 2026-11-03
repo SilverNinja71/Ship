@@ -68,7 +68,7 @@ describe("importFile", () => {
     expect(prose.notes).toEqual([
       {
         id: "id1",
-        source: "paper",
+        source: "file",
         title: "journal",
         subject: null,
         created: null,

@@ -306,7 +306,7 @@ function AddCards() {
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     const read = await Promise.all([...files].map(readFile));
-    const summary = importFiles(read);
+    const summary = await importFiles(read);
     toast(`Imported ${summary.cards} new card${summary.cards === 1 ? "" : "s"} in ${summary.decks} new deck${summary.decks === 1 ? "" : "s"}.`, "info");
     if (summary.warnings.length) toast(summary.warnings.slice(0, 2).join(" "), "warning");
   };

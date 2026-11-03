@@ -1,7 +1,8 @@
 // Google's Gemini API, as Ship uses it: the Lookout's video judge and the
-// Captain's Log grader both send a generateContent request that asks for JSON,
-// with the sailor's own API key. Any surprise becomes a GeminiError, so callers
-// can fall back to their offline checks.
+// Captain's Log grader send a generateContent request that asks for JSON, and
+// the Fleet Log asks for notes on links and images, all with the sailor's own
+// API key. Any surprise becomes a GeminiError, so callers can fall back to
+// their offline checks or explain the problem.
 
 import type { FetchLike } from "@ship/shared-types";
 
@@ -106,11 +107,10 @@ export interface GeminiCallOptions {
 }
 
 /**
- * POSTs a generateContent request and returns the JSON the model wrote.
- * Throws GeminiError for network trouble, timeouts, HTTP errors, refusals and
- * answers that aren't JSON.
+ * POSTs a generateContent request and returns Google's whole response. Throws
+ * GeminiError for network trouble, timeouts, HTTP errors and unreadable replies.
  */
-export async function generateGeminiJson(fetch: FetchLike, options: GeminiCallOptions, request: unknown): Promise<unknown> {
+export async function postGeminiGenerate(fetch: FetchLike, options: GeminiCallOptions, request: unknown): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
@@ -126,18 +126,21 @@ export async function generateGeminiJson(fetch: FetchLike, options: GeminiCallOp
       throw new GeminiError(controller.signal.aborted ? "Gemini took too long to answer." : "Couldn't reach Gemini.");
     }
     if (!res.ok) throw new GeminiError(`Gemini answered HTTP ${res.status}${await geminiErrorDetail(res)}`, res.status);
-    let body: unknown;
     try {
-      body = await res.json();
+      return await res.json();
     } catch {
       throw new GeminiError(controller.signal.aborted ? "Gemini took too long to answer." : "Gemini sent something that isn't JSON.");
     }
-    const data = parseJsonLoose(extractCandidateText(body));
-    if (data === undefined) throw new GeminiError("Gemini's answer wasn't the JSON we asked for.");
-    return data;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** POSTs a generateContent request and returns the JSON the model wrote. Also throws GeminiError for refusals and answers that aren't JSON. */
+export async function generateGeminiJson(fetch: FetchLike, options: GeminiCallOptions, request: unknown): Promise<unknown> {
+  const data = parseJsonLoose(extractCandidateText(await postGeminiGenerate(fetch, options, request)));
+  if (data === undefined) throw new GeminiError("Gemini's answer wasn't the JSON we asked for.");
+  return data;
 }
 
 /** For "Check key" buttons: can this key see this model? */

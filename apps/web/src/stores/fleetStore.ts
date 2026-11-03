@@ -1,12 +1,16 @@
 // The Fleet Log: connected services and what they brought in (deadlines,
-// library files, notes). Tokens live in this browser's localStorage only.
+// library files, notes). Tokens live in this browser's localStorage only, and
+// notes in IndexedDB (see lib/noteVault.ts).
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Assignment, IntegrationId, IntegrationSettings, IntegrationStatus, LibraryItem, NoteDocument } from "@ship/shared-types";
-import { HttpError, importFile, parseIcs, requestText, syncCanvas, syncGoogleDrive, syncTodoist } from "@ship/integrations";
+import type { Assignment, ImportResult, IntegrationId, IntegrationSettings, IntegrationStatus, LibraryItem, NoteDocument } from "@ship/shared-types";
+import { HttpError, importFileAsync, importLink, parseIcs, requestText, syncCanvas, syncGoogleDrive, syncTodoist } from "@ship/integrations";
+import type { GeminiReader } from "@ship/integrations";
 import { isHostedSite } from "../lib/hosting.js";
 import { browserFetch, describeError, directThenRelay, relayFetch, requestDriveToken } from "../lib/network.js";
+import { deleteNote, loadNotes, saveNotes } from "../lib/noteVault.js";
+import { pdfWorkerUrl } from "../lib/pdfWorker.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 import { useRecall } from "./recallStore.js";
 import { useSettings } from "./settingsStore.js";
@@ -43,12 +47,33 @@ export interface FleetState {
   connectDrive(): Promise<void>;
   syncDrive(): Promise<void>;
   syncAll(): Promise<void>;
-  importFiles(files: { name: string; data: Uint8Array | string }[]): ImportSummary;
+  importFiles(files: { name: string; data: Uint8Array | string }[]): Promise<ImportSummary>;
+  /** Reads each link in pasted text, separated by spaces or new lines. */
+  importLinks(text: string): Promise<ImportSummary>;
   toggleDone(assignmentId: string): void;
   removeNote(id: string): void;
 }
 
 const EMPTY_SETTINGS: IntegrationSettings = { canvas: null, todoist: null, lodestar: null, googleDrive: null };
+
+/** Gemini, when the sailor has added a key. */
+function geminiReader(): GeminiReader | null {
+  const { geminiApiKey, geminiModel } = useSettings.getState();
+  const apiKey = geminiApiKey.trim();
+  return apiKey ? { fetch: browserFetch, apiKey, model: geminiModel } : null;
+}
+
+/** A long link cut down for a message. */
+function linkLabel(link: string): string {
+  return link.length > 60 ? `${link.slice(0, 57)}…` : link;
+}
+
+/** Adds notes, replacing any with the same id, in the order a person would look for them (Lecture 2 before Lecture 10). */
+export function mergeNotes(current: readonly NoteDocument[], fresh: readonly NoteDocument[]): NoteDocument[] {
+  const byId = new Map(current.map((n) => [n.id, n]));
+  for (const note of fresh) byId.set(note.id, note);
+  return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" }));
+}
 
 /** Turns a failed request into something a sailor can act on. */
 function friendly(e: unknown, service: string): string {
@@ -76,6 +101,28 @@ export const useFleet = create<FleetState>()(
         });
 
       /** Replaces every assignment from `source` with a fresh list. */
+      const newSummary = (files: number): ImportSummary => ({ files, cards: 0, decks: 0, notes: 0, assignments: 0, warnings: [] });
+
+      /** Files what an import brought in, naming its source in any warnings. */
+      const absorb = async (label: string, result: ImportResult, summary: ImportSummary) => {
+        const added = useRecall.getState().importCards(result);
+        summary.cards += added.cards;
+        summary.decks += added.decks;
+        if (result.notes.length) {
+          set({ notes: mergeNotes(get().notes, result.notes) });
+          summary.notes += result.notes.length;
+          await saveNotes(result.notes).catch(() => {
+            summary.warnings.push(`${label}: The browser wouldn't save it, so it will be gone when this page closes.`);
+          });
+        }
+        if (result.assignments.length) {
+          const ids = new Set(result.assignments.map((a) => a.id));
+          set({ assignments: [...get().assignments.filter((a) => !ids.has(a.id)), ...result.assignments] });
+          summary.assignments += result.assignments.length;
+        }
+        summary.warnings.push(...result.warnings.map((w) => `${label}: ${w}`));
+      };
+
       const replaceFrom = (source: IntegrationId, fresh: Assignment[]) =>
         set({ assignments: [...get().assignments.filter((a) => a.source !== source), ...fresh] });
 
@@ -197,49 +244,56 @@ export const useFleet = create<FleetState>()(
           ]);
         },
 
-        importFiles: (files) => {
-          const summary: ImportSummary = { files: files.length, cards: 0, decks: 0, notes: 0, assignments: 0, warnings: [] };
+        importFiles: async (files) => {
+          const summary = newSummary(files.length);
           for (const file of files) {
-            const result = importFile(file.name, file.data);
-            const added = useRecall.getState().importCards(result);
-            summary.cards += added.cards;
-            summary.decks += added.decks;
-            if (result.notes.length) {
-              const ids = new Set(result.notes.map((n) => n.id));
-              set({ notes: [...get().notes.filter((n) => !ids.has(n.id)), ...result.notes] });
-              summary.notes += result.notes.length;
-            }
-            if (result.assignments.length) {
-              const ids = new Set(result.assignments.map((a) => a.id));
-              set({ assignments: [...get().assignments.filter((a) => !ids.has(a.id)), ...result.assignments] });
-              summary.assignments += result.assignments.length;
-            }
-            summary.warnings.push(...result.warnings.map((w) => `${file.name}: ${w}`));
+            await absorb(file.name, await importFileAsync(file.name, file.data, { pdfWorkerSrc: pdfWorkerUrl, gemini: geminiReader() }), summary);
+          }
+          return summary;
+        },
+
+        importLinks: async (text) => {
+          const links = [...new Set(text.split(/\s+/).filter(Boolean))];
+          const summary = newSummary(links.length);
+          const googleToken = get().settings.googleDrive?.accessToken ?? null;
+          for (const link of links) {
+            await absorb(linkLabel(link), await importLink(link, { fetch: browserFetch, gemini: geminiReader(), googleToken }), summary);
           }
           return summary;
         },
 
         toggleDone: (assignmentId) => set({ done: { ...get().done, [assignmentId]: !get().done[assignmentId] } }),
 
-        removeNote: (id) => set({ notes: get().notes.filter((n) => n.id !== id) }),
+        removeNote: (id) => {
+          set({ notes: get().notes.filter((n) => n.id !== id) });
+          void deleteNote(id).catch((e: unknown) => console.warn("Ship couldn't remove a saved note.", e));
+        },
       };
     },
     {
       name: storageKey("fleet"),
       storage: shipStorage,
       version: 1,
-      partialize: ({ settings, calendarFeedUrl, statuses, assignments, library, notes, done }) => ({
+      partialize: ({ settings, calendarFeedUrl, statuses, assignments, library, done }) => ({
         settings,
         calendarFeedUrl,
         statuses,
         assignments,
         library,
-        notes,
         done,
       }),
     },
   ),
 );
+
+// Notes live in IndexedDB. Older saves kept them in localStorage, so those move across the first time.
+async function loadSavedNotes(): Promise<void> {
+  const older = useFleet.getState().notes;
+  if (older.length > 0) await saveNotes(older);
+  const saved = await loadNotes();
+  useFleet.setState({ notes: mergeNotes(saved, useFleet.getState().notes) });
+}
+void loadSavedNotes().catch((e: unknown) => console.warn("Ship couldn't load its saved notes.", e));
 
 export function isDone(a: Assignment, done: Record<string, boolean>): boolean {
   return done[a.id] ?? a.completed;

@@ -70,7 +70,11 @@ export type { ParchmentStudyOptions } from "./parchment/study.js";
 export { detectDelimiter, detectHeader, importCsvCards, parseDelimited } from "./csv.js";
 export type { CsvDelimiter, CsvImportOptions, CsvImportResult, CsvParseResult } from "./csv.js";
 
-export { decodeText, importFile } from "./importFile.js";
+export { decodeText, importFile, importFileAsync } from "./importFile.js";
+export { MAX_INLINE_BYTES, NOTES_SYSTEM_PROMPT, describeGeminiFailure, pagesFromNotes } from "./documents/geminiNotes.js";
+export type { GeminiReader } from "./documents/geminiNotes.js";
+export { importLink, parseLink } from "./documents/links.js";
+export type { ImportLinkOptions, ParsedLink } from "./documents/links.js";
 export type { ImportFileOptions } from "./importFile.js";
 
 export {

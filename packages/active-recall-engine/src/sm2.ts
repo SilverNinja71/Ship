@@ -1,6 +1,7 @@
-// SM-2, kept in step with Parchment's ReviewSchedule.next() so imported cards
-// keep their schedule. Ratings are Parchment's 1–5 scale, used directly as
-// SM-2's quality q.
+// SM-2, copied from Parchment's ReviewSchedule.next() so a card comes back at
+// the same time in either app. Ratings are Parchment's 1–5 scale, used directly
+// as SM-2's quality q. schedulers.test.ts checks this against numbers from
+// Parchment's own code.
 
 import type { RecallRating, ReviewSchedule } from "@ship/shared-types";
 
@@ -22,17 +23,20 @@ export function sm2Next(schedule: ReviewSchedule, rating: RecallRating, now: num
   let due: number;
 
   if (rating <= 2) {
-    // Only a card that had been learned can lapse.
-    if (repetitions > 0) lapses += 1;
+    // Missing a card counts as a lapse unless this is its very first review.
+    if (schedule.lastReviewed !== null) lapses += 1;
     repetitions = 0;
     interval = 0;
     due = now + RELEARN_DELAY_MS[rating as 1 | 2];
   } else {
-    // The interval uses the ease from before this review, as in classic SM-2.
-    if (repetitions === 0) interval = 1;
-    else if (repetitions === 1) interval = 6;
-    else interval = Math.max(1, Math.round(interval * schedule.ease));
     repetitions += 1;
+    if (repetitions === 1) interval = rating === 5 ? 3 : 1;
+    else if (repetitions === 2) interval = rating === 5 ? 7 : rating === 3 ? 3 : 6;
+    else {
+      // Hard grows the gap a little, Good by the ease from before this review, Easy a bit more.
+      const grown = rating === 3 ? interval * 1.2 : interval * schedule.ease * (rating === 5 ? 1.3 : 1);
+      interval = Math.max(interval + 1, Math.round(grown));
+    }
     due = now + interval * DAY_MS;
   }
 
