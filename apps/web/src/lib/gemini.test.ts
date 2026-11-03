@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { FetchLike } from "@ship/shared-types";
 import { DEFAULT_GEMINI_MODEL } from "@ship/integrations";
 import { useSettings } from "../stores/settingsStore.js";
-import { makeBackup, restoreBackup } from "./backup.js";
-import { gradeLogEntry } from "./blurtGrading.js";
+import { makeBackup, notesInBackup, restoreBackup } from "./backup.js";
+import { clozeFront, gradeLogEntry } from "./blurtGrading.js";
 
 /** A Map-backed stand-in for localStorage. */
 function memoryStorage(entries: Record<string, unknown> = {}): Storage {
@@ -58,6 +58,30 @@ describe("backups", () => {
   it("refuse files that aren't Ship backups", () => {
     expect(() => restoreBackup(memoryStorage(), { app: "other", data: {} })).toThrow("not a Ship backup");
     expect(() => restoreBackup(memoryStorage(), null)).toThrow("not a Ship backup");
+  });
+
+  it("carries uploaded notes, which live outside localStorage", () => {
+    const note = { id: "file:1", source: "file" as const, title: "Lecture 1", subject: null, created: null, modified: null, pages: [{ id: "1", text: "Cells" }] };
+    const backup = makeBackup(memoryStorage(), new Date(), [note]);
+    expect(notesInBackup(JSON.parse(JSON.stringify(backup)))).toEqual([note]);
+    expect(makeBackup(memoryStorage())).not.toHaveProperty("notes");
+    expect(notesInBackup({ notes: [{ id: "no title" }, 5, note] })).toEqual([note]);
+    expect(notesInBackup(null)).toEqual([]);
+  });
+});
+
+describe("clozeFront", () => {
+  it("blanks the concept out of its sentence", () => {
+    expect(clozeFront("ATP", "Mitochondria make ATP.")).toBe("Mitochondria make _____.");
+    expect(clozeFront("c++ (lang)", "We use C++ (lang) here.")).toBe("We use _____ here.");
+  });
+
+  it("asks directly when the sentence doesn't contain it", () => {
+    expect(clozeFront("ATP", "Cells need energy.")).toBe("What is “ATP”?");
+  });
+
+  it("makes no card from a heading, which would just be a blank", () => {
+    expect(clozeFront("Glycolysis part 1", "Glycolysis part 1")).toBeNull();
   });
 });
 

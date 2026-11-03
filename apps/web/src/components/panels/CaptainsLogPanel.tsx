@@ -8,7 +8,7 @@ import { BLURT_STATUS_COLORS } from "@ship/shared-types";
 import type { BlurtConceptResult, BlurtResult } from "@ship/shared-types";
 import { annotateBlurt, annotateNotes } from "@ship/active-recall-engine";
 import type { TextSpan } from "@ship/active-recall-engine";
-import { gradeLogEntry } from "../../lib/blurtGrading.js";
+import { clozeFront, gradeLogEntry } from "../../lib/blurtGrading.js";
 import { relativeTime } from "../../lib/format.js";
 import { useFleet } from "../../stores/fleetStore.js";
 import { useRecall } from "../../stores/recallStore.js";
@@ -18,6 +18,16 @@ import { IconLog } from "../icons.js";
 import { Badge, Button, Card, EmptyState, Field, Panel, ProgressBar, Select, Tabs, TextArea, TextInput, cx } from "../ui.js";
 
 type Step = "notes" | "blurt" | "results";
+
+/** Longer files start on their first stretch, since Ship picks at most 30 key ideas from whatever is chosen. */
+const LONG_FILE_PAGES = 20;
+const FIRST_STRETCH = 10;
+
+interface NoteSource {
+  id: string;
+  title: string;
+  pages: { label: string; text: string }[];
+}
 type Tab = "practice" | "history";
 
 const STATUS_MARK: Record<BlurtConceptResult["status"], string> = { mastered: "✓", partial: "~", missed: "✗" };
@@ -99,29 +109,37 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
 function NotesStep({ title, notes, onTitle, onNotes, onStart }: { title: string; notes: string; onTitle: (v: string) => void; onNotes: (v: string) => void; onStart: () => void }) {
   const imported = useFleet((s) => s.notes);
   const library = useFleet((s) => s.library);
-  const sources = useMemo(
+  const sources = useMemo<NoteSource[]>(
     () => [
-      ...imported.map((n) => ({ id: n.id, title: n.title, text: n.pages.map((p) => p.text).join("\n\n") })),
-      ...library.filter((l) => l.text).map((l) => ({ id: l.id, title: l.title, text: l.text ?? "" })),
+      // PDF and PowerPoint pages keep their real numbers, even when a blank one was left out.
+      ...imported.map((n) => ({ id: n.id, title: n.title, pages: n.pages.map((p, i) => ({ label: /^\d+$/.test(p.id) ? p.id : `${i + 1}`, text: p.text })) })),
+      ...library.filter((l) => l.text).map((l) => ({ id: l.id, title: l.title, pages: [{ label: "1", text: l.text ?? "" }] })),
     ],
     [imported, library],
   );
+  const [picked, setPicked] = useState<{ source: NoteSource; from: number; to: number } | null>(null);
+  const choose = (source: NoteSource, from: number, to: number) => {
+    setPicked({ source, from, to });
+    const { pages } = source;
+    const range = from === to ? `page ${pages[from].label}` : `pages ${pages[from].label}–${pages[to].label}`;
+    onTitle(from === 0 && to === pages.length - 1 ? source.title : `${source.title} (${range})`);
+    onNotes(pages.slice(from, to + 1).map((p) => p.text).join("\n\n"));
+  };
   const words = notes.trim() ? notes.trim().split(/\s+/).length : 0;
   return (
     <div className="space-y-3">
+      {sources.length === 0 && <p className="text-sm text-ink/60">Upload files or paste links in the Fleet Log to practice on them here.</p>}
       {sources.length > 0 && (
-        <Field label="Use imported notes">
+        <Field label="Use an uploaded file or note">
           <Select
             defaultValue=""
             onChange={(e) => {
               const s = sources.find((x) => x.id === e.target.value);
-              if (s) {
-                onTitle(s.title);
-                onNotes(s.text);
-              }
+              if (!s) setPicked(null);
+              else choose(s, 0, Math.min(s.pages.length > LONG_FILE_PAGES ? FIRST_STRETCH : s.pages.length, s.pages.length) - 1);
             }}
           >
-            <option value="">Pick from Parchment notes or Drive…</option>
+            <option value="">Pick a file or note…</option>
             {sources.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.title}
@@ -129,6 +147,41 @@ function NotesStep({ title, notes, onTitle, onNotes, onStart }: { title: string;
             ))}
           </Select>
         </Field>
+      )}
+      {picked && picked.source.pages.length > 1 && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="From page">
+            <Select
+              value={picked.from}
+              onChange={(e) => {
+                const from = Number(e.target.value);
+                choose(picked.source, from, Math.max(from, picked.to));
+              }}
+            >
+              {picked.source.pages.map((p, i) => (
+                <option key={i} value={i}>
+                  {p.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="To page">
+            <Select
+              value={picked.to}
+              onChange={(e) => {
+                const to = Number(e.target.value);
+                choose(picked.source, Math.min(picked.from, to), to);
+              }}
+            >
+              {picked.source.pages.map((p, i) => (
+                <option key={i} value={i}>
+                  {p.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <p className="col-span-2 text-sm text-ink/60">A few pages at a time works best: Ship picks at most 30 key ideas from whatever you choose.</p>
+        </div>
       )}
       <Field label="Topic">
         <TextInput value={title} onChange={(e) => onTitle(e.target.value)} placeholder="e.g. Cellular respiration" />
@@ -248,10 +301,8 @@ function Results({
     const deck = addDeck(`Log: ${title.trim() || "notes"}`, title.trim() || null);
     let made = 0;
     for (const c of missed) {
-      // A cloze card: the sentence with the concept blanked out.
-      const escaped = c.concept.display.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const front = c.concept.sentence.replace(new RegExp(escaped, "i"), "_____");
-      if (addCard(deck.id, front === c.concept.sentence ? `What is “${c.concept.display}”?` : front, c.concept.display)) made++;
+      const front = clozeFront(c.concept.display, c.concept.sentence);
+      if (front && addCard(deck.id, front, c.concept.display)) made++;
     }
     toast(`Made ${made} flashcard${made === 1 ? "" : "s"} from what you missed.`, "info");
   };

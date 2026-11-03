@@ -1,13 +1,16 @@
-// Backups: every "ship:" key in localStorage as one JSON file. The Gemini key
-// stays out of the file, since backups get copied and shared around, and a
-// restore keeps whatever key this browser already has.
+// Backups: every "ship:" key in localStorage, plus uploaded notes, as one JSON
+// file. The Gemini key stays out of the file, since backups get copied and
+// shared around, and a restore keeps whatever key this browser already has.
 
+import type { NoteDocument } from "@ship/shared-types";
 import { storageKey } from "./storage.js";
 
 export interface ShipBackup {
   app: "ship";
   exportedAt: string;
   data: Record<string, unknown>;
+  /** Uploaded notes, which live in IndexedDB rather than localStorage. */
+  notes?: NoteDocument[];
 }
 
 const SETTINGS_KEY = storageKey("settings");
@@ -29,7 +32,7 @@ function readJson(storage: Storage, key: string): unknown {
   }
 }
 
-export function makeBackup(storage: Storage, now = new Date()): ShipBackup {
+export function makeBackup(storage: Storage, now = new Date(), notes: readonly NoteDocument[] = []): ShipBackup {
   const data: Record<string, unknown> = {};
   for (let i = 0; i < storage.length; i++) {
     const key = storage.key(i);
@@ -43,7 +46,13 @@ export function makeBackup(storage: Storage, now = new Date()): ShipBackup {
     }
     data[key] = value;
   }
-  return { app: "ship", exportedAt: now.toISOString(), data };
+  return { app: "ship", exportedAt: now.toISOString(), data, ...(notes.length > 0 ? { notes: [...notes] } : {}) };
+}
+
+/** The uploaded notes in a parsed backup file, leaving out anything malformed. */
+export function notesInBackup(parsed: unknown): NoteDocument[] {
+  if (!isRecord(parsed) || !Array.isArray(parsed.notes)) return [];
+  return parsed.notes.filter((n): n is NoteDocument => isRecord(n) && typeof n.id === "string" && typeof n.title === "string" && Array.isArray(n.pages));
 }
 
 /** Writes a parsed backup file into storage. Throws if it isn't a Ship backup. Returns how many keys were restored. */

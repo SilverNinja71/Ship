@@ -3,7 +3,8 @@
 
 import type { Deck, Flashcard } from "./recall.js";
 
-export type IntegrationId = "canvas" | "todoist" | "lodestar" | "google-drive" | "parchment" | "paper";
+/** "file" is a file the sailor uploaded by hand, such as a PDF of lecture slides. */
+export type IntegrationId = "canvas" | "todoist" | "lodestar" | "google-drive" | "parchment" | "paper" | "file";
 
 export type AssignmentKind = "assignment" | "quiz" | "exam" | "discussion" | "task" | "reading";
 
@@ -50,6 +51,8 @@ export interface NoteDocument {
   created: number | null;
   modified: number | null;
   pages: { id: string; text: string }[];
+  /** Where it came from, for notes made from a link. */
+  url?: string;
 }
 
 /** Everything an import of a file can produce. */

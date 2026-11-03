@@ -4,6 +4,8 @@ A study app where you command a cartoon study ship. Focus timers ("voyages") ear
 
 **Try it:** https://silverninja71.github.io/Ship/
 
+Bring your coursework into the Fleet Log, then practice on it in the Captain's Log and Flashcards. PDF, Word and PowerPoint files work right away. YouTube videos, web links and images need your own [Gemini key](https://aistudio.google.com/apikey), and are sent to Google to be read. Scanned PDFs can't be read yet.
+
 Your progress saves in your own browser. On the website, crew rooms need a crew server address, and Canvas sync only works when you run Ship yourself:
 
 ```bash

@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": { "@ship/active-recall-engine": "*", "@ship/shared-types": "*" }
+  "dependencies": {
+    "@ship/active-recall-engine": "*",
+    "@ship/shared-types": "*",
+    "fflate": "0.8.3",
+    "pdfjs-dist": "6.4.299"
+  }
 }

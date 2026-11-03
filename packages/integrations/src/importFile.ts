@@ -6,6 +6,12 @@ import type { ImportResult, IntegrationId, NoteDocument } from "@ship/shared-typ
 import { importCsvCards } from "./csv.js";
 import type { CsvImportOptions } from "./csv.js";
 import { parseIcs } from "./ics.js";
+import { readDocx } from "./documents/docx.js";
+import { MAX_INLINE_BYTES, describeGeminiFailure, readImageWithGemini } from "./documents/geminiNotes.js";
+import type { GeminiReader } from "./documents/geminiNotes.js";
+import { documentNote, fingerprintBytes } from "./documents/pages.js";
+import { readPdf } from "./documents/pdf.js";
+import { readPptx } from "./documents/pptx.js";
 import { isBplist } from "./parchment/bplist.js";
 import { parseParchmentArchive } from "./parchment/archive.js";
 import { looksLikeParchmentStudy, parseParchmentStudy } from "./parchment/study.js";
@@ -25,7 +31,36 @@ export interface ImportFileOptions {
   icsSource?: IntegrationId;
   csv?: Pick<CsvImportOptions, "delimiter" | "hasHeader" | "deckName">;
   study?: Pick<ParchmentStudyOptions, "numericDates">;
+  /** Where the browser finds pdf.js's worker file. Only `importFileAsync` reads PDFs. */
+  pdfWorkerSrc?: string;
+  /** Reads images. Null when the sailor hasn't added a Gemini key. Only `importFileAsync` uses it. */
+  gemini?: GeminiReader | null;
 }
+
+const IMAGE_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+};
+
+// Formats Ship can't open, and what to do about each.
+const SAVE_AS: Record<string, string> = {
+  doc: "In Word, save it as .docx or a PDF, then import that.",
+  ppt: "In PowerPoint, save it as .pptx or a PDF, then import that.",
+  pages: "In Pages, export it as a PDF or Word file, then import that.",
+  key: "In Keynote, export it as a PDF or PowerPoint file, then import that.",
+  odt: "Save it as .docx or a PDF, then import that.",
+  odp: "Save it as .pptx or a PDF, then import that.",
+  rtf: "Save it as .docx or a PDF, then import that.",
+  gif: "Save it as a PNG or JPEG, then import that.",
+  bmp: "Save it as a PNG or JPEG, then import that.",
+  tif: "Save it as a PNG or JPEG, then import that.",
+  tiff: "Save it as a PNG or JPEG, then import that.",
+  svg: "Save it as a PNG or JPEG, then import that.",
+};
 
 const empty = (): ImportResult => ({ notes: [], decks: [], cards: [], assignments: [], warnings: [] });
 
@@ -68,6 +103,39 @@ export function importFile(name: string, data: Uint8Array | string, options: Imp
       const archive = parseParchmentArchive(bytes ?? new TextEncoder().encode(data as string), { fileName: name, newId });
       result.notes.push(archive.note);
       result.warnings.push(...archive.warnings);
+      return result;
+    }
+
+    // Word and PowerPoint leave a tiny "~$" file beside any document that's open.
+    if ((ext === "docx" || ext === "pptx") && baseName(name).startsWith("~$")) {
+      result.warnings.push("That's a temporary file Office makes while a document is open, not the document itself. Import the one without ~$ in its name.");
+      return result;
+    }
+
+    if (ext === "docx") {
+      const docx = readDocx(bytes ?? new TextEncoder().encode(data as string));
+      if (docx.pages.length === 0) {
+        result.warnings.push("It has no text to read, so nothing was imported.");
+        return result;
+      }
+      result.notes.push(documentNote(name, docx.pages));
+      if (docx.pictures > 0) result.warnings.push(`${docx.pictures} picture(s) weren't read. Only the text was imported.`);
+      return result;
+    }
+
+    if (ext === "pptx") {
+      const pptx = readPptx(bytes ?? new TextEncoder().encode(data as string));
+      if (pptx.pages.length === 0) {
+        result.warnings.push("Its slides have no text to read, so nothing was imported.");
+        return result;
+      }
+      result.notes.push(documentNote(name, pptx.pages));
+      if (pptx.blankSlides > 0) result.warnings.push(`${pptx.blankSlides} slide(s) had no text, only pictures, so they were left out.`);
+      return result;
+    }
+
+    if (SAVE_AS[ext]) {
+      result.warnings.push(`Ship can't read .${ext} files. ${SAVE_AS[ext]}`);
       return result;
     }
 
@@ -118,8 +186,7 @@ export function importFile(name: string, data: Uint8Array | string, options: Imp
           return { notes: [], decks: csv.decks, cards: csv.cards, assignments: [], warnings: csv.warnings };
         }
       }
-      // IntegrationId has no neutral "file" value yet, so plain text notes are filed under Paper.
-      result.notes.push(textNote(name, text, "paper", newId));
+      result.notes.push(textNote(name, text, "file", newId));
       return result;
     }
 
@@ -129,4 +196,49 @@ export function importFile(name: string, data: Uint8Array | string, options: Imp
     result.warnings.push(`Couldn't read ${name}: ${e instanceof Error ? e.message : String(e)}`);
     return result;
   }
+}
+
+async function importImage(name: string, data: Uint8Array | string, mimeType: string, gemini: GeminiReader | null | undefined): Promise<ImportResult> {
+  const result = empty();
+  if (typeof data === "string") {
+    result.warnings.push(`Couldn't read ${name}: it wasn't read as a file.`);
+    return result;
+  }
+  if (!gemini) {
+    result.warnings.push("Reading images needs a Gemini key. Add one in Settings, then upload it again.");
+    return result;
+  }
+  if (data.length > MAX_INLINE_BYTES) {
+    result.warnings.push(`It's over ${Math.floor(MAX_INLINE_BYTES / (1024 * 1024))} MB, which is too big to send to Gemini. Try a smaller photo.`);
+    return result;
+  }
+  try {
+    const notes = await readImageWithGemini(gemini, data, mimeType);
+    result.notes.push({ id: `image:${fingerprintBytes(data)}`, source: "file", title: baseName(name) || "Image", subject: null, created: null, modified: null, pages: notes.pages });
+    result.warnings.push("Gemini read this image, so check it for misread words.");
+  } catch (e) {
+    result.warnings.push(describeGeminiFailure(e));
+  }
+  return result;
+}
+
+/** Like `importFile`, and also reads PDFs and images, which take time and can't be done in one step. */
+export async function importFileAsync(name: string, data: Uint8Array | string, options: ImportFileOptions = {}): Promise<ImportResult> {
+  const ext = extensionOf(name);
+  if (IMAGE_TYPES[ext]) return importImage(name, data, IMAGE_TYPES[ext], options.gemini);
+  if (ext !== "pdf") return importFile(name, data, options);
+  const result = empty();
+  try {
+    if (typeof data === "string") throw new Error("It wasn't read as a file.");
+    const pdf = await readPdf(data, { workerSrc: options.pdfWorkerSrc });
+    if (pdf.pages.length === 0) {
+      result.warnings.push("It has no text to read. It's probably a scan or photos, which Ship can't read yet, so nothing was imported.");
+      return result;
+    }
+    result.notes.push(documentNote(name, pdf.pages));
+    if (pdf.blankPages > 0) result.warnings.push(`${pdf.blankPages} of ${pdf.totalPages} pages had no text to read (scans or pictures), so they were left out.`);
+  } catch (e) {
+    result.warnings.push(`Couldn't read ${name}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return result;
 }

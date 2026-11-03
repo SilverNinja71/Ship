@@ -185,6 +185,6 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
 
 /** Reads a file the sailor picked as bytes (binary formats) or text. */
 export async function readFile(file: File): Promise<{ name: string; data: Uint8Array | string }> {
-  const binary = /\.(parchment|plist|bin)$/i.test(file.name);
+  const binary = /\.(parchment|plist|bin|pdf|docx|pptx|doc|ppt|key|pages|odt|odp|png|jpe?g|webp|heic|heif|gif|bmp|tiff?)$/i.test(file.name);
   return { name: file.name, data: binary ? new Uint8Array(await file.arrayBuffer()) : await file.text() };
 }
