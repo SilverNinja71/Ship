@@ -32,16 +32,45 @@ function run(ratings: RecallRating[], next: (s: ReviewSchedule, r: RecallRating,
 }
 
 describe("SM-2", () => {
-  it("follows 1, 6, then interval × ease, with Parchment's ease formula", () => {
-    const [a, b, c, d] = run([4, 4, 5, 3], sm2Next);
-    expect([a.interval, a.repetitions, a.ease]).toEqual([1, 1, 2.5]);
-    expect([b.interval, b.repetitions, b.ease]).toEqual([6, 2, 2.5]);
-    expect(c.interval).toBe(15);
+  // Each row came from running Parchment's own ReviewSchedule.next() in Swift:
+  // ratings, then the interval in days, repetitions, lapses and ease it gave.
+  // All 19,530 sequences of up to six ratings were compared on 2026-11-03.
+  it.each<[RecallRating[], number, number, number, number]>([
+    [[3], 1, 1, 0, 2.36],
+    [[4], 1, 1, 0, 2.5],
+    [[5], 3, 1, 0, 2.6],
+    [[1], 0, 0, 0, 1.96],
+    [[2], 0, 0, 0, 2.18],
+    [[3, 3], 3, 2, 0, 2.22],
+    [[4, 4], 6, 2, 0, 2.5],
+    [[5, 5], 7, 2, 0, 2.7],
+    [[3, 3, 3], 4, 3, 0, 2.08],
+    [[4, 4, 4], 15, 3, 0, 2.5],
+    [[5, 5, 5], 25, 3, 0, 2.8],
+    [[4, 4, 3], 7, 3, 0, 2.36],
+    [[4, 4, 5], 20, 3, 0, 2.6],
+    [[4, 4, 4, 4], 38, 4, 0, 2.5],
+    [[5, 5, 5, 5], 91, 4, 0, 2.9],
+    [[3, 3, 3, 3], 5, 4, 0, 1.94],
+    [[4, 1], 0, 0, 1, 1.96],
+    [[1, 1], 0, 0, 1, 1.42],
+    [[1, 4], 1, 1, 0, 1.96],
+    [[4, 4, 1, 4], 1, 1, 1, 1.96],
+    [[5, 3, 4, 5], 22, 4, 0, 2.56],
+    [[4, 4, 4, 2, 4, 4], 6, 2, 1, 2.18],
+    [[2, 2, 2, 2, 1, 1], 0, 0, 5, 1.3],
+    [[3, 5, 3, 5, 3, 5], 86, 6, 0, 2.38],
+  ])("matches Parchment for ratings %j", (ratings, interval, repetitions, lapses, ease) => {
+    const last = run(ratings, sm2Next).at(-1) as ReviewSchedule;
+    expect([last.interval, last.repetitions, last.lapses]).toEqual([interval, repetitions, lapses]);
+    expect(last.ease).toBeCloseTo(ease, 6);
+  });
+
+  it("sets the due date from the interval, using the ease from before this review", () => {
+    const [, , c, d] = run([4, 4, 5, 4], sm2Next);
     expect(c.ease).toBeCloseTo(2.6, 10);
-    // Interval uses the ease from before this review (2.6), then ease drops.
-    expect(d.interval).toBe(39);
-    expect(d.ease).toBeCloseTo(2.46, 10);
-    expect(d.due).toBe(c.due + 39 * DAY_MS);
+    expect(d.interval).toBe(52); // 20 × 2.6, not 20 × the ease after this review
+    expect(d.due).toBe(c.due + 52 * DAY_MS);
   });
 
   it("resets a forgotten card and brings it back in 1 or 10 minutes", () => {
@@ -52,8 +81,8 @@ describe("SM-2", () => {
 
     const wrong = sm2Next(learned, 2, T0);
     expect(wrong.due).toBe(T0 + 10 * MINUTE_MS);
-    // Failing again while relearning isn't another lapse.
-    expect(sm2Next(forgot, 2, T0).lapses).toBe(1);
+    // Parchment counts every miss after a card's first review, even while relearning.
+    expect(sm2Next(forgot, 2, T0).lapses).toBe(2);
   });
 
   it("never lets ease drop below 1.3", () => {
@@ -176,7 +205,7 @@ describe("scheduler helpers", () => {
 
   it("previews each rating's next due time", () => {
     const p = previewIntervals(newReviewSchedule(), T0);
-    expect(p).toEqual({ 1: MINUTE_MS, 2: 10 * MINUTE_MS, 3: DAY_MS, 4: DAY_MS, 5: DAY_MS });
+    expect(p).toEqual({ 1: MINUTE_MS, 2: 10 * MINUTE_MS, 3: DAY_MS, 4: DAY_MS, 5: 3 * DAY_MS });
     expect(formatInterval(p[1])).toBe("1m");
     expect(formatInterval(p[2])).toBe("10m");
   });
