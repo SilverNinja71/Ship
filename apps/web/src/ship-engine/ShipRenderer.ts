@@ -165,11 +165,15 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   const glow = ship.palette.glow ?? "#FFD27A";
 
   const tiny = Boolean(scene.tinyInk);
-  drawHelm(ctx, l.helm, scene.helmAngle, ship.palette.trim, tiny);
+  const helmPos = tiny ? { x: l.helm.x, y: 0 } : l.helm;
+  drawHelm(ctx, helmPos, scene.helmAngle, ship.palette.trim, tiny);
   if (tiny) {
-    drawPastelMinion(ctx, { x: l.helm.x + 18, y: l.helm.y }, "captain", frame, { scale: 1.06, seed: 7 });
+    const capPos = { x: l.helm.x + 22, y: 0 };
+    drawPastelMinion(ctx, capPos, "captain", frame, { scale: 1.15, seed: 7 });
+    drawLabel(ctx, "Captain Banan", capPos.x, 18, tagScale, "plain", true);
+    regions.push(rectRegion(ctx, dpr, "minion:captain", "Captain Banan — Steers the ship & keeps everyone calm", capPos.x - 28, capPos.y - 62, 56, 72));
   }
-  regions.push(rectRegion(ctx, dpr, "helm", "Helm: plan your voyage", l.helm.x - 48, l.helm.y - 125, 96, 125));
+  regions.push(rectRegion(ctx, dpr, "helm", "Helm: plan your voyage", helmPos.x - 48, helmPos.y - 125, 96, 125));
 
   if (!tiny) {
     for (const spot of l.orchard) drawCitrusTree(ctx, spot, scene.tree, frame, hashString(`${spot.x}`), tiny);
@@ -183,13 +187,27 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
     regions.push(rectRegion(ctx, dpr, "bell", "Ship's bell", l.bell.x - 28, l.bell.y - 6, 56, 64));
   }
 
-  // Cute companion critters & pastel costume minions grounded directly on their deck surfaces!
-  const { bowX, hullTopY } = tinyInkHullMetrics(l);
-  const birdAt = tiny ? { x: bowX - 24, y: hullTopY - 9 } : { x: l.bow.x - 16, y: l.bow.y - 4 };
-  drawDeckCritters(ctx, birdAt, { x: l.desk.x + 86, y: surfaceYAt(l, l.desk.x + 86) }, frame);
-  drawPastelMinion(ctx, { x: l.desk.x + 125, y: surfaceYAt(l, l.desk.x + 125) }, "banana", frame, { scale: 1.32, seed: 1, chore: "sweep" });
-  drawPastelMinion(ctx, { x: l.desk.x + 205, y: surfaceYAt(l, l.desk.x + 205) }, "teddy", frame, { scale: 1.28, seed: 2, chore: "none" });
-  drawPastelMinion(ctx, { x: l.deck.to - 145, y: surfaceYAt(l, l.deck.to - 145) }, "bunny", frame, { scale: 1.24, seed: 3, chore: "spyglass" });
+  // Cute companion pigeon & pastel costume minions grounded directly on the deck!
+  const birdAt = tiny ? { x: l.deck.to - 46, y: 0 } : { x: l.bow.x - 16, y: l.bow.y - 4 };
+  const pipPos = { x: l.desk.x + 125, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 125) };
+  const mochiPos = { x: l.desk.x + 215, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 215) };
+  const lumiPos = { x: l.deck.to - 145, y: tiny ? 0 : surfaceYAt(l, l.deck.to - 145) };
+
+  drawDeckCritters(ctx, birdAt, { x: l.desk.x + 86, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 86) }, frame);
+  drawPastelMinion(ctx, pipPos, "banana", frame, { scale: 1.32, seed: 1, chore: "sweep" });
+  drawPastelMinion(ctx, mochiPos, "teddy", frame, { scale: 1.28, seed: 2, chore: "none" });
+  drawPastelMinion(ctx, lumiPos, "bunny", frame, { scale: 1.24, seed: 3, chore: "spyglass" });
+
+  if (tiny) {
+    drawLabel(ctx, "Pip", pipPos.x, 18, tagScale, "plain", true);
+    drawLabel(ctx, "Mochi", mochiPos.x, 18, tagScale, "plain", true);
+    drawLabel(ctx, "Lumi", lumiPos.x, 18, tagScale, "plain", true);
+    drawLabel(ctx, "Pebble", birdAt.x, 18, tagScale, "plain", true);
+    regions.push(rectRegion(ctx, dpr, "minion:banana", "Pip — Banana-wrapped helper who sweeps away distractions", pipPos.x - 28, -68, 56, 78));
+    regions.push(rectRegion(ctx, dpr, "minion:teddy", "Mochi — Cozy teddy buddy who cheers you on during study sprints", mochiPos.x - 28, -68, 56, 78));
+    regions.push(rectRegion(ctx, dpr, "minion:bunny", "Lumi — Bunny lookout keeping watch for off-task tabs", lumiPos.x - 28, -74, 56, 84));
+    regions.push(rectRegion(ctx, dpr, "minion:pigeon", "Pebble — Tiny deck pigeon who loves quiet Pomodoro mornings", birdAt.x - 22, -32, 44, 42));
+  }
 
   if (!tiny) {
     drawStudyStation(ctx, { avatar: scene.me.avatar, state: scene.me.state, desk: scene.loadout.desk, at: l.desk, seed: 1 }, frame);
@@ -350,19 +368,7 @@ function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, onDeck:
   ctx.stroke();
   ctx.restore();
 
-  // 3. Raised deck platforms for every raised surface (quarterdeck, forecastle, etc.) so nothing floats!
-  const raised = (surfaces ?? []).filter((s) => s.y < -4);
-  if (raised.length > 0) {
-    raised.forEach((s, idx) => {
-      sketchOpenRoundedBox(ctx, s.from - 8, s.y, s.to - s.from + 16, Math.abs(s.y) + 18, 12, "#F7F2E4", 3.0, 200 + idx * 17);
-    });
-  } else if (helm.y < -10) {
-    const sternLeft = Math.min(deck.from - 65, helm.x - 75);
-    const sternRight = Math.max(deck.from + 20, helm.x + 75);
-    sketchOpenRoundedBox(ctx, sternLeft, helm.y, sternRight - sternLeft, Math.abs(helm.y) + 18, 12, "#F7F2E4", 3.0, 200);
-  }
-
-  // 4. Props, Captain Minion, pastel chore minions, and perched bird on deck
+  // 3. Props, Captain Minion, pastel chore minions, and pigeon directly on flat deck
   onDeck(layout);
 
   // 5. Hand-sketched cream/ivory boat hull silhouette in front of deck edge

@@ -217,7 +217,13 @@ export function ShipCanvas() {
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const hit = hitTest(loop.current.regions, { x: e.clientX - rect.left, y: e.clientY - rect.top });
-    if (hit) act(hit.id);
+    if (hit) {
+      if (hit.id.startsWith("minion:")) {
+        useUi.getState().toast(hit.label, "info");
+      } else {
+        act(hit.id);
+      }
+    }
   };
 
   const act = (id: HitId) => {

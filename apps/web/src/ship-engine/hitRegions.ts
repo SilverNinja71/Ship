@@ -15,7 +15,8 @@ export type HitId =
   | "decor"
   | "bookshelf"
   | `crew:${string}`
-  | `ghost:${string}`;
+  | `ghost:${string}`
+  | `minion:${string}`;
 
 export interface HitRegion {
   id: HitId;
