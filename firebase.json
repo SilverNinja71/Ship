@@ -1,4 +1,17 @@
 {
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Ship Pwedo Pomo",
+        "supportEmail": "support@ship-pwedo-pomo.firebaseapp.com",
+        "authorizedRedirectUris": [
+          "https://ship-pwedo-pomo.firebaseapp.com/__/auth/handler",
+          "https://ship-pwedo-pomo.web.app/__/auth/handler",
+          "http://localhost:5173"
+        ]
+      }
+    }
+  },
   "hosting": {
     "public": "apps/web/dist",
     "ignore": [

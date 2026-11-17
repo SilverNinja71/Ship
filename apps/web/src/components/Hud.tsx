@@ -2,6 +2,8 @@
 // controls, toasts, and the compact Pwedo Pomo timer pill at the bottom.
 
 import { useEffect, useState } from "react";
+import type { User } from "firebase/auth";
+import { signInWithGoogle, signOutGoogle, subscribeAuthUser } from "../lib/firebase.js";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
 import { usePlanner } from "../stores/plannerStore.js";
@@ -66,10 +68,13 @@ export function Hud() {
     }
   });
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const driveConnected = useFleet((s) => Boolean(s.statuses["google-drive"]?.connected));
 
+  useEffect(() => subscribeAuthUser(setAuthUser), []);
+
   useEffect(() => {
-    if (driveConnected) {
+    if (driveConnected || authUser) {
       setShowSignInPrompt(false);
       return;
     }
@@ -132,12 +137,12 @@ export function Hud() {
 
   return (
     <>
-      <TopBar onOpenLogin={() => setLoginOpen(true)} onOpenTutorial={() => setTutorialOpen(true)} />
+      <TopBar authUser={authUser} onOpenLogin={() => setLoginOpen(true)} onOpenTutorial={() => setTutorialOpen(true)} />
       <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 flex flex-col items-center gap-2">
         <VoyageDock />
       </div>
       <Toasts />
-      {showSignInPrompt && !driveConnected && !loginOpen && !tutorialOpen && (
+      {showSignInPrompt && !driveConnected && !authUser && !loginOpen && !tutorialOpen && (
         <SignInPromptToast
           onSignIn={() => {
             setShowSignInPrompt(false);
@@ -150,10 +155,10 @@ export function Hud() {
         <OnboardingModal
           onClose={() => setTutorialOpen(false)}
           onOpenLogin={() => setLoginOpen(true)}
-          driveConnected={driveConnected}
+          driveConnected={driveConnected || Boolean(authUser)}
         />
       )}
-      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
+      {loginOpen && <LoginModal authUser={authUser} onClose={() => setLoginOpen(false)} />}
     </>
   );
 }
@@ -161,7 +166,15 @@ export function Hud() {
 const SOFT_PILL =
   "border-0 bg-transparent font-serif font-normal tracking-wide text-[#6D655C] shadow-none transition hover:underline underline-offset-4 focus:outline-none";
 
-function TopBar({ onOpenLogin, onOpenTutorial }: { onOpenLogin: () => void; onOpenTutorial: () => void }) {
+function TopBar({
+  authUser,
+  onOpenLogin,
+  onOpenTutorial,
+}: {
+  authUser: User | null;
+  onOpenLogin: () => void;
+  onOpenTutorial: () => void;
+}) {
   const view = useSettings((s) => s.view);
   const setSettings = useSettings((s) => s.set);
   const openPanel = useUi((s) => s.openPanel);
@@ -226,9 +239,13 @@ function TopBar({ onOpenLogin, onOpenTutorial }: { onOpenLogin: () => void; onOp
           type="button"
           onClick={onOpenLogin}
           className={cx("py-1 text-sm", SOFT_PILL)}
-          title="Sign in & sync across devices"
+          title="Sign in with Google & sync across devices"
         >
-          {driveStatus?.connected ? "Synced ✓" : "Log in"}
+          {authUser
+            ? `${authUser.displayName?.split(" ")[0] ?? "Signed in"} ✓`
+            : driveStatus?.connected
+              ? "Synced ✓"
+              : "Log in"}
         </button>
 
         <button
@@ -255,14 +272,41 @@ function TopBar({ onOpenLogin, onOpenTutorial }: { onOpenLogin: () => void; onOp
   );
 }
 
-function LoginModal({ onClose }: { onClose: () => void }) {
+function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () => void }) {
   const driveClientId = useFleet((s) => s.settings.googleDrive?.clientId ?? "");
   const setDriveClientId = useFleet((s) => s.setDriveClientId);
   const connectDrive = useFleet((s) => s.connectDrive);
   const driveStatus = useFleet((s) => s.statuses["google-drive"]);
   const toast = useUi((s) => s.toast);
-  const [name, setName] = useState(() => localStorage.getItem("ship:profile-name") ?? "");
-  const [email, setEmail] = useState(() => localStorage.getItem("ship:profile-email") ?? "");
+  const [name, setName] = useState(() => authUser?.displayName ?? localStorage.getItem("ship:profile-name") ?? "");
+  const [email, setEmail] = useState(() => authUser?.email ?? localStorage.getItem("ship:profile-email") ?? "");
+  const [authBusy, setAuthBusy] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    setAuthBusy(true);
+    try {
+      const user = await signInWithGoogle();
+      setName(user.displayName ?? "");
+      setEmail(user.email ?? "");
+      toast(`Signed in as ${user.displayName ?? user.email ?? "Google user"}!`, "reward");
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not sign in with Google.";
+      toast(msg, "warning");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    setAuthBusy(true);
+    try {
+      await signOutGoogle();
+      toast("Signed out of Google.", "info");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
 
   const saveProfile = () => {
     localStorage.setItem("ship:profile-name", name.trim());
@@ -285,6 +329,34 @@ function LoginModal({ onClose }: { onClose: () => void }) {
           <button type="button" onClick={onClose} className="text-sm text-[#8E887F] hover:underline">
             Close
           </button>
+        </div>
+
+        <div className="mb-4 rounded-2xl bg-[#FAF6E8] p-3.5 text-sm">
+          {authUser ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-[#5D564E]">{authUser.displayName ?? "Google Account"}</p>
+                <p className="truncate text-xs text-[#8E887F]">{authUser.email}</p>
+              </div>
+              <button
+                type="button"
+                disabled={authBusy}
+                onClick={() => void handleGoogleSignOut()}
+                className="shrink-0 text-xs text-[#8E887F] hover:text-[#5D564E] hover:underline underline-offset-4"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={authBusy}
+              onClick={() => void handleGoogleSignIn()}
+              className="w-full rounded-full bg-[#FFF3A8] px-4 py-2 text-center font-semibold text-[#5D564E] transition hover:bg-[#FCEB8B] hover:underline underline-offset-4 disabled:opacity-60"
+            >
+              {authBusy ? "Signing in..." : "Sign in with Google"}
+            </button>
+          )}
         </div>
 
         <div className="space-y-3 text-sm">
