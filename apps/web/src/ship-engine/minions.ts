@@ -76,12 +76,20 @@ export function drawPastelMinion(
         line(ctx, [{ x: 0, y: -14 }, { x: 7, y: 12 }], "#B6CEA0", 2.8);
         paint(ctx, (c) => ellipsePath(c, 8, 12, 6, 3.5, 0.2), "#EFE9DA", { width: 2.4, stroke: MARKER_INK });
       });
+      // Cute pastel dust-sparkle puffs while sweeping
+      const puff = ((frame.t * 1.4 + seed) % 1);
+      paint(ctx, (c) => circlePath(c, 25 + puff * 6, -2 - puff * 6, 2.2 * (1 - puff * 0.5)), alpha("#FFF3A8", 0.85 * (1 - puff)), { stroke: false });
+      paint(ctx, (c) => circlePath(c, 29 - puff * 3, -6 - puff * 8, 1.8 * (1 - puff * 0.4)), alpha("#F9A48B", 0.7 * (1 - puff)), { stroke: false });
     } else if (opts.chore === "mop") {
       const mop = Math.sin(frame.t * 4.2 + seed) * 0.22 * m;
       withTransform(ctx, { x: -18, y: -12, rotate: mop }, () => {
         line(ctx, [{ x: 0, y: -14 }, { x: -7, y: 12 }], "#D7C9A8", 2.8);
         paint(ctx, (c) => ellipsePath(c, -8, 12, 7.5, 4, -0.2), "#D8EBF8", { width: 2.2, stroke: MARKER_INK });
       });
+      // Tiny pastel soap bubbles while mopping
+      const bub = ((frame.t * 1.1 + seed * 0.7) % 1);
+      paint(ctx, (c) => circlePath(c, -26 - bub * 5, -4 - bub * 10, 2.6), alpha("#D8EBF8", 0.9 * (1 - bub)), { width: 1.3, stroke: "#8FB6D9" });
+      paint(ctx, (c) => circlePath(c, -20 + bub * 3, -9 - bub * 12, 1.8), alpha("#FFFFFF", 0.85 * (1 - bub)), { width: 1.2, stroke: "#8FB6D9" });
     } else if (opts.chore === "spyglass") {
       line(ctx, [{ x: 13, y: -24 }, { x: 26, y: -29 }], "#D7C9A8", 4.2);
     } else if (opts.chore === "eat") {

@@ -34,6 +34,8 @@ export interface PomodoroSession {
 export interface PlannerState {
   weeklyTitle: string;
   weeklyGoal: string;
+  /** YYYY-MM-DD (local Sunday 12:00 am) that the current Weekly Plan started. */
+  weekStartedAt: string;
   /** 10 rows x 7 columns (mon..sun). */
   weeklyCells: string[][];
   habits: HabitRow[];
@@ -44,10 +46,19 @@ export interface PlannerState {
   monthNotes: string;
   /** YYYY-MM-DD of last daily check-in reward. */
   lastCheckInDay: string | null;
+  /** YYYY-MM of the last month whose end-of-month stats modal was auto-shown. */
+  lastMonthlyStatsMonth: string | null;
+  /** YYYY-MM of the last month the user was active, for rollover detection. */
+  lastActiveMonth: string | null;
+  /** Transient modal open state for MonthlyStatsModal. */
+  monthlyStatsOpen: boolean;
+  /** Optional YYYY-MM target month to display in MonthlyStatsModal. */
+  monthlyStatsTargetMonth: string | null;
 
   setWeeklyTitle(title: string): void;
   setWeeklyGoal(goal: string): void;
   setWeeklyCell(row: number, col: number, text: string): void;
+  checkAndResetWeek(now?: Date): boolean;
   setHabitLabel(row: number, label: string): void;
   toggleHabit(row: number, col: number): void;
   updatePomodoro(index: number, patch: Partial<PomodoroSession>): void;
@@ -58,6 +69,10 @@ export interface PlannerState {
   setMonthCell(index: number, text: string): void;
   setMonthNotes(notes: string): void;
   claimDailyCheckIn(todayKey?: string): boolean;
+  openMonthlyStats(monthKey?: string): void;
+  closeMonthlyStats(): void;
+  markMonthlyStatsSeen(monthKey: string): void;
+  syncActiveMonth(monthKey: string): void;
 }
 
 function makeEmptyWeeklyCells(): string[][] {
@@ -95,11 +110,28 @@ export function todayDateKey(now = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
+/** Local Sunday 12:00 am week key (YYYY-MM-DD) for auto-resetting the Weekly Plan. */
+export function getCurrentWeekStart(now = new Date()): string {
+  const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+  const y = sunday.getFullYear();
+  const m = String(sunday.getMonth() + 1).padStart(2, "0");
+  const d = String(sunday.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Local YYYY-MM key for monthly stats tracking. */
+export function currentMonthKey(now = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
 export const usePlanner = create<PlannerState>()(
   persist(
     (set, get) => ({
       weeklyTitle: "",
       weeklyGoal: "",
+      weekStartedAt: getCurrentWeekStart(),
       weeklyCells: makeEmptyWeeklyCells(),
       habits: makeDefaultHabits(),
       pomodoros: [makeSession(1), makeSession(2)],
@@ -107,6 +139,10 @@ export const usePlanner = create<PlannerState>()(
       monthCells: Array.from({ length: 35 }, () => ""),
       monthNotes: "",
       lastCheckInDay: null,
+      lastMonthlyStatsMonth: null,
+      lastActiveMonth: null,
+      monthlyStatsOpen: false,
+      monthlyStatsTargetMonth: null,
 
       setWeeklyTitle: (weeklyTitle) => set({ weeklyTitle }),
       setWeeklyGoal: (weeklyGoal) => set({ weeklyGoal }),
@@ -114,6 +150,17 @@ export const usePlanner = create<PlannerState>()(
         set((s) => ({
           weeklyCells: s.weeklyCells.map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? text : c)) : r)),
         })),
+      checkAndResetWeek: (now = new Date()) => {
+        const currentWeek = getCurrentWeekStart(now);
+        if (get().weekStartedAt === currentWeek) return false;
+        set({
+          weekStartedAt: currentWeek,
+          weeklyTitle: "",
+          weeklyGoal: "",
+          weeklyCells: makeEmptyWeeklyCells(),
+        });
+        return true;
+      },
 
       setHabitLabel: (row, label) =>
         set((s) => ({
@@ -164,7 +211,40 @@ export const usePlanner = create<PlannerState>()(
         useEconomy.getState().earn(5, 20, "Daily Tiny Planner check-in");
         return true;
       },
+
+      openMonthlyStats: (monthKey) =>
+        set({ monthlyStatsOpen: true, monthlyStatsTargetMonth: monthKey ?? null }),
+      closeMonthlyStats: () => set({ monthlyStatsOpen: false }),
+      markMonthlyStatsSeen: (monthKey) => set({ lastMonthlyStatsMonth: monthKey }),
+      syncActiveMonth: (monthKey) => set({ lastActiveMonth: monthKey }),
     }),
-    { name: storageKey("planner"), storage: shipStorage, version: 1 },
+    {
+      name: storageKey("planner"),
+      storage: shipStorage,
+      version: 1,
+      partialize: (s) => ({
+        weeklyTitle: s.weeklyTitle,
+        weeklyGoal: s.weeklyGoal,
+        weekStartedAt: s.weekStartedAt,
+        weeklyCells: s.weeklyCells,
+        habits: s.habits,
+        pomodoros: s.pomodoros,
+        monthTitle: s.monthTitle,
+        monthCells: s.monthCells,
+        monthNotes: s.monthNotes,
+        lastCheckInDay: s.lastCheckInDay,
+        lastMonthlyStatsMonth: s.lastMonthlyStatsMonth,
+        lastActiveMonth: s.lastActiveMonth,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const currentWeek = getCurrentWeekStart();
+        if (!state.weekStartedAt) {
+          usePlanner.setState({ weekStartedAt: currentWeek });
+        } else if (state.weekStartedAt !== currentWeek) {
+          state.checkAndResetWeek();
+        }
+      },
+    },
   ),
 );

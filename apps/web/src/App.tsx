@@ -9,6 +9,7 @@ import { useVoyageTicker } from "./hooks/useVoyageTicker.js";
 import { useWebRTC } from "./hooks/useWebRTC.js";
 import { BreakReflectModal } from "./components/BreakReflectModal.js";
 import { Hud } from "./components/Hud.js";
+import { MonthlyStatsModal } from "./components/MonthlyStatsModal.js";
 import { PanelHost } from "./components/PanelHost.js";
 import { StudyMaterialsSection } from "./components/StudyMaterialsSection.js";
 import { ShipCanvas } from "./ship-engine/ShipCanvas.js";
@@ -36,6 +37,7 @@ export function App() {
       <StudyMaterialsSection />
       <PanelHost />
       <BreakReflectModal />
+      <MonthlyStatsModal />
     </div>
   );
 }

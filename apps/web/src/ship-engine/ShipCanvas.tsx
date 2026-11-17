@@ -20,7 +20,7 @@ import { setHandDrawnMode } from "./draw.js";
 import { ParticleField } from "./ParticleFX.js";
 import { renderQuarters } from "./QuartersRenderer.js";
 import { renderDeck } from "./ShipRenderer.js";
-import { renderBreakScene, renderStudyDeskScene } from "./StudySceneRenderer.js";
+import { isPwedoPomoOpen, renderBreakScene, renderPwedoPlayScene, renderStudyDeskScene } from "./StudySceneRenderer.js";
 import { sprites } from "./sprites/store.js";
 import { drawPaperTexture } from "./tinyInk.js";
 import type { CrewOnDeck, Viewport } from "./ShipRenderer.js";
@@ -131,7 +131,11 @@ export function ShipCanvas() {
       let regions: HitRegion[] = [];
 
       if (s.view < 1) {
-        if (tinyInk && voyage.phase === "sailing") {
+        if (voyage.phase === "docked" && voyage.prepEndsAt === null && isPwedoPomoOpen()) {
+          renderPwedoPlayScene(ctx, view, frame, {
+            portTheme: settings.portTheme,
+          });
+        } else if (tinyInk && voyage.phase === "sailing") {
           renderStudyDeskScene(ctx, view, frame, {
             portTheme: settings.portTheme,
             objective: voyage.objective,
@@ -196,7 +200,15 @@ export function ShipCanvas() {
       if (!tip) return;
       if (hit && s.pointer) {
         tip.textContent = hit.label;
-        tip.style.transform = `translate(${Math.round(s.pointer.x + 14)}px, ${Math.round(s.pointer.y + 18)}px)`;
+        const tipW = tip.offsetWidth || 220;
+        const tipH = tip.offsetHeight || 36;
+        const maxX = Math.max(12, view.width - tipW - 12);
+        const maxY = Math.max(12, view.height - view.insetBottom - tipH - 8);
+        const rawX = s.pointer.x + 14;
+        const x = Math.min(maxX, Math.max(12, rawX > maxX ? s.pointer.x - tipW - 14 : rawX));
+        const rawY = s.pointer.y + 18;
+        const y = Math.min(maxY, Math.max(12, rawY > maxY ? s.pointer.y - tipH - 12 : rawY));
+        tip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
         tip.style.opacity = "1";
       } else {
         tip.style.opacity = "0";
@@ -283,7 +295,7 @@ export function ShipCanvas() {
       <div
         ref={tipRef}
         aria-hidden="true"
-        className="pointer-events-none fixed top-0 left-0 z-10 rounded-full bg-cream-50 px-3 py-1 text-sm font-semibold text-ink opacity-0 shadow-card transition-opacity duration-150"
+        className="pointer-events-none fixed top-0 left-0 z-30 max-w-[min(300px,calc(100vw-24px))] rounded-2xl border border-[#A29C93]/50 bg-[#FFFDF7]/95 px-3 py-1.5 text-xs font-semibold leading-snug text-[#5D564E] opacity-0 shadow-card transition-opacity duration-150"
       />
     </>
   );

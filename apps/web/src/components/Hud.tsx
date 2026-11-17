@@ -4,10 +4,17 @@
 import { useEffect, useState } from "react";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
+import { usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useSettings } from "../stores/settingsStore.js";
 import { useUi } from "../stores/uiStore.js";
 import type { PanelId } from "../stores/uiStore.js";
+import {
+  OnboardingModal,
+  SIGNIN_PROMPT_DISMISSED_KEY,
+  SignInPromptToast,
+  TUTORIAL_SEEN_KEY,
+} from "./OnboardingModal.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import {
   IconCabin,
@@ -51,13 +58,101 @@ export function useNow(ms = 1000): number {
 
 export function Hud() {
   const [loginOpen, setLoginOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(() => {
+    try {
+      return localStorage.getItem(TUTORIAL_SEEN_KEY) !== "1";
+    } catch {
+      return false;
+    }
+  });
+  const [showSignInPrompt, setShowSignInPrompt] = useState(false);
+  const driveConnected = useFleet((s) => Boolean(s.statuses["google-drive"]?.connected));
+
+  useEffect(() => {
+    if (driveConnected) {
+      setShowSignInPrompt(false);
+      return;
+    }
+    const isDismissed = () => {
+      try {
+        return localStorage.getItem(SIGNIN_PROMPT_DISMISSED_KEY) === "1";
+      } catch {
+        return false;
+      }
+    };
+    const triggerPrompt = () => {
+      if (!useFleet.getState().statuses["google-drive"]?.connected && !isDismissed()) {
+        setShowSignInPrompt(true);
+      }
+    };
+
+    const unsubPlanner = usePlanner.subscribe((state, prev) => {
+      if (
+        state.weeklyCells !== prev.weeklyCells ||
+        state.weeklyTitle !== prev.weeklyTitle ||
+        state.weeklyGoal !== prev.weeklyGoal ||
+        state.habits !== prev.habits ||
+        state.pomodoros !== prev.pomodoros ||
+        state.monthCells !== prev.monthCells ||
+        state.monthNotes !== prev.monthNotes
+      ) {
+        triggerPrompt();
+      }
+    });
+    const unsubRecall = useRecall.subscribe((state, prev) => {
+      if (
+        state.blurts.length > prev.blurts.length ||
+        state.decks.length > prev.decks.length ||
+        state.cards.length > prev.cards.length
+      ) {
+        triggerPrompt();
+      }
+    });
+    const unsubFleet = useFleet.subscribe((state, prev) => {
+      if (state.notes.length > prev.notes.length || state.assignments.length > prev.assignments.length) {
+        triggerPrompt();
+      }
+    });
+
+    return () => {
+      unsubPlanner();
+      unsubRecall();
+      unsubFleet();
+    };
+  }, [driveConnected]);
+
+  const dismissSignInPrompt = () => {
+    setShowSignInPrompt(false);
+    try {
+      localStorage.setItem(SIGNIN_PROMPT_DISMISSED_KEY, "1");
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   return (
     <>
-      <TopBar onOpenLogin={() => setLoginOpen(true)} />
+      <TopBar onOpenLogin={() => setLoginOpen(true)} onOpenTutorial={() => setTutorialOpen(true)} />
       <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 flex flex-col items-center gap-2">
         <VoyageDock />
       </div>
       <Toasts />
+      {showSignInPrompt && !driveConnected && !loginOpen && !tutorialOpen && (
+        <SignInPromptToast
+          onSignIn={() => {
+            setShowSignInPrompt(false);
+            setLoginOpen(true);
+          }}
+          onDismiss={dismissSignInPrompt}
+        />
+      )}
+      {tutorialOpen && (
+        <OnboardingModal
+          onClose={() => setTutorialOpen(false)}
+          onOpenLogin={() => setLoginOpen(true)}
+          driveConnected={driveConnected}
+        />
+      )}
       {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
     </>
   );
@@ -66,7 +161,7 @@ export function Hud() {
 const SOFT_PILL =
   "border-0 bg-transparent font-serif font-normal tracking-wide text-[#6D655C] shadow-none transition hover:underline underline-offset-4 focus:outline-none";
 
-function TopBar({ onOpenLogin }: { onOpenLogin: () => void }) {
+function TopBar({ onOpenLogin, onOpenTutorial }: { onOpenLogin: () => void; onOpenTutorial: () => void }) {
   const view = useSettings((s) => s.view);
   const setSettings = useSettings((s) => s.set);
   const openPanel = useUi((s) => s.openPanel);
@@ -134,6 +229,16 @@ function TopBar({ onOpenLogin }: { onOpenLogin: () => void }) {
           title="Sign in & sync across devices"
         >
           {driveStatus?.connected ? "Synced ✓" : "Log in"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenTutorial}
+          className={cx("py-1 text-sm", SOFT_PILL)}
+          title="First-visit tutorial & guide"
+          aria-label="Tutorial"
+        >
+          ?
         </button>
 
         <button

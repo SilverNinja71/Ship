@@ -3,7 +3,7 @@
 // 2. Active Recall Study Sheets quick-launch & file upload (wired to useFleet & useRecall)
 // 3. Banana Planna: Weekly Plan & Habit Tracker (wired to usePlanner)
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFleet } from "../stores/fleetStore.js";
 import { DAYS, usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
@@ -15,9 +15,11 @@ import { IconCalendar, IconCards, IconLog } from "./icons.js";
 import { cx, readFile } from "./ui.js";
 
 const CARD =
-  "rounded-3xl border border-[#A29C93]/60 bg-[#FFFDF7] p-5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] sm:p-6";
+  "rounded-3xl border border-[#A29C93]/55 bg-[#FFFDF7] p-5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] sm:p-6";
 
 export function StudyMaterialsSection() {
+  const openMonthlyStats = usePlanner((s) => s.openMonthlyStats);
+
   return (
     <section
       id="study-materials"
@@ -31,16 +33,25 @@ export function StudyMaterialsSection() {
               Pwedo Pomo &amp; Study Materials
             </h2>
           </div>
-          <a
-            href="#top"
-            onClick={(e) => {
-              e.preventDefault();
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-            className="rounded-full border border-[#A29C93]/60 bg-[#FFFDF7] px-3.5 py-1.5 text-xs font-bold text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] transition hover:bg-[#FFF3A8]/60 focus:outline-none"
-          >
-            Back to scene ↑
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openMonthlyStats()}
+              className="rounded-full border border-[#A29C93]/45 bg-[#FFF8D6] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] shadow-[2px_2px_0_#EAE5DA] transition hover:bg-[#FFF3A8]/70 focus:outline-none"
+            >
+              Monthly Stats
+            </button>
+            <a
+              href="#top"
+              onClick={(e) => {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="rounded-full border border-[#A29C93]/55 bg-[#FFFDF7] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] shadow-[2px_2px_0_#EAE5DA] transition hover:bg-[#FFF8D6] focus:outline-none"
+            >
+              Back to scene ↑
+            </a>
+          </div>
         </div>
 
         {/* 1. Interactive Pomodoro Tracker Task Form */}
@@ -63,44 +74,103 @@ function PomodoroTrackerSection() {
   const setPomodoroTaskText = usePlanner((s) => s.setPomodoroTaskText);
   const togglePomodoroBox = usePlanner((s) => s.togglePomodoroBox);
   const phase = useVoyage((s) => s.phase);
+  const cyclesCompleted = useVoyage((s) => s.cyclesCompleted);
+
+  const [focusedSessionIdx, setFocusedSessionIdx] = useState<number | null>(null);
+
+  // Auto-fill focus & break checkboxes for the active session as Pwedo Pomo cycles complete.
+  useEffect(() => {
+    if (cyclesCompleted <= 0) return;
+    const targetIdx = focusedSessionIdx ?? 0;
+    const session = pomodoros[targetIdx];
+    if (!session) return;
+
+    const focusTarget = Math.min(cyclesCompleted, session.focusChecks.length);
+    const breakTarget = Math.min(
+      phase === "shore-leave" ? Math.max(0, cyclesCompleted - 1) : cyclesCompleted,
+      session.breakChecks.length,
+    );
+
+    const needsFocus = session.focusChecks.some((checked, i) => i < focusTarget && !checked);
+    const needsBreak = session.breakChecks.some((checked, i) => i < breakTarget && !checked);
+    if (!needsFocus && !needsBreak) return;
+
+    updatePomodoro(targetIdx, {
+      ...(needsFocus
+        ? {
+            focusChecks: session.focusChecks.map((checked, i) =>
+              i < focusTarget ? true : checked,
+            ),
+          }
+        : {}),
+      ...(needsBreak
+        ? {
+            breakChecks: session.breakChecks.map((checked, i) =>
+              i < breakTarget ? true : checked,
+            ),
+          }
+        : {}),
+    });
+  }, [cyclesCompleted, phase, focusedSessionIdx, pomodoros, updatePomodoro]);
+
+  const visibleSessions =
+    focusedSessionIdx !== null && pomodoros[focusedSessionIdx]
+      ? [{ session: pomodoros[focusedSessionIdx]!, sIdx: focusedSessionIdx }]
+      : pomodoros.map((session, sIdx) => ({ session, sIdx }));
 
   return (
     <div className={CARD}>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <PastelMinionBadge costume="bunny" size={40} />
+          <div className="grid size-11 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#EFE8FA]/65">
+            <PastelMinionBadge costume="bunny" size={38} />
+          </div>
           <div>
             <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
               Pomodoro Tracker
             </h3>
             <p className="text-xs text-[#8E887F]">
               {phase === "docked"
-                ? "Jot down your tasks and fill this out while Pwedo Pomo runs."
-                : "Pwedo Pomo is active — check off tasks and boxes as you go."}
+                ? "Jot down your tasks and press Enter to focus on one session."
+                : "Pwedo Pomo is active — focus & break boxes auto-fill as cycles complete."}
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-[#FFF3A8] px-3 py-1 text-xs font-bold text-[#6D655C]">
-          Auto-saved
-        </span>
+        <div className="flex items-center gap-2">
+          {focusedSessionIdx !== null && (
+            <button
+              type="button"
+              onClick={() => setFocusedSessionIdx(null)}
+              className="rounded-full border border-[#A29C93]/35 bg-[#FAF6E8] px-3 py-1 text-xs font-semibold text-[#8E887F] transition hover:bg-[#FFF8D6]"
+            >
+              Show all sessions
+            </button>
+          )}
+          <span className="rounded-full border border-[#EAE2C8] bg-[#FFF8D6] px-3 py-1 text-xs font-semibold text-[#8E887F]">
+            Auto-saved
+          </span>
+        </div>
       </div>
 
       <div className="space-y-5">
-        {pomodoros.map((session, sIdx) => (
+        {visibleSessions.map(({ session, sIdx }) => (
           <div
             key={session.id}
             className="rounded-2xl border border-[#A29C93]/40 bg-[#FFFDF7] p-4 sm:p-5"
           >
-            <div className="mb-4 flex items-center gap-2 border-b border-[#A29C93]/25 pb-2.5">
-              <span className="font-serif text-sm tracking-[0.2em] text-[#6D655C]">
-                Session #
+            <div className="mb-4 flex items-center justify-between gap-2 border-b border-[#A29C93]/25 pb-2.5">
+              <span className="font-serif text-sm tracking-[0.2em] text-[#6D655C] select-none">
+                Session #{sIdx + 1}
               </span>
-              <input
-                value={session.sessionNumber}
-                onChange={(e) => updatePomodoro(sIdx, { sessionNumber: e.target.value })}
-                aria-label={`Session ${sIdx + 1} number`}
-                className="w-14 border-b border-[#A29C93]/45 bg-transparent text-center font-display text-sm font-bold text-[#6D655C] focus:border-[#6D655C] focus:outline-none"
-              />
+              {focusedSessionIdx === sIdx && (
+                <button
+                  type="button"
+                  onClick={() => setFocusedSessionIdx(null)}
+                  className="text-xs font-medium text-[#8E887F] underline-offset-2 hover:underline"
+                >
+                  Show all sessions
+                </button>
+              )}
             </div>
 
             <div className="grid gap-6 md:grid-cols-[1.15fr_1fr]">
@@ -119,7 +189,7 @@ function PomodoroTrackerSection() {
                       className={cx(
                         "grid size-5 shrink-0 place-items-center rounded-md border border-[#A29C93]/55 text-xs transition",
                         task.done
-                          ? "bg-[#E2F3EC] font-bold text-[#457263]"
+                          ? "bg-[#E2F3EC] font-bold text-[#668B7D]"
                           : "bg-white hover:bg-[#FAF6E8]",
                       )}
                     >
@@ -128,10 +198,16 @@ function PomodoroTrackerSection() {
                     <input
                       value={task.text}
                       onChange={(e) => setPomodoroTaskText(sIdx, tIdx, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          setFocusedSessionIdx(sIdx);
+                        }
+                      }}
                       placeholder={`Task ${tIdx + 1}...`}
                       aria-label={`Session ${sIdx + 1} task ${tIdx + 1}`}
                       className={cx(
-                        "min-w-0 flex-1 border-b border-[#A29C93]/35 bg-transparent py-0.5 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#6D655C] focus:outline-none",
+                        "min-w-0 flex-1 border-b border-[#A29C93]/35 bg-transparent py-0.5 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#8E887F] focus:outline-none",
                         task.done && "line-through opacity-55",
                       )}
                     />
@@ -161,8 +237,8 @@ function PomodoroTrackerSection() {
                           aria-label={`Session ${sIdx + 1} focus interval ${bIdx + 1}`}
                           aria-pressed={checked}
                           className={cx(
-                            "grid size-7 place-items-center rounded-lg border border-[#A29C93]/50 text-xs transition",
-                            checked ? "bg-[#FFF3A8] font-bold text-[#5D564E]" : "bg-white hover:bg-[#FAF6E8]",
+                            "grid size-7 place-items-center rounded-lg border border-[#A29C93]/45 text-xs transition",
+                            checked ? "bg-[#FFF8D6] font-bold text-[#8E887F]" : "bg-white hover:bg-[#FAF6E8]",
                           )}
                         >
                           {checked ? "✓" : ""}
@@ -190,8 +266,8 @@ function PomodoroTrackerSection() {
                           aria-label={`Session ${sIdx + 1} break ${bIdx + 1}`}
                           aria-pressed={checked}
                           className={cx(
-                            "grid size-7 place-items-center rounded-lg border border-[#A29C93]/50 text-xs transition",
-                            checked ? "bg-[#E6DAF8] font-bold text-[#5D564E]" : "bg-white hover:bg-[#FAF6E8]",
+                            "grid size-7 place-items-center rounded-lg border border-[#A29C93]/45 text-xs transition",
+                            checked ? "bg-[#EFE8FA] font-bold text-[#8E887F]" : "bg-white hover:bg-[#FAF6E8]",
                           )}
                         >
                           {checked ? "✓" : ""}
@@ -266,7 +342,9 @@ function StudySheetsSection() {
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <PastelMinionBadge costume="frog" size={40} />
+          <div className="grid size-11 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#E2F3EC]/70">
+            <PastelMinionBadge costume="frog" size={38} />
+          </div>
           <div>
             <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
               Active Recall Study Sheets
@@ -290,21 +368,21 @@ function StudySheetsSection() {
             type="button"
             disabled={uploading}
             onClick={() => fileRef.current?.click()}
-            className="rounded-full border border-[#A29C93]/50 bg-[#FFF3A8] px-3.5 py-1.5 text-xs font-extrabold text-[#5D564E] transition hover:bg-[#FCEB8B] disabled:opacity-50"
+            className="rounded-full border border-[#EAE2C8] bg-[#FFF8D6] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] transition hover:bg-[#FFF3A8]/80 disabled:opacity-50"
           >
             {uploading ? "Uploading..." : "Upload"}
           </button>
           <button
             type="button"
             onClick={() => openPanel("log")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/45 bg-[#FFFDF7] px-3.5 py-1.5 text-xs font-bold text-[#6D655C] transition hover:bg-[#FAF6E8]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/40 bg-[#FFFDF7] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] transition hover:bg-[#FAF6E8]"
           >
             <IconLog size={14} /> Open Study Sheets
           </button>
           <button
             type="button"
             onClick={() => openPanel("flashcards")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/45 bg-[#E6DAF8]/70 px-3.5 py-1.5 text-xs font-bold text-[#5D564E] transition hover:bg-[#E6DAF8]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/35 bg-[#EFE8FA] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] transition hover:bg-[#E6DAF8]/80"
           >
             <IconCards size={14} /> Flashcards{due > 0 ? ` (${due} due)` : ""}
           </button>
@@ -346,10 +424,20 @@ function BananaPlannaSection() {
   const setWeeklyTitle = usePlanner((s) => s.setWeeklyTitle);
   const setWeeklyGoal = usePlanner((s) => s.setWeeklyGoal);
   const setWeeklyCell = usePlanner((s) => s.setWeeklyCell);
+  const checkAndResetWeek = usePlanner((s) => s.checkAndResetWeek);
 
   const habits = usePlanner((s) => s.habits);
   const setHabitLabel = usePlanner((s) => s.setHabitLabel);
   const toggleHabit = usePlanner((s) => s.toggleHabit);
+
+  // Auto-reset Weekly Plan when Sunday 12:00 am local time passes.
+  useEffect(() => {
+    checkAndResetWeek();
+    const id = window.setInterval(() => {
+      checkAndResetWeek();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [checkAndResetWeek]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
@@ -357,7 +445,9 @@ function BananaPlannaSection() {
       <div className={CARD}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <PastelMinionBadge costume="banana" size={36} />
+            <div className="grid size-10 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#FFF8D6]/80">
+              <PastelMinionBadge costume="banana" size={34} />
+            </div>
             <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
               Weekly Plan
             </h3>
@@ -365,7 +455,7 @@ function BananaPlannaSection() {
           <button
             type="button"
             onClick={() => openPanel("planner")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/45 bg-[#FFFDF7] px-3 py-1 text-xs font-bold text-[#6D655C] transition hover:bg-[#FAF6E8]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/40 bg-[#FFFDF7] px-3 py-1 text-xs font-bold text-[#8E887F] transition hover:bg-[#FAF6E8]"
           >
             <IconCalendar size={14} /> Full Banana Planna
           </button>
@@ -377,38 +467,44 @@ function BananaPlannaSection() {
             onChange={(e) => setWeeklyTitle(e.target.value)}
             placeholder="Week of..."
             aria-label="Week label"
-            className="border-b border-[#A29C93]/45 bg-transparent pb-1 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#6D655C] focus:outline-none sm:w-40"
+            className="border-b border-[#A29C93]/45 bg-transparent pb-1 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#8E887F] focus:outline-none sm:w-40"
           />
           <input
             value={weeklyGoal}
             onChange={(e) => setWeeklyGoal(e.target.value)}
             placeholder="Weekly goal..."
             aria-label="Weekly goal"
-            className="min-w-0 flex-1 rounded-xl border border-[#A29C93]/35 bg-white/80 px-3 py-1.5 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#6D655C] focus:outline-none"
+            className="min-w-0 flex-1 rounded-xl border border-[#A29C93]/35 bg-white/80 px-3 py-1.5 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#8E887F] focus:outline-none"
           />
         </div>
 
         <div className="overflow-x-auto">
           <div className="grid min-w-[540px] grid-cols-7 overflow-hidden rounded-xl border border-[#A29C93]/35">
-            {DAYS.map((d) => (
+            {DAYS.map((d, cIdx) => (
               <div
                 key={d}
-                className="border-r border-b border-[#A29C93]/25 bg-[#EFECE5] py-1 text-center font-serif text-[11px] tracking-[0.18em] text-[#6D655C] last:border-r-0"
+                className="flex flex-col border-r border-[#A29C93]/25 bg-white/75 last:border-r-0"
               >
-                {d}
+                <div className="border-b border-[#A29C93]/25 bg-[#F5F1E8] py-1 text-center font-serif text-[11px] tracking-[0.18em] text-[#8E887F]">
+                  {d}
+                </div>
+                <div className="flex flex-col divide-y divide-[#A29C93]/15">
+                  {[0, 1, 2, 3].map((rIdx) => (
+                    <div key={rIdx} className="flex items-center gap-1 px-1.5 py-1">
+                      <span className="select-none text-[10px] font-semibold text-[#B8B0A4]">
+                        {rIdx + 1}.
+                      </span>
+                      <input
+                        value={weeklyCells[rIdx]?.[cIdx] ?? ""}
+                        onChange={(e) => setWeeklyCell(rIdx, cIdx, e.target.value)}
+                        aria-label={`${d} item ${rIdx + 1}`}
+                        className="min-w-0 flex-1 bg-transparent text-xs text-[#6D655C] focus:bg-[#FFFDF5] focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
-            {weeklyCells.slice(0, 4).map((row, rIdx) =>
-              row.map((cell, cIdx) => (
-                <input
-                  key={`${rIdx}-${cIdx}`}
-                  value={cell}
-                  onChange={(e) => setWeeklyCell(rIdx, cIdx, e.target.value)}
-                  aria-label={`${DAYS[cIdx]} item ${rIdx + 1}`}
-                  className="border-r border-b border-[#A29C93]/20 bg-white/75 px-1.5 py-1.5 text-xs text-[#6D655C] focus:bg-[#FFFDF5] focus:outline-none last:border-r-0"
-                />
-              )),
-            )}
           </div>
         </div>
       </div>
@@ -416,7 +512,9 @@ function BananaPlannaSection() {
       {/* Habit Tracker */}
       <div className={CARD}>
         <div className="mb-4 flex items-center gap-2.5">
-          <PastelMinionBadge costume="teddy" size={36} />
+          <div className="grid size-10 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#FCE8EC]/70">
+            <PastelMinionBadge costume="teddy" size={34} />
+          </div>
           <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
             Habit Tracker
           </h3>

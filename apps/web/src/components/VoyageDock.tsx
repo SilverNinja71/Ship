@@ -3,41 +3,77 @@
 import { useEffect, useState } from "react";
 import { VOYAGE_PRESETS } from "@ship/shared-types";
 import type { VoyagePresetId } from "@ship/shared-types";
+import {
+  CURATED_FOCUS_TRACKS,
+  QUICK_AUDIO_SUGGESTIONS,
+  findCuratedTrack,
+} from "../lib/audio.js";
+import type { CuratedTrack } from "../lib/audio.js";
 import { formatClock } from "../lib/format.js";
 import { focusProgress, remainingFocusMs } from "../lib/voyageLogic.js";
-import { PORT_THEMES } from "../ship-engine/tinyInk.js";
-import type { PortThemeId } from "../ship-engine/tinyInk.js";
+import { selectAudioTrack, useActiveAudioTrack } from "../hooks/useAmbiance.js";
+import { setPwedoPomoOpen } from "../ship-engine/StudySceneRenderer.js";
 import { useSettings } from "../stores/settingsStore.js";
-import type { SoundTrackId } from "../stores/settingsStore.js";
-import { useVoyage } from "../stores/voyageStore.js";
+import { onVoyageEvent, useVoyage } from "../stores/voyageStore.js";
 import { useNow } from "./Hud.js";
 import { IconAnchor, IconPause, IconPlay, IconStop } from "./icons.js";
 import { cx } from "./ui.js";
 
-const AUDIO_OPTIONS: { id: SoundTrackId | "off"; label: string }[] = [
-  { id: "off", label: "Audio: Off" },
-  { id: "rain", label: "Rain Drops" },
-  { id: "asmr", label: "ASMR" },
-  { id: "lofi", label: "Lo-fi" },
-  { id: "ocean", label: "Ocean Waves" },
-];
+function scrollToQuickReflection(focusInput = true): void {
+  const textarea = document.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label*="how can I improve next session"]',
+  );
+  const target = textarea ?? document.getElementById("study-materials");
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (focusInput && textarea) {
+    window.setTimeout(() => textarea.focus({ preventScroll: true }), 450);
+  }
+}
 
 export function VoyageDock() {
   const phase = useVoyage((s) => s.phase);
   const prepEndsAt = useVoyage((s) => s.prepEndsAt);
+  const [showMusicBrowser, setShowMusicBrowser] = useState(false);
+
+  // Guide user toward the Quick Reflection when a focus round completes.
+  useEffect(() => {
+    return onVoyageEvent((kind) => {
+      if (kind === "focus-complete") {
+        window.setTimeout(() => scrollToQuickReflection(true), 650);
+      }
+    });
+  }, []);
+
+  // Ensure Pwedo play scene is closed once a voyage starts or prepares.
+  useEffect(() => {
+    if (phase !== "docked" || prepEndsAt !== null) {
+      setPwedoPomoOpen(false);
+    }
+  }, [phase, prepEndsAt]);
 
   return (
     <section
       aria-label="Pwedo Pomo"
       className="pointer-events-auto relative z-20 flex flex-col items-center gap-1.5"
     >
-      {phase === "docked" ? (prepEndsAt !== null ? <BearingsPrep /> : <DockedPill />) : <ActivePill />}
+      {phase === "docked" ? (
+        prepEndsAt !== null ? (
+          <BearingsPrep />
+        ) : (
+          <DockedPill onOpenMusicBrowser={() => setShowMusicBrowser(true)} />
+        )
+      ) : (
+        <ActivePill onOpenMusicBrowser={() => setShowMusicBrowser(true)} />
+      )}
       <a
         href="#study-materials"
         className="text-[11px] font-semibold tracking-wide text-[#8E887F] transition hover:text-[#6D655C]"
       >
         Scroll for study sheets &amp; task form ↓
       </a>
+
+      {showMusicBrowser && <MusicBrowserModal onClose={() => setShowMusicBrowser(false)} />}
     </section>
   );
 }
@@ -56,7 +92,7 @@ function BearingsPrep() {
         Pwedo Pomo
       </span>
       <span className="font-display text-sm font-bold tabular-nums">
-        Ready in {formatClock(remaining)}
+        Preparing in {formatClock(remaining)}
         {objective ? ` · ${objective}` : ""}
       </span>
       <div className="flex items-center gap-1.5">
@@ -79,22 +115,36 @@ function BearingsPrep() {
   );
 }
 
-function DockedPill() {
+function DockedPill({ onOpenMusicBrowser }: { onOpenMusicBrowser: () => void }) {
   const presetId = useSettings((s) => s.presetId);
   const customFocus = useSettings((s) => s.customFocusMinutes);
   const customBreak = useSettings((s) => s.customBreakMinutes);
-  const portTheme = useSettings((s) => s.portTheme);
   const pomodoroCycles = useSettings((s) => s.pomodoroCycles);
   const soundOn = useSettings((s) => s.soundOn);
-  const soundTrack = useSettings((s) => s.soundTrack);
   const set = useSettings((s) => s.set);
+  const activeTrackId = useActiveAudioTrack();
+  const activeTrack = findCuratedTrack(activeTrackId);
 
   const start = useVoyage((s) => s.start);
   const [objective, setObjective] = useState("");
   const [showOptions, setShowOptions] = useState(false);
+  const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [tinyMethod, setTinyMethod] = useState(
     () => presetId === "custom" && customFocus === 50 && customBreak === 10 && pomodoroCycles === 3,
   );
+
+  useEffect(() => {
+    return () => setPwedoPomoOpen(false);
+  }, []);
+
+  const toggleOptions = () => {
+    setShowOptions((prev) => {
+      const next = !prev;
+      setPwedoPomoOpen(next);
+      if (!next) setShowAudioPicker(false);
+      return next;
+    });
+  };
 
   const activePreset = VOYAGE_PRESETS[presetId];
   const focusMin = presetId === "custom" ? customFocus : activePreset.focusMinutes;
@@ -116,6 +166,9 @@ function DockedPill() {
   };
 
   const depart = () => {
+    setPwedoPomoOpen(false);
+    setShowAudioPicker(false);
+    setShowOptions(false);
     start({
       presetId,
       focusMinutes: presetId === "custom" ? customFocus : undefined,
@@ -126,13 +179,12 @@ function DockedPill() {
       assignmentId: null,
     });
     setObjective("");
-    setShowOptions(false);
   };
 
   return (
     <div className="relative flex flex-col items-center">
       {showOptions && (
-        <div className="mb-3 flex w-[min(92vw,440px)] flex-col gap-3 rounded-2xl bg-[#FFFDF7]/98 p-4 font-serif text-xs text-[#6D655C] shadow-[0_8px_24px_rgba(93,86,78,0.12)] backdrop-blur-sm">
+        <div className="mb-3 flex w-[min(92vw,460px)] flex-col gap-3 rounded-2xl border border-[#A29C93]/40 bg-[#FFFDF7]/98 p-4 font-serif text-xs text-[#6D655C] shadow-[0_8px_24px_rgba(93,86,78,0.12)] backdrop-blur-sm">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-semibold tracking-wide text-[#5D564E]">Pwedo Pomo</span>
             <span className="text-[11px] text-[#8E887F]">
@@ -217,7 +269,7 @@ function DockedPill() {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <label className="flex items-center gap-1">
               <span className="text-[#8E887F]">Cycles:</span>
               <select
@@ -234,39 +286,86 @@ function DockedPill() {
               </select>
             </label>
 
-            <label className="flex items-center gap-1">
-              <span className="text-[#8E887F]">Scene:</span>
-              <select
-                aria-label="Port theme"
-                value={portTheme}
-                onChange={(e) => set({ portTheme: e.target.value as PortThemeId })}
-                className="bg-transparent font-semibold text-[#5D564E] focus:outline-none"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAudioPicker((v) => !v)}
+                aria-expanded={showAudioPicker}
+                className={cx(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-sans text-[11px] font-semibold transition focus:outline-none",
+                  soundOn
+                    ? "border-[#A29C93]/60 bg-[#FFF3A8]/85 text-[#5D564E]"
+                    : "border-[#A29C93]/40 bg-[#FAF6E8] text-[#6D655C] hover:bg-[#EFE9DA]",
+                )}
               >
-                {(Object.keys(PORT_THEMES) as PortThemeId[]).map((id) => (
-                  <option key={id} value={id}>
-                    {PORT_THEMES[id].label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <span>{soundOn ? `♪ ${activeTrack.title}` : "Audio: Off"}</span>
+                <span className="text-[10px] text-[#8E887F]">{showAudioPicker ? "▲" : "▼"}</span>
+              </button>
 
-            <select
-              aria-label="Relaxing audio"
-              value={soundOn ? soundTrack : "off"}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === "off") set({ soundOn: false });
-                else set({ soundOn: true, soundTrack: val as SoundTrackId });
-              }}
-              className="bg-transparent font-semibold text-[#5D564E] focus:outline-none"
-            >
-              {AUDIO_OPTIONS.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
+              <button
+                type="button"
+                onClick={() => scrollToQuickReflection(true)}
+                className="rounded-full px-2 py-1 font-sans text-[11px] font-semibold text-[#8E887F] transition hover:bg-[#FAF6E8] hover:text-[#5D564E] focus:outline-none"
+                title="Jump to Quick Reflection"
+              >
+                Reflect ↓
+              </button>
+            </div>
           </div>
+
+          {showAudioPicker && (
+            <div className="flex flex-col gap-2 rounded-xl border border-[#A29C93]/35 bg-[#FAF6E8]/90 p-2.5 font-sans">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold tracking-wide text-[#6D655C]">
+                  Focus Audio Suggestions
+                </span>
+                {soundOn && (
+                  <button
+                    type="button"
+                    onClick={() => set({ soundOn: false })}
+                    className="rounded-full border border-[#A29C93]/45 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#8E887F] transition hover:text-[#5D564E]"
+                  >
+                    Turn Off
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_AUDIO_SUGGESTIONS.map((item) => {
+                  const selected = soundOn && activeTrackId === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => selectAudioTrack(item.id, true)}
+                      className={cx(
+                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition focus:outline-none",
+                        selected
+                          ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
+                          : "border-[#A29C93]/35 bg-white text-[#6D655C] hover:bg-[#F4EFE2]",
+                      )}
+                    >
+                      <span>{item.emoji}</span>
+                      <span>{item.title}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between border-t border-[#A29C93]/20 pt-1.5">
+                <span className="text-[10px] text-[#8E887F]">
+                  Auto-pauses when other media plays
+                </span>
+                <button
+                  type="button"
+                  onClick={onOpenMusicBrowser}
+                  className="rounded-full border border-[#A29C93]/50 bg-white px-2.5 py-0.5 text-[11px] font-bold text-[#5D564E] transition hover:bg-[#FFF3A8]/60 focus:outline-none"
+                >
+                  Show more →
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 border-t border-[#A29C93]/20 pt-2.5">
             <input
@@ -281,7 +380,7 @@ function DockedPill() {
               type="button"
               onClick={depart}
               title="Start Pwedo Pomo"
-              className="inline-flex items-center gap-1 px-2 py-1 text-sm font-semibold text-[#5D564E] transition hover:underline underline-offset-4 focus:outline-none"
+              className="inline-flex items-center gap-1 rounded-full bg-[#FFF3A8] px-3 py-1 text-sm font-semibold text-[#5D564E] transition hover:bg-[#FCEB8B] focus:outline-none"
             >
               <IconPlay size={13} />
               <span>Start</span>
@@ -292,7 +391,7 @@ function DockedPill() {
 
       <button
         type="button"
-        onClick={() => setShowOptions((v) => !v)}
+        onClick={toggleOptions}
         className="bg-transparent px-2 py-1 font-serif text-base tracking-[0.14em] text-[#5D564E] transition hover:underline underline-offset-4 focus:outline-none"
         title="Open Pwedo Pomo sessions & cycles"
       >
@@ -302,8 +401,12 @@ function DockedPill() {
   );
 }
 
-function ActivePill() {
+function ActivePill({ onOpenMusicBrowser }: { onOpenMusicBrowser: () => void }) {
   const v = useVoyage();
+  const soundOn = useSettings((s) => s.soundOn);
+  const setSettings = useSettings((s) => s.set);
+  const activeTrackId = useActiveAudioTrack();
+  const activeTrack = findCuratedTrack(activeTrackId);
   const now = useNow(250);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [taskDraft, setTaskDraft] = useState("");
@@ -324,6 +427,14 @@ function ActivePill() {
     if (!taskDraft.trim()) return;
     v.addSessionTask(taskDraft.trim());
     setTaskDraft("");
+  };
+
+  const handleBreakAction = () => {
+    const isFinalRound = v.cyclesCompleted >= v.cyclesTotal;
+    v.endBreak();
+    if (isFinalRound) {
+      window.setTimeout(() => scrollToQuickReflection(true), 250);
+    }
   };
 
   return (
@@ -350,7 +461,7 @@ function ActivePill() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-2.5 rounded-full border border-[#A29C93]/60 bg-[#FAF6E8]/95 px-3.5 py-1.5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm">
+      <div className="flex flex-wrap items-center justify-center gap-2 rounded-full border border-[#A29C93]/60 bg-[#FAF6E8]/95 px-3.5 py-1.5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <span
             className={cx(
@@ -371,7 +482,7 @@ function ActivePill() {
           </span>
         </div>
 
-        <div className="hidden h-2 w-20 overflow-hidden rounded-full bg-[#EAE5DA] sm:block">
+        <div className="hidden h-2 w-16 overflow-hidden rounded-full bg-[#EAE5DA] sm:block">
           <div
             className={cx(
               "h-full rounded-full transition-[width] duration-300",
@@ -387,19 +498,55 @@ function ActivePill() {
           onKeyDown={(e) => e.key === "Enter" && addQuickTask()}
           placeholder="+ quick task..."
           aria-label="Add quick task"
-          className="w-28 border-b border-[#A29C93]/45 bg-transparent px-1 py-0.5 text-xs text-[#6D655C] placeholder:text-[#A29C93] focus:border-[#A29C93] focus:outline-none sm:w-32"
+          className="w-24 border-b border-[#A29C93]/45 bg-transparent px-1 py-0.5 text-xs text-[#6D655C] placeholder:text-[#A29C93] focus:border-[#A29C93] focus:outline-none sm:w-28"
         />
+
+        {/* Clear Audio On/Off toggle on the active focus bar */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSettings({ soundOn: !soundOn })}
+            aria-pressed={soundOn}
+            title={soundOn ? `Turn off audio (${activeTrack.title})` : `Turn on audio (${activeTrack.title})`}
+            className={cx(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold transition focus:outline-none",
+              soundOn
+                ? "border-[#A29C93]/60 bg-[#FFF3A8] text-[#5D564E] hover:bg-[#FCEB8B]"
+                : "border-[#A29C93]/45 bg-[#FFFDF7] text-[#8E887F] hover:text-[#5D564E]",
+            )}
+          >
+            <span>{soundOn ? "♪ Audio: On" : "Audio: Off"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenMusicBrowser}
+            title="Browse focus tracks"
+            aria-label="Browse focus tracks"
+            className="rounded-full border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 text-xs font-bold text-[#6D655C] transition hover:bg-[#EFE9DA] focus:outline-none"
+          >
+            ♫
+          </button>
+        </div>
 
         <div className="flex items-center gap-1.5">
           {ashore ? (
-            <button
-              type="button"
-              onClick={v.endBreak}
-              className="inline-flex items-center gap-1 rounded-full border border-[#A29C93]/60 bg-[#E2F3EC] px-3 py-1 text-xs font-extrabold text-[#457263] transition hover:bg-[#D4ECE2] focus:outline-none"
-            >
-              <IconAnchor size={14} />
-              {v.cyclesCompleted < v.cyclesTotal ? "Next round" : "Finish"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => scrollToQuickReflection(true)}
+                className="rounded-full border border-[#A29C93]/50 bg-[#FFFDF7] px-2.5 py-1 text-xs font-bold text-[#6D655C] transition hover:bg-[#EFE9DA] focus:outline-none"
+              >
+                Reflect ↓
+              </button>
+              <button
+                type="button"
+                onClick={handleBreakAction}
+                className="inline-flex items-center gap-1 rounded-full border border-[#A29C93]/60 bg-[#E2F3EC] px-3 py-1 text-xs font-extrabold text-[#457263] transition hover:bg-[#D4ECE2] focus:outline-none"
+              >
+                <IconAnchor size={14} />
+                {v.cyclesCompleted < v.cyclesTotal ? "Next round" : "Finish"}
+              </button>
+            </>
           ) : (
             <>
               {drifting ? (
@@ -435,6 +582,191 @@ function ActivePill() {
               </button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CATEGORIES: Array<"All" | CuratedTrack["category"]> = [
+  "All",
+  "Suggestions",
+  "Lo-fi & Beats",
+  "Nature & ASMR",
+  "Piano & Ambient",
+];
+
+function MusicBrowserModal({ onClose }: { onClose: () => void }) {
+  const soundOn = useSettings((s) => s.soundOn);
+  const volume = useSettings((s) => s.ambienceVolume);
+  const setSettings = useSettings((s) => s.set);
+  const activeTrackId = useActiveAudioTrack();
+  const [category, setCategory] = useState<"All" | CuratedTrack["category"]>("All");
+  const [query, setQuery] = useState("");
+
+  const filtered = CURATED_FOCUS_TRACKS.filter((t) => {
+    const matchesCat = category === "All" || t.category === category;
+    const q = query.trim().toLowerCase();
+    const matchesQuery =
+      !q || t.title.toLowerCase().includes(q) || t.subtitle.toLowerCase().includes(q) || t.category.toLowerCase().includes(q);
+    return matchesCat && matchesQuery;
+  });
+
+  const activeTrack = findCuratedTrack(activeTrackId);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D564E]/25 p-4 backdrop-blur-xs"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Focus Audio Library"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[84vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-[#A29C93]/55 bg-[#FFFDF7] text-[#5D564E] shadow-[6px_6px_0_#EAE5DA]">
+        {/* YouTube Music-style header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#A29C93]/25 bg-[#FAF6E8] px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-9 place-items-center rounded-2xl border border-[#A29C93]/40 bg-[#FFF3A8] text-lg">
+              ♫
+            </span>
+            <div>
+              <h2 className="font-serif text-base font-bold tracking-wide text-[#5D564E]">
+                Focus Soundscapes
+              </h2>
+              <p className="text-[11px] text-[#8E887F]">
+                Curated study playlists &amp; ambient mixes · Auto-pauses for other media
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSettings({ soundOn: !soundOn })}
+              className={cx(
+                "rounded-full border px-3 py-1 text-xs font-bold transition",
+                soundOn
+                  ? "border-[#A29C93]/60 bg-[#FFF3A8] text-[#5D564E]"
+                  : "border-[#A29C93]/40 bg-white text-[#8E887F]",
+              )}
+            >
+              {soundOn ? "Audio: On" : "Audio: Off"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close audio library"
+              className="grid size-8 place-items-center rounded-full border border-[#A29C93]/40 bg-white text-sm font-bold text-[#6D655C] transition hover:bg-[#EFE9DA]"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Search & category chips */}
+        <div className="flex flex-col gap-2.5 border-b border-[#A29C93]/20 px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search rain, piano, lo-fi, library..."
+              aria-label="Search focus tracks"
+              className="min-w-[180px] flex-1 rounded-full border border-[#A29C93]/40 bg-[#FAF6E8]/70 px-3.5 py-1.5 text-xs text-[#5D564E] placeholder:text-[#A29C93] focus:border-[#A29C93] focus:outline-none"
+            />
+            <label className="flex items-center gap-2 text-[11px] font-semibold text-[#8E887F]">
+              <span>Vol</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={volume}
+                onChange={(e) => setSettings({ ambienceVolume: Number(e.target.value) })}
+                aria-label="Audio volume"
+                className="w-20 accent-[#8E887F]"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategory(cat)}
+                className={cx(
+                  "rounded-full border px-3 py-1 text-[11px] font-semibold transition",
+                  category === cat
+                    ? "border-[#A29C93]/60 bg-[#FFF3A8] text-[#5D564E]"
+                    : "border-[#A29C93]/30 bg-white text-[#8E887F] hover:bg-[#FAF6E8]",
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Track grid */}
+        <div className="grid flex-1 grid-cols-1 gap-2.5 overflow-y-auto p-5 sm:grid-cols-2">
+          {filtered.map((track) => {
+            const isActive = soundOn && activeTrackId === track.id;
+            return (
+              <button
+                key={track.id}
+                type="button"
+                onClick={() => selectAudioTrack(track.id, true)}
+                className={cx(
+                  "group flex items-center gap-3 rounded-2xl border p-2.5 text-left transition focus:outline-none",
+                  isActive
+                    ? "border-[#A29C93]/75 bg-[#FFF8D6] shadow-[2px_2px_0_#EAE5DA]"
+                    : "border-[#A29C93]/30 bg-white hover:border-[#A29C93]/60 hover:bg-[#FAF6E8]",
+                )}
+              >
+                <div
+                  className="relative grid size-12 shrink-0 place-items-center rounded-xl border text-xl"
+                  style={{ backgroundColor: track.coverBg, borderColor: track.coverAccent }}
+                >
+                  <span>{track.emoji}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-bold text-[#5D564E]">{track.title}</div>
+                  <div className="truncate text-[11px] text-[#8E887F]">{track.subtitle}</div>
+                  <div className="mt-0.5 text-[10px] font-semibold text-[#A29C93]">{track.category}</div>
+                </div>
+                <span
+                  className={cx(
+                    "grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold transition",
+                    isActive
+                      ? "bg-[#5D564E] text-[#FFFDF7]"
+                      : "bg-[#FAF6E8] text-[#6D655C] group-hover:bg-[#FFF3A8]",
+                  )}
+                >
+                  {isActive ? "❚❚" : "▶"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Now playing footer */}
+        <div className="flex items-center justify-between border-t border-[#A29C93]/20 bg-[#FAF6E8] px-5 py-2.5 text-xs">
+          <div className="flex items-center gap-2 truncate">
+            <span>{activeTrack.emoji}</span>
+            <span className="font-bold text-[#5D564E]">
+              {soundOn ? `Playing: ${activeTrack.title}` : `Selected: ${activeTrack.title} (Paused)`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-[#A29C93]/50 bg-white px-3 py-1 text-[11px] font-bold text-[#5D564E] hover:bg-[#EFE9DA]"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>

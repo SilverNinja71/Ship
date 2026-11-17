@@ -140,6 +140,20 @@ export function renderDeck(ctx: Ctx, view: Viewport, frame: FrameInfo, rawScene:
     drawMist(ctx, env, geo, frame);
     drawLightShafts(ctx, env, geo, frame);
   }
+  if (tiny && scene.preparing) {
+    const pillW = Math.min(310, view.width - 32);
+    const pillX = (view.width - pillW) / 2;
+    const pillY = view.insetTop + 8;
+    paint(ctx, (c) => roundRectPath(c, pillX + 3, pillY + 4, pillW, 30, 15), alpha(TINY_SHADOW, 0.85), { stroke: false });
+    paint(ctx, (c) => roundRectPath(c, pillX, pillY, pillW, 30, 15), "#FFFDF7", { width: 2, stroke: TINY_OUTLINE });
+    ctx.save();
+    ctx.fillStyle = "#6D655C";
+    ctx.font = '600 12px ui-serif, Georgia, "Times New Roman", serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Preparing the ship · Sweeping & mopping ♪", view.width / 2, pillY + 15.5);
+    ctx.restore();
+  }
 
   return {
     regions,
@@ -226,7 +240,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
     regions.push(rectRegion(ctx, dpr, "minion:banana", "Pip — Banana-wrapped helper who sweeps away distractions", pipPos.x - 28, -68, 56, 78));
     regions.push(rectRegion(ctx, dpr, "minion:teddy", "Mochi — Cozy teddy buddy who cheers you on during study sprints", mochiPos.x - 28, -68, 56, 78));
     regions.push(rectRegion(ctx, dpr, "minion:bunny", "Lumi — Bunny lookout keeping watch for off-task tabs", lumiPos.x - 28, -74, 56, 84));
-    regions.push(rectRegion(ctx, dpr, "minion:pigeon", "Pebble — Tiny deck pigeon who loves quiet Pomodoro mornings", birdAt.x - 22, -32, 44, 42));
+    regions.push(rectRegion(ctx, dpr, "minion:pigeon", "Pwedo — Tiny deck pigeon who loves quiet Pomodoro mornings", birdAt.x - 22, -32, 44, 42));
   }
 
   if (!tiny) {
@@ -421,16 +435,20 @@ function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, onDeck:
   // Continuous connected deck rim line
   sketchLine(ctx, deck.from, 0.5, deck.to, 0.5, TINY_OUTLINE, 3.0, 501);
 
-  // Subtle serif character names right below each character on the hull (hover/click for bio)
+  // Subtle serif character names right below each character on the hull (hover/click for bio),
+  // clamped within the hull bounds so names never clip near deck edges.
+  const minCaptionX = sternX + 56;
+  const maxCaptionX = bowX - 46;
+  const capX = (x: number) => clamp(x, minCaptionX, maxCaptionX);
   ctx.save();
   ctx.fillStyle = "#8D8D8D";
   ctx.font = '13px ui-serif, Georgia, Cambria, "Times New Roman", serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.fillText("Captain Banan", helm.x + 22, 12);
-  ctx.fillText("Pip", layout.desk.x + 125, 12);
-  ctx.fillText("Mochi", layout.desk.x + 215, 12);
-  ctx.fillText("Lumi", deck.to - 145, 12);
-  ctx.fillText("Pebble", deck.to - 46, 12);
+  ctx.fillText("Captain Banan", capX(helm.x + 22), 14);
+  ctx.fillText("Pip", capX(layout.desk.x + 125), 14);
+  ctx.fillText("Mochi", capX(layout.desk.x + 215), 14);
+  ctx.fillText("Lumi", capX(deck.to - 145), 14);
+  ctx.fillText("Pwedo", capX(deck.to - 46), 14);
   ctx.restore();
 }
