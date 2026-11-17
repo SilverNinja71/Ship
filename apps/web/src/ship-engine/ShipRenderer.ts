@@ -170,8 +170,6 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   if (tiny) {
     const capPos = { x: l.helm.x + 22, y: 0 };
     drawPastelMinion(ctx, capPos, "captain", frame, { scale: 1.15, seed: 7 });
-    drawLabel(ctx, "Captain Banan", capPos.x, 18, tagScale, "plain", true);
-    regions.push(rectRegion(ctx, dpr, "minion:captain", "Captain Banan — Steers the ship & keeps everyone calm", capPos.x - 28, capPos.y - 62, 56, 72));
   }
   regions.push(rectRegion(ctx, dpr, "helm", "Helm: plan your voyage", helmPos.x - 48, helmPos.y - 125, 96, 125));
 
@@ -199,10 +197,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   drawPastelMinion(ctx, lumiPos, "bunny", frame, { scale: 1.24, seed: 3, chore: "spyglass" });
 
   if (tiny) {
-    drawLabel(ctx, "Pip", pipPos.x, 18, tagScale, "plain", true);
-    drawLabel(ctx, "Mochi", mochiPos.x, 18, tagScale, "plain", true);
-    drawLabel(ctx, "Lumi", lumiPos.x, 18, tagScale, "plain", true);
-    drawLabel(ctx, "Pebble", birdAt.x, 18, tagScale, "plain", true);
+    regions.push(rectRegion(ctx, dpr, "minion:captain", "Captain Banan — Steers the ship & keeps everyone calm", helmPos.x - 6, -62, 56, 72));
     regions.push(rectRegion(ctx, dpr, "minion:banana", "Pip — Banana-wrapped helper who sweeps away distractions", pipPos.x - 28, -68, 56, 78));
     regions.push(rectRegion(ctx, dpr, "minion:teddy", "Mochi — Cozy teddy buddy who cheers you on during study sprints", mochiPos.x - 28, -68, 56, 78));
     regions.push(rectRegion(ctx, dpr, "minion:bunny", "Lumi — Bunny lookout keeping watch for off-task tabs", lumiPos.x - 28, -74, 56, 84));
@@ -400,4 +395,17 @@ function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, onDeck:
 
   // Continuous connected deck rim line
   sketchLine(ctx, deck.from, 0.5, deck.to, 0.5, TINY_OUTLINE, 3.0, 501);
+
+  // Subtle serif character names right below each character on the hull (hover/click for bio)
+  ctx.save();
+  ctx.fillStyle = "#8D8D8D";
+  ctx.font = '13px ui-serif, Georgia, Cambria, "Times New Roman", serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText("Captain Banan", helm.x + 22, 12);
+  ctx.fillText("Pip", layout.desk.x + 125, 12);
+  ctx.fillText("Mochi", layout.desk.x + 215, 12);
+  ctx.fillText("Lumi", deck.to - 145, 12);
+  ctx.fillText("Pebble", deck.to - 46, 12);
+  ctx.restore();
 }
