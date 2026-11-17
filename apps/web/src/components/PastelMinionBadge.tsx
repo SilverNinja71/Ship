@@ -68,11 +68,11 @@ export function PastelMinionBadge({
 
       {costume === "banana" && (
         <>
-          <rect x="29" y="9" width="6" height="8" rx="2.5" fill="#E6D59B" stroke={ink} strokeWidth="2" />
+          {/* Pip: cute banana-stem one-eyed minion in baby-blue overalls */}
+          <rect x="29.5" y="9" width="5" height="8" rx="2.5" fill="#E6D59B" stroke={ink} strokeWidth="2" />
           <rect x="16" y="15" width="32" height="41" rx="16" fill="#FFF6B8" stroke={ink} strokeWidth="2.1" />
-          <path d="M16 38h32v5a14 14 0 0 1-14 14h-4a14 14 0 0 1-14-14v-5Z" fill="#D8E9FA" stroke={ink} strokeWidth="2.1" />
-          <path d="M27 36c-10.5-3-15.5 4-14.5 14.5 5.8 2.8 11.5 1.8 14.5-3V36Z" fill="#FFF9D2" stroke={ink} strokeWidth="2" strokeLinejoin="round" />
-          <path d="M37 36c10.5-3 15.5 4 14.5 14.5-5.8 2.8-11.5 1.8-14.5-3V36Z" fill="#FFF9D2" stroke={ink} strokeWidth="2" strokeLinejoin="round" />
+          <path d="M16 38h32v5a14 14 0 0 1-14 14h-4a14 14 0 0 1-14-14v-5Z" fill="#DCEAF9" stroke="#B2C8E0" strokeWidth="2" />
+          <path d="M16 38h32v5a14 14 0 0 1-14 14h-4a14 14 0 0 1-14-14v-5Z" fill="none" stroke={ink} strokeWidth="2.1" />
         </>
       )}
 
@@ -96,6 +96,17 @@ export function PastelMinionBadge({
           <ellipse cx="35.5" cy="33.5" rx="2.8" ry="1.8" fill={blush} />
           {/* Tiny feet */}
           <path d="M28 48v4M35 48v4" stroke={ink} strokeWidth="2" strokeLinecap="round" />
+        </>
+      ) : costume === "banana" ? (
+        <>
+          {/* Pip's signature single centered goggle eye + kawaii cheeks & smile */}
+          <line x1="17.5" y1="27.5" x2="46.5" y2="27.5" stroke="#D5CEC3" strokeWidth="3.2" strokeLinecap="round" />
+          <circle cx="32" cy="27.5" r="6.8" fill="#FFFFFF" stroke={ink} strokeWidth="2.2" />
+          <circle cx="32.4" cy="27.5" r="3.0" fill={pupil} />
+          <circle cx="31.2" cy="26.3" r="1.1" fill="#FFFFFF" />
+          <ellipse cx="21.5" cy="34.2" rx="3.2" ry="2.0" fill={blush} />
+          <ellipse cx="42.5" cy="34.2" rx="3.2" ry="2.0" fill={blush} />
+          <path d="M29.5 34.8q2.5 2.4 5 0" stroke={pupil} strokeWidth="1.9" strokeLinecap="round" />
         </>
       ) : (
         <>
