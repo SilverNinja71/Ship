@@ -342,8 +342,8 @@ function StudySheetsSection() {
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#E2F3EC]/70">
-            <PastelMinionBadge costume="frog" size={38} />
+          <div className="grid size-11 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#EFE8FA]/70">
+            <PastelMinionBadge costume="bunny" size={38} />
           </div>
           <div>
             <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
