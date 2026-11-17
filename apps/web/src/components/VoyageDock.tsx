@@ -98,6 +98,7 @@ function DockedPill() {
 
   const activePreset = VOYAGE_PRESETS[presetId];
   const focusMin = presetId === "custom" ? customFocus : activePreset.focusMinutes;
+  const breakMin = presetId === "custom" ? customBreak : activePreset.breakMinutes;
 
   const selectPreset = (id: VoyagePresetId) => {
     setTinyMethod(false);
@@ -131,16 +132,23 @@ function DockedPill() {
   return (
     <div className="relative flex flex-col items-center">
       {showOptions && (
-        <div className="mb-2.5 flex w-[min(92vw,430px)] flex-col gap-2.5 rounded-2xl border border-[#A29C93]/60 bg-[#FAF6E8]/98 p-3.5 text-xs text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="mb-3 flex w-[min(92vw,440px)] flex-col gap-3 rounded-2xl bg-[#FFFDF7]/98 p-4 font-serif text-xs text-[#6D655C] shadow-[0_8px_24px_rgba(93,86,78,0.12)] backdrop-blur-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold tracking-wide text-[#5D564E]">Pwedo Pomo</span>
+            <span className="text-[11px] text-[#8E887F]">
+              {pomodoroCycles} {pomodoroCycles === 1 ? "cycle" : "cycles"} · {focusMin}m focus / {breakMin}m break
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => selectPreset("coastal")}
               className={cx(
-                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                "px-1.5 py-0.5 transition hover:underline underline-offset-4 focus:outline-none",
                 !tinyMethod && presetId === "coastal"
-                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
-                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+                  ? "font-bold text-[#5D564E] underline underline-offset-4"
+                  : "text-[#8E887F] hover:text-[#5D564E]",
               )}
             >
               25/5
@@ -149,10 +157,10 @@ function DockedPill() {
               type="button"
               onClick={() => selectPreset("ocean")}
               className={cx(
-                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                "px-1.5 py-0.5 transition hover:underline underline-offset-4 focus:outline-none",
                 !tinyMethod && presetId === "ocean"
-                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
-                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+                  ? "font-bold text-[#5D564E] underline underline-offset-4"
+                  : "text-[#8E887F] hover:text-[#5D564E]",
               )}
             >
               50/10
@@ -161,10 +169,10 @@ function DockedPill() {
               type="button"
               onClick={selectTinyMethod}
               className={cx(
-                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                "px-1.5 py-0.5 transition hover:underline underline-offset-4 focus:outline-none",
                 tinyMethod
-                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
-                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+                  ? "font-bold text-[#5D564E] underline underline-offset-4"
+                  : "text-[#8E887F] hover:text-[#5D564E]",
               )}
             >
               50/40/30 Tiny Method
@@ -173,10 +181,10 @@ function DockedPill() {
               type="button"
               onClick={() => selectPreset("custom")}
               className={cx(
-                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                "px-1.5 py-0.5 transition hover:underline underline-offset-4 focus:outline-none",
                 !tinyMethod && presetId === "custom"
-                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
-                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+                  ? "font-bold text-[#5D564E] underline underline-offset-4"
+                  : "text-[#8E887F] hover:text-[#5D564E]",
               )}
             >
               Custom
@@ -184,7 +192,7 @@ function DockedPill() {
           </div>
 
           {presetId === "custom" && !tinyMethod && (
-            <div className="flex items-center gap-2 font-bold">
+            <div className="flex items-center gap-2">
               <span>Custom:</span>
               <input
                 type="number"
@@ -192,7 +200,7 @@ function DockedPill() {
                 max={240}
                 value={customFocus}
                 onChange={(e) => set({ customFocusMinutes: Math.max(1, Number(e.target.value) || 1) })}
-                className="w-14 rounded-lg border border-[#A29C93]/55 bg-[#FFFDF7] px-2 py-1 text-center focus:outline-none"
+                className="w-12 border-b border-[#A29C93]/45 bg-transparent py-0.5 text-center focus:outline-none"
                 aria-label="Focus minutes"
               />
               <span>/</span>
@@ -202,21 +210,21 @@ function DockedPill() {
                 max={60}
                 value={customBreak}
                 onChange={(e) => set({ customBreakMinutes: Math.max(0, Number(e.target.value) || 0) })}
-                className="w-14 rounded-lg border border-[#A29C93]/55 bg-[#FFFDF7] px-2 py-1 text-center focus:outline-none"
+                className="w-12 border-b border-[#A29C93]/45 bg-transparent py-0.5 text-center focus:outline-none"
                 aria-label="Break minutes"
               />
               <span>min</span>
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <label className="flex items-center gap-1 rounded-xl border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 font-bold">
-              <span>Cycles:</span>
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <label className="flex items-center gap-1">
+              <span className="text-[#8E887F]">Cycles:</span>
               <select
                 aria-label="Pwedo Pomo cycles"
                 value={pomodoroCycles}
                 onChange={(e) => set({ pomodoroCycles: Number(e.target.value) })}
-                className="bg-transparent font-bold focus:outline-none"
+                className="bg-transparent font-semibold text-[#5D564E] focus:outline-none"
               >
                 {[1, 2, 3, 4, 5, 6].map((n) => (
                   <option key={n} value={n}>
@@ -226,13 +234,13 @@ function DockedPill() {
               </select>
             </label>
 
-            <label className="flex items-center gap-1 rounded-xl border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 font-bold">
-              <span>Scene:</span>
+            <label className="flex items-center gap-1">
+              <span className="text-[#8E887F]">Scene:</span>
               <select
                 aria-label="Port theme"
                 value={portTheme}
                 onChange={(e) => set({ portTheme: e.target.value as PortThemeId })}
-                className="bg-transparent font-bold focus:outline-none"
+                className="bg-transparent font-semibold text-[#5D564E] focus:outline-none"
               >
                 {(Object.keys(PORT_THEMES) as PortThemeId[]).map((id) => (
                   <option key={id} value={id}>
@@ -250,7 +258,7 @@ function DockedPill() {
                 if (val === "off") set({ soundOn: false });
                 else set({ soundOn: true, soundTrack: val as SoundTrackId });
               }}
-              className="rounded-xl border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 font-bold focus:outline-none"
+              className="bg-transparent font-semibold text-[#5D564E] focus:outline-none"
             >
               {AUDIO_OPTIONS.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -259,41 +267,37 @@ function DockedPill() {
               ))}
             </select>
           </div>
+
+          <div className="flex items-center gap-2 border-t border-[#A29C93]/20 pt-2.5">
+            <input
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && depart()}
+              placeholder="What are you focusing on?"
+              aria-label="Focus task"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm text-[#5D564E] placeholder:text-[#A29C93] focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={depart}
+              title="Start Pwedo Pomo"
+              className="inline-flex items-center gap-1 px-2 py-1 text-sm font-semibold text-[#5D564E] transition hover:underline underline-offset-4 focus:outline-none"
+            >
+              <IconPlay size={13} />
+              <span>Start</span>
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-2 rounded-full border border-[#A29C93]/60 bg-[#FAF6E8]/95 px-3 py-1.5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm sm:flex-nowrap sm:px-3.5">
-        <button
-          type="button"
-          onClick={() => setShowOptions((v) => !v)}
-          className="flex items-center gap-2 rounded-full border border-transparent bg-[#FFFDF7] px-3 py-1 font-serif text-xs text-[#6D655C] transition hover:border-[#A29C93]/60 hover:bg-[#F3EDE0] hover:underline underline-offset-4 focus:outline-none"
-          title="Configure Pwedo Pomo timer & audio"
-        >
-          <span className="font-serif tracking-[0.14em]">Pwedo Pomo</span>
-          <span className="font-display text-xs font-extrabold text-[#5D564E] tabular-nums">
-            {focusMin}:00
-          </span>
-        </button>
-
-        <input
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && depart()}
-          placeholder="What are you focusing on?"
-          aria-label="Focus task"
-          className="w-40 bg-transparent px-1.5 text-sm font-medium text-[#6D655C] placeholder:text-[#A29C93] focus:outline-none sm:w-52"
-        />
-
-        <button
-          type="button"
-          onClick={depart}
-          title="Start Pwedo Pomo (Space)"
-          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[#FFF3A8] px-3.5 py-1 font-serif text-sm font-extrabold text-[#5D564E] transition hover:border-[#A29C93]/60 hover:bg-[#FCEB8B] hover:underline underline-offset-4 focus:outline-none"
-        >
-          <IconPlay size={14} />
-          <span>Depart</span>
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setShowOptions((v) => !v)}
+        className="bg-transparent px-2 py-1 font-serif text-base tracking-[0.14em] text-[#5D564E] transition hover:underline underline-offset-4 focus:outline-none"
+        title="Open Pwedo Pomo sessions & cycles"
+      >
+        Pwedo Pomo
+      </button>
     </div>
   );
 }

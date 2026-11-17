@@ -143,6 +143,7 @@ function NotesStep({
   const toast = useUi((s) => s.toast);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
 
   const addHashtagsFromInput = (raw: string) => {
@@ -200,10 +201,26 @@ function NotesStep({
 
   return (
     <div className="space-y-3">
-      {/* Direct file upload inside Study Sheets */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-ink/25 bg-cream-50 px-3.5 py-2.5">
+      {/* Direct file upload & drag-and-drop inside Study Sheets */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          void handleUpload(e.dataTransfer.files);
+        }}
+        className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed px-3.5 py-3 transition ${
+          dragging ? "border-[#6D655C] bg-[#FFF5B8]/60" : "border-ink/25 bg-cream-50"
+        }`}
+      >
         <div className="min-w-0">
-          <p className="text-sm font-bold text-ink">Upload study sheets</p>
+          <p className="text-sm font-bold text-ink">
+            {dragging ? "Drop files to upload!" : "Upload or drag & drop files here"}
+          </p>
           <p className="text-xs text-ink/60">PDF, Parchment, Markdown, Word (.docx), PowerPoint (.pptx), or TXT</p>
         </div>
         <input
@@ -218,7 +235,7 @@ function NotesStep({
           }}
         />
         <Button size="sm" variant="secondary" disabled={uploading} onClick={() => fileRef.current?.click()}>
-          {uploading ? "Uploading…" : "Upload file(s)"}
+          {uploading ? "Uploading…" : "Upload"}
         </Button>
       </div>
 

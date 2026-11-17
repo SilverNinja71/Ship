@@ -20,7 +20,7 @@ import { setHandDrawnMode } from "./draw.js";
 import { ParticleField } from "./ParticleFX.js";
 import { renderQuarters } from "./QuartersRenderer.js";
 import { renderDeck } from "./ShipRenderer.js";
-import { renderStudyDeskScene } from "./StudySceneRenderer.js";
+import { renderBreakScene, renderStudyDeskScene } from "./StudySceneRenderer.js";
 import { sprites } from "./sprites/store.js";
 import { drawPaperTexture } from "./tinyInk.js";
 import type { CrewOnDeck, Viewport } from "./ShipRenderer.js";
@@ -136,6 +136,10 @@ export function ShipCanvas() {
             portTheme: settings.portTheme,
             objective: voyage.objective,
           });
+        } else if (tinyInk && voyage.phase === "shore-leave") {
+          renderBreakScene(ctx, view, frame, {
+            portTheme: settings.portTheme,
+          });
         } else {
           const others = crew.members.filter((m) => m.peerId !== crew.peerId).sort((a, b) => a.seat - b.seat);
           const onDeck: CrewOnDeck[] = others.map((m) => ({ id: m.peerId, name: m.name, avatar: m.avatar, state: m.state, ghost: false }));
@@ -156,6 +160,7 @@ export function ShipCanvas() {
               helmAngle: s.helmAngle,
               bellSwing,
               tinyInk,
+              preparing: voyage.prepEndsAt !== null,
             },
             shipLayout(ship),
           );

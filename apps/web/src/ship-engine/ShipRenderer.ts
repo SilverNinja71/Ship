@@ -38,6 +38,7 @@ export interface DeckScene {
   helmAngle: number;
   bellSwing: number;
   tinyInk?: boolean;
+  preparing?: boolean;
 }
 
 export interface Viewport {
@@ -169,7 +170,13 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   drawHelm(ctx, helmPos, scene.helmAngle, ship.palette.trim, tiny);
   if (tiny) {
     const capPos = { x: l.helm.x + 22, y: 0 };
-    drawPastelMinion(ctx, capPos, "captain", frame, { scale: 1.15, seed: 7 });
+    drawPastelMinion(ctx, capPos, "captain", frame, {
+      scale: 1.15,
+      seed: 7,
+      shadow: false,
+      cheering: Boolean(scene.preparing),
+      chore: scene.preparing ? "mop" : "none",
+    });
   }
   regions.push(rectRegion(ctx, dpr, "helm", "Helm: plan your voyage", helmPos.x - 48, helmPos.y - 125, 96, 125));
 
@@ -192,9 +199,27 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   const lumiPos = { x: l.deck.to - 145, y: tiny ? 0 : surfaceYAt(l, l.deck.to - 145) };
 
   drawDeckCritters(ctx, birdAt, { x: l.desk.x + 86, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 86) }, frame);
-  drawPastelMinion(ctx, pipPos, "banana", frame, { scale: 1.32, seed: 1, chore: "sweep" });
-  drawPastelMinion(ctx, mochiPos, "teddy", frame, { scale: 1.28, seed: 2, chore: "none" });
-  drawPastelMinion(ctx, lumiPos, "bunny", frame, { scale: 1.24, seed: 3, chore: "spyglass" });
+  drawPastelMinion(ctx, pipPos, "banana", frame, {
+    scale: 1.32,
+    seed: 1,
+    chore: "sweep",
+    cheering: Boolean(scene.preparing),
+    shadow: !tiny,
+  });
+  drawPastelMinion(ctx, mochiPos, "teddy", frame, {
+    scale: 1.28,
+    seed: 2,
+    chore: scene.preparing ? "mop" : "none",
+    cheering: Boolean(scene.preparing),
+    shadow: !tiny,
+  });
+  drawPastelMinion(ctx, lumiPos, "bunny", frame, {
+    scale: 1.24,
+    seed: 3,
+    chore: scene.preparing ? "sweep" : "spyglass",
+    cheering: Boolean(scene.preparing),
+    shadow: !tiny,
+  });
 
   if (tiny) {
     regions.push(rectRegion(ctx, dpr, "minion:captain", "Captain Banan — Steers the ship & keeps everyone calm", helmPos.x - 6, -62, 56, 72));

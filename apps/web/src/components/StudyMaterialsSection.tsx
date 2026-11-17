@@ -233,6 +233,7 @@ function StudySheetsSection() {
   const due = dueNow(cards, now).length;
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -250,7 +251,19 @@ function StudySheetsSection() {
   };
 
   return (
-    <div className={CARD}>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        void onFiles(e.dataTransfer.files);
+      }}
+      className={cx(CARD, dragging && "ring-2 ring-[#8E887F] bg-[#FFFDF7]")}
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <PastelMinionBadge costume="frog" size={40} />
@@ -259,7 +272,7 @@ function StudySheetsSection() {
               Active Recall Study Sheets
             </h3>
             <p className="text-xs text-[#8E887F]">
-              Upload PDFs, notes, or slides, then practice blurting or flashcards.
+              Drag &amp; drop files here or click Upload, then practice blurting or flashcards.
             </p>
           </div>
         </div>
@@ -279,7 +292,7 @@ function StudySheetsSection() {
             onClick={() => fileRef.current?.click()}
             className="rounded-full border border-[#A29C93]/50 bg-[#FFF3A8] px-3.5 py-1.5 text-xs font-extrabold text-[#5D564E] transition hover:bg-[#FCEB8B] disabled:opacity-50"
           >
-            {uploading ? "Uploading..." : "+ Upload Study Sheet"}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
           <button
             type="button"

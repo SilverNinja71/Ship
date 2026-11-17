@@ -35,13 +35,15 @@ function chubbyBlobPath(ctx: Ctx, w = 18, h = 42): void {
   ctx.closePath();
 }
 
+export type MinionChore = "sweep" | "mop" | "spyglass" | "eat" | "swim" | "sing" | "none";
+
 /** Draws a cute pastel costume minion standing at `at` (origin at feet). */
 export function drawPastelMinion(
   ctx: Ctx,
   at: Point,
   costume: MinionCostume,
   frame: FrameInfo,
-  opts: { scale?: number; seed?: number; cheering?: boolean; chore?: "sweep" | "spyglass" | "none"; shadow?: boolean } = {},
+  opts: { scale?: number; seed?: number; cheering?: boolean; chore?: MinionChore; shadow?: boolean } = {},
 ): void {
   const scale = opts.scale ?? 1;
   const seed = opts.seed ?? 1;
@@ -51,8 +53,8 @@ export function drawPastelMinion(
   const blink = !frame.reducedMotion && Math.sin(frame.t * 1.1 + seed * 3.1) > 0.965;
 
   withTransform(ctx, { x: at.x, y: at.y + bob, scale, rotate: tilt }, () => {
-    // Clean Mr. Tiny flat light-grey oval shadow (omitted when perched on a desk)
-    if (opts.shadow !== false) {
+    // Clean Mr. Tiny flat light-grey oval shadow (omitted when perched on a desk or flat deck)
+    if (opts.shadow !== false && opts.chore !== "swim") {
       paint(ctx, (c) => ellipsePath(c, 0, 2, 19, 5), "#DCDCDC", { stroke: false });
     }
 
@@ -69,13 +71,40 @@ export function drawPastelMinion(
     }
 
     if (opts.chore === "sweep") {
-      const sweep = Math.sin(frame.t * 3.5) * 0.16 * m;
+      const sweep = Math.sin(frame.t * 3.8 + seed) * 0.18 * m;
       withTransform(ctx, { x: 18, y: -12, rotate: sweep }, () => {
         line(ctx, [{ x: 0, y: -14 }, { x: 7, y: 12 }], "#B6CEA0", 2.8);
         paint(ctx, (c) => ellipsePath(c, 8, 12, 6, 3.5, 0.2), "#EFE9DA", { width: 2.4, stroke: MARKER_INK });
       });
+    } else if (opts.chore === "mop") {
+      const mop = Math.sin(frame.t * 4.2 + seed) * 0.22 * m;
+      withTransform(ctx, { x: -18, y: -12, rotate: mop }, () => {
+        line(ctx, [{ x: 0, y: -14 }, { x: -7, y: 12 }], "#D7C9A8", 2.8);
+        paint(ctx, (c) => ellipsePath(c, -8, 12, 7.5, 4, -0.2), "#D8EBF8", { width: 2.2, stroke: MARKER_INK });
+      });
     } else if (opts.chore === "spyglass") {
       line(ctx, [{ x: 13, y: -24 }, { x: 26, y: -29 }], "#D7C9A8", 4.2);
+    } else if (opts.chore === "eat") {
+      const nibble = Math.sin(frame.t * 5.0 + seed) * 1.5 * m;
+      withTransform(ctx, { x: 11, y: -16 + nibble, rotate: -0.25 }, () => {
+        paint(ctx, (c) => ellipsePath(c, 0, 0, 6.5, 4.2), "#FFF3A8", { width: 2.2, stroke: MARKER_INK });
+        paint(ctx, (c) => circlePath(c, 3, -1.5, 2.2), PASTEL_BLUSH, { stroke: false });
+      });
+    } else if (opts.chore === "swim") {
+      // Soft pastel-blue water ripple across lower body
+      paint(ctx, (c) => ellipsePath(c, 0, -4, 24, 7), alpha("#D8EBF8", 0.92), { width: 2.2, stroke: "#8FB6D9" });
+      paint(ctx, (c) => ellipsePath(c, -6, -1, 14, 3.5), alpha("#FFFFFF", 0.75), { stroke: false });
+    } else if (opts.chore === "sing") {
+      const floatY = ((frame.t * 14 + seed * 7) % 16);
+      const swayX = Math.sin(frame.t * 3.5 + seed) * 3 * m;
+      ctx.save();
+      ctx.fillStyle = MARKER_INK;
+      ctx.font = "700 13px Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.globalAlpha = Math.max(0.25, 1 - floatY / 18);
+      ctx.fillText("♪", -15 + swayX, -46 - floatY * 0.7);
+      ctx.fillText("♫", 16 - swayX, -52 - floatY * 0.5);
+      ctx.restore();
     }
   });
 }

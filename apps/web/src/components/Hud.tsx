@@ -2,7 +2,6 @@
 // controls, toasts, and the compact Pwedo Pomo timer pill at the bottom.
 
 import { useEffect, useState } from "react";
-import { useCrew } from "../stores/crewStore.js";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
@@ -232,31 +231,14 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 }
 
 function StatusDots() {
-  const crew = useCrew((s) => s.status);
-  const members = useCrew((s) => s.members.length);
   const lookout = useLookout((s) => s.connected);
   const openPanel = useUi((s) => s.openPanel);
   return (
-    <div className={cx("hidden items-center gap-1 rounded-full px-2.5 py-1.5 md:flex", SOFT_PILL)}>
-      <button
-        type="button"
-        onClick={() => openPanel("crew")}
-        className="flex items-center gap-1.5 rounded-full px-1.5 text-xs font-bold text-[#6D655C] hover:text-[#4F4841]"
-        title={crew === "online" ? `${members} in room` : "Crew study room"}
-      >
-        <span
-          className={cx(
-            "size-2 rounded-full",
-            crew === "online" ? "bg-[#7FC8B2]" : crew === "connecting" ? "bg-[#F2D27A]" : "bg-[#C7BFB3]",
-          )}
-        />
-        Crew{crew === "online" ? ` ${members}` : ""}
-      </button>
-      <span className="h-3 w-px bg-[#A29C93]/35" aria-hidden="true" />
+    <div className="hidden items-center md:flex">
       <button
         type="button"
         onClick={() => openPanel("lookout")}
-        className="flex items-center gap-1.5 rounded-full px-1.5 text-xs font-bold text-[#6D655C] hover:text-[#4F4841]"
+        className="flex items-center gap-1.5 px-1.5 py-1 font-serif text-xs font-bold text-[#6D655C] transition hover:text-[#4F4841] hover:underline underline-offset-4 focus:outline-none"
         title={lookout ? "Lookout connected" : "Lookout extension"}
       >
         <span className={cx("size-2 rounded-full", lookout ? "bg-[#7FC8B2]" : "bg-[#C7BFB3]")} />

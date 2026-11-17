@@ -92,12 +92,17 @@ export function renderStudyDeskScene(
       }, "#FFFFFF", { width: 3, stroke: OUTLINE_GREY });
     });
 
-    // 2. Slanted cream desk OVER the minions' lower bodies so they are tucked behind it
+    // 2. 3D Slanted cream desk OVER the minions' lower bodies so they are tucked behind it
     ctx.save();
     ctx.rotate(0.11);
-    paint(ctx, (c) => roundRectPath(c, -390, 22, 780, 165, 56), "#FFFDF8", { stroke: false });
-    paint(ctx, (c) => roundRectPath(c, -386, 166, 772, 18, 9), alpha(SHADOW_GREY, 0.85), { stroke: false });
+    // Soft floor drop shadow
+    paint(ctx, (c) => roundRectPath(c, -384, 172, 774, 22, 11), alpha(SHADOW_GREY, 0.9), { stroke: false });
+    // 3D front apron / thickness panel
+    paint(ctx, (c) => roundRectPath(c, -390, 58, 780, 126, 48), "#F4ECE0", { width: 2.8, stroke: OUTLINE_GREY });
+    // 3D top surface
+    paint(ctx, (c) => roundRectPath(c, -390, 22, 780, 136, 48), "#FFFDF8", { stroke: false });
     sketchLine(ctx, -340, 22, 340, 22.5, OUTLINE_GREY, 3.1, 101);
+    sketchLine(ctx, -356, 154, 356, 154.5, alpha(OUTLINE_GREY, 0.45), 2.4, 109);
     ctx.restore();
 
     // 3. Cute hand-drawn stack of notebooks on the left of the desk (open-corner outlines)
@@ -133,6 +138,59 @@ export function renderStudyDeskScene(
       const label = opts.objective.length > 42 ? `${opts.objective.slice(0, 41)}…` : opts.objective;
       ctx.fillText(label, 0, -199);
     }
+  });
+
+  drawPaperTexture(ctx, w, h);
+}
+
+/**
+ * Cozy Break scene shown during shore-leave:
+ * cute pastel minions eating snacks on a picnic mat, swimming in pastel waves,
+ * and singing with floating musical notes!
+ */
+export function renderBreakScene(
+  ctx: Ctx,
+  view: Viewport,
+  frame: FrameInfo,
+  opts: { portTheme: PortThemeId },
+): void {
+  const { width: w, height: h } = view;
+  const theme = PORT_THEMES[opts.portTheme] ?? PORT_THEMES.classic;
+
+  ctx.fillStyle = "#FAF6E8";
+  ctx.fillRect(0, 0, w, h);
+
+  const unit = Math.min(w / 900, h / 620);
+  const cx = w / 2;
+  const cy = h * 0.56;
+  const m = frame.reducedMotion ? 0 : 1;
+
+  withTransform(ctx, { x: cx, y: cy, scale: unit }, () => {
+    // 1. Soft pastel picnic mat on the left (eating snacks)
+    paint(ctx, (c) => roundRectPath(c, -355, 22, 340, 130, 32), alpha(theme.pastel, 0.55), { width: 2.8, stroke: OUTLINE_GREY });
+    paint(ctx, (c) => roundRectPath(c, -335, 38, 300, 98, 22), "#FFFDF7", { stroke: false });
+
+    // Little snack plate & teapot on the mat
+    paint(ctx, (c) => c.ellipse(-185, 86, 42, 16, 0, 0, Math.PI * 2), "#FFF5B8", { width: 2.4, stroke: OUTLINE_GREY });
+    paint(ctx, (c) => circlePath(c, -196, 82, 7), "#F9A48B", { stroke: false });
+    paint(ctx, (c) => circlePath(c, -174, 84, 7), "#CDE5C4", { stroke: false });
+
+    drawPastelMinion(ctx, { x: -265, y: 74 }, "teddy", frame, { scale: 1.8, seed: 2, chore: "eat", shadow: false });
+    drawPastelMinion(ctx, { x: -110, y: 76 }, "banana", frame, { scale: 1.85, seed: 1, chore: "eat", shadow: false });
+
+    // 2. Soft pastel sea pool on the right (swimming!)
+    paint(ctx, (c) => c.ellipse(215, 92, 165, 58, 0, 0, Math.PI * 2), alpha("#D8EBF8", 0.85), { width: 2.8, stroke: "#8FB6D9" });
+    const swimBob = Math.sin(frame.t * 2.8) * 3.5 * m;
+    drawPastelMinion(ctx, { x: 215, y: 86 + swimBob }, "bunny", frame, { scale: 1.85, seed: 4, chore: "swim", shadow: false });
+
+    // 3. Captain & Pebble singing together in the center
+    drawPastelMinion(ctx, { x: 24, y: -12 }, "captain", frame, { scale: 1.75, seed: 5, cheering: true, chore: "sing", shadow: false });
+
+    // Subtle header
+    ctx.fillStyle = SKETCH_INK;
+    ctx.font = '400 16px Georgia, "Playfair Display", serif';
+    ctx.textAlign = "center";
+    ctx.fillText("Break Time · Snacks, Swim & Song", 0, -185);
   });
 
   drawPaperTexture(ctx, w, h);
