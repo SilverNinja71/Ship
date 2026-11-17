@@ -116,8 +116,8 @@ export function mountSirenGate(options: SirenGateOptions): SirenGate {
     h(
       "div",
       { class: "body" },
-      h("p", { class: "kicker" }, "The Lookout spotted a siren"),
-      h("h1", { id: titleId }, "Avast! Hold your course."),
+      h("p", { class: "kicker" }, "Lookout Minion spotted a distraction"),
+      h("h1", { id: titleId }, "Hey! Stay focused!"),
       h("p", { class: "reason", id: reasonId }, options.verdict.reason),
       h(
         "div",

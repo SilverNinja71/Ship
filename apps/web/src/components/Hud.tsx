@@ -1,28 +1,37 @@
-// The heads-up display over the scene: stats along the top, the panel
-// toolbar, toasts, and the voyage dock along the bottom.
+// Minimal Mr. Tiny Studio HUD over the scene: a clean top bar with essential
+// controls, toasts, and the compact Pwedo Pomo timer pill at the bottom.
 
 import { useEffect, useState } from "react";
-import { levelForXp, xpForLevel } from "@ship/shared-types";
-import { shipOrStarter } from "@ship/ship-theme-kit";
-import { PANEL_KEYS } from "../hooks/useKeyboard.js";
-import { formatNumber } from "../lib/format.js";
-import { streakDays } from "../lib/voyageLogic.js";
 import { useCrew } from "../stores/crewStore.js";
-import { useEconomy } from "../stores/economyStore.js";
+import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useSettings } from "../stores/settingsStore.js";
-import { useCustomizer } from "../stores/shipCustomizer.js";
 import { useUi } from "../stores/uiStore.js";
 import type { PanelId } from "../stores/uiStore.js";
-import { useVoyage } from "../stores/voyageStore.js";
-import { Doubloon, IconCabin, IconCards, IconCrew, IconDeck, IconFlame, IconGear, IconHammer, IconHelm, IconLog, IconScroll, IconShirt, IconSpyglass } from "./icons.js";
+import { PastelMinionBadge } from "./PastelMinionBadge.js";
+import {
+  IconCabin,
+  IconCalendar,
+  IconCards,
+  IconCrew,
+  IconDeck,
+  IconGear,
+  IconHammer,
+  IconHelm,
+  IconLog,
+  IconScroll,
+  IconShirt,
+  IconSpyglass,
+} from "./icons.js";
 import { cx } from "./ui.js";
 import { VoyageDock } from "./VoyageDock.js";
 
+/** Kept exported for SettingsPanel keyboard-shortcut reference. */
 export const PANELS: { id: PanelId; label: string; icon: (p: { size?: number }) => React.ReactNode }[] = [
   { id: "helm", label: "Helm", icon: IconHelm },
-  { id: "log", label: "Captain's Log", icon: IconLog },
+  { id: "planner", label: "Banana Planna", icon: IconCalendar },
+  { id: "log", label: "Study Sheets", icon: IconLog },
   { id: "flashcards", label: "Flashcards", icon: IconCards },
   { id: "shipwright", label: "Shipwright", icon: IconHammer },
   { id: "wardrobe", label: "Wardrobe", icon: IconShirt },
@@ -30,8 +39,6 @@ export const PANELS: { id: PanelId; label: string; icon: (p: { size?: number }) 
   { id: "fleet", label: "Fleet Log", icon: IconScroll },
   { id: "lookout", label: "Lookout", icon: IconSpyglass },
 ];
-
-const shortcutFor = (id: PanelId) => Object.entries(PANEL_KEYS).find(([, p]) => p === id)?.[0]?.toUpperCase();
 
 /** Re-renders every `ms` so clocks and "due" counts stay fresh. */
 export function useNow(ms = 1000): number {
@@ -44,98 +51,183 @@ export function useNow(ms = 1000): number {
 }
 
 export function Hud() {
+  const [loginOpen, setLoginOpen] = useState(false);
   return (
     <>
-      <TopBar />
-      {/* On phones the toolbar sits on top of the dock; from sm up each places itself. */}
-      <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col items-center gap-2 sm:contents">
-        <Toolbar />
+      <TopBar onOpenLogin={() => setLoginOpen(true)} />
+      <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 flex flex-col items-center gap-2">
         <VoyageDock />
       </div>
       <Toasts />
+      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
     </>
   );
 }
 
-function TopBar() {
-  const xp = useEconomy((s) => s.xp);
-  const doubloons = useEconomy((s) => s.doubloons);
-  const shipId = useCustomizer((s) => s.activeShipId);
-  const records = useVoyage((s) => s.records);
+const SOFT_PILL =
+  "border-0 bg-transparent font-serif font-normal tracking-wide text-[#6D655C] shadow-none transition hover:underline underline-offset-4 focus:outline-none";
+
+function TopBar({ onOpenLogin }: { onOpenLogin: () => void }) {
   const view = useSettings((s) => s.view);
   const setSettings = useSettings((s) => s.set);
   const openPanel = useUi((s) => s.openPanel);
-  const now = useNow(60_000);
-  const level = levelForXp(xp);
-  const from = xpForLevel(level);
-  const to = xpForLevel(level + 1);
-  const streak = streakDays(records, now);
-  const ship = shipOrStarter(shipId);
+  const cards = useRecall((s) => s.cards);
+  const driveStatus = useFleet((s) => s.statuses["google-drive"]);
+  const now = useNow(30_000);
+  const due = dueNow(cards, now).length;
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-2 sm:p-3">
-      <div className="pointer-events-auto flex min-w-0 shrink items-center gap-3 rounded-2xl border-2 border-ink bg-navy-900/90 px-2 py-1.5 text-cream-50 shadow-card backdrop-blur sm:px-3 sm:py-2">
-        <div className="grid size-11 shrink-0 place-items-center rounded-xl border-2 border-ink bg-brass-400 font-display text-lg font-extrabold text-ink" title={`Level ${level}`}>
-          {level}
-        </div>
-        <div className="hidden min-w-0 sm:block">
-          <p className="truncate font-display text-[15px] leading-tight font-extrabold">{ship.name}</p>
-          <div className="mt-1 flex items-center gap-2">
-            <div className="h-2 w-28 overflow-hidden rounded-full bg-cream-50/20 sm:w-36" role="progressbar" aria-label="Experience" aria-valuenow={xp - from} aria-valuemin={0} aria-valuemax={to - from}>
-              <div className="h-full rounded-full bg-seafoam-400" style={{ width: `${((xp - from) / (to - from)) * 100}%` }} />
-            </div>
-            <span className="hidden text-xs text-cream-50/70 sm:inline">
-              {formatNumber(xp - from)} / {formatNumber(to - from)} XP
-            </span>
-          </div>
-        </div>
-      </div>
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 sm:py-4">
+      <nav aria-label="Primary controls" className="pointer-events-auto flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          onClick={() => openPanel("planner")}
+          className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+          title="Banana Planna (P)"
+        >
+          <IconCalendar size={15} />
+          <span>Banana Planna</span>
+        </button>
 
-      <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-        <Pill title={streak ? `${streak}-day streak` : "Finish a voyage today to start a streak"}>
-          <span className={streak ? "text-coral-400" : "text-cream-50/50"}>
-            <IconFlame size={18} />
-          </span>
-          {streak}
-        </Pill>
-        <Pill title="Doubloons" onClick={() => openPanel("shipwright")}>
-          <Doubloon size={18} />
-          {formatNumber(doubloons)}
-        </Pill>
+        <button
+          type="button"
+          onClick={() => openPanel("log")}
+          className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+          title="Study Sheets & Active Recall (L)"
+        >
+          <IconLog size={15} />
+          <span>Study Sheets</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openPanel("flashcards")}
+          className={cx("relative flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+          title="Flashcards (F)"
+        >
+          <IconCards size={15} />
+          <span className="hidden sm:inline">Flashcards</span>
+          {due > 0 && (
+            <span className="rounded-full bg-[#FDE2DD] px-1.5 py-0.5 text-[11px] text-[#8A4A40] tabular-nums">
+              {due > 99 ? "99+" : due}
+            </span>
+          )}
+        </button>
+      </nav>
+
+      <div className="pointer-events-auto flex items-center gap-4">
+        <StatusDots />
+
         <button
           type="button"
           onClick={() => setSettings({ view: view === "deck" ? "quarters" : "deck" })}
-          className="flex items-center gap-1.5 rounded-full border-2 border-ink bg-cream-50 px-3 py-1.5 font-display text-sm font-bold text-ink shadow-card hover:bg-white"
+          className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
           title="Switch view (Q)"
         >
-          {view === "deck" ? <IconCabin size={18} /> : <IconDeck size={18} />}
-          <span className="hidden sm:inline">{view === "deck" ? "Quarters" : "Deck"}</span>
+          {view === "deck" ? <IconCabin size={15} /> : <IconDeck size={15} />}
+          <span className="hidden sm:inline">{view === "deck" ? "Desk" : "Ship"}</span>
         </button>
-        <StatusDots />
+
+        <button
+          type="button"
+          onClick={onOpenLogin}
+          className={cx("py-1 text-sm", SOFT_PILL)}
+          title="Sign in & sync across devices"
+        >
+          {driveStatus?.connected ? "Synced ✓" : "Log in"}
+        </button>
+
         <button
           type="button"
           onClick={() => openPanel("settings")}
           aria-label="Settings"
           title="Settings (,)"
-          className="grid size-10 place-items-center rounded-full border-2 border-ink bg-navy-900/90 text-cream-50 shadow-card hover:bg-navy-800"
+          className={cx("flex items-center gap-1 py-1 text-sm", SOFT_PILL)}
         >
-          <IconGear />
+          <IconGear size={16} />
         </button>
       </div>
     </header>
   );
 }
 
-function Pill({ children, title, onClick }: { children: React.ReactNode; title: string; onClick?: () => void }) {
-  const Tag = onClick ? "button" : "div";
+function LoginModal({ onClose }: { onClose: () => void }) {
+  const driveClientId = useFleet((s) => s.settings.googleDrive?.clientId ?? "");
+  const setDriveClientId = useFleet((s) => s.setDriveClientId);
+  const connectDrive = useFleet((s) => s.connectDrive);
+  const driveStatus = useFleet((s) => s.statuses["google-drive"]);
+  const toast = useUi((s) => s.toast);
+  const [name, setName] = useState(() => localStorage.getItem("ship:profile-name") ?? "");
+  const [email, setEmail] = useState(() => localStorage.getItem("ship:profile-email") ?? "");
+
+  const saveProfile = () => {
+    localStorage.setItem("ship:profile-name", name.trim());
+    localStorage.setItem("ship:profile-email", email.trim());
+    toast("Saved profile locally!", "info");
+    onClose();
+  };
+
   return (
-    <Tag
-      {...(onClick ? { type: "button" as const, onClick } : {})}
-      title={title}
-      className="flex items-center gap-1.5 rounded-full border-2 border-ink bg-navy-900/90 px-3 py-1.5 font-display text-sm font-extrabold text-cream-50 tabular-nums shadow-card"
-    >
-      {children}
-    </Tag>
+    <div role="dialog" aria-modal="true" aria-label="Log in" className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[#6D655C]/20 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-sm rounded-3xl bg-[#FFFDF7] p-6 font-serif text-[#6D655C] shadow-[4px_4px_0_#EAE5DA]">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <PastelMinionBadge costume="banana" size={44} />
+            <div>
+              <h2 className="text-lg tracking-wide text-[#5D564E]">Log in &amp; Sync</h2>
+              <p className="text-xs text-[#8E887F]">Keep your sheets and Banana Planna together</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-sm text-[#8E887F] hover:underline">
+            Close
+          </button>
+        </div>
+
+        <div className="space-y-3 text-sm">
+          <label className="block">
+            <span className="mb-1 block text-xs tracking-wider text-[#8E887F]">Name</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name..."
+              className="w-full border-b border-[#A29C93]/40 bg-transparent py-1 focus:border-[#6D655C] focus:outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs tracking-wider text-[#8E887F]">Email (for monthly reports)</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full border-b border-[#A29C93]/40 bg-transparent py-1 focus:border-[#6D655C] focus:outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs tracking-wider text-[#8E887F]">Google Drive OAuth Client ID (optional)</span>
+            <input
+              value={driveClientId}
+              onChange={(e) => setDriveClientId(e.target.value)}
+              placeholder="123456.apps.googleusercontent.com"
+              className="w-full border-b border-[#A29C93]/40 bg-transparent py-1 text-xs focus:border-[#6D655C] focus:outline-none"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => void connectDrive()}
+            className="text-[#5D564E] hover:underline underline-offset-4"
+          >
+            {driveStatus?.connected ? "Google Drive Connected ✓" : "Sign in with Google Drive"}
+          </button>
+          <button type="button" onClick={saveProfile} className="rounded-full bg-[#FFF3A8] px-4 py-1 text-[#5D564E] hover:underline underline-offset-4">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -145,52 +237,32 @@ function StatusDots() {
   const lookout = useLookout((s) => s.connected);
   const openPanel = useUi((s) => s.openPanel);
   return (
-    <div className="hidden items-center gap-1 rounded-full border-2 border-ink bg-navy-900/90 px-2 py-1.5 shadow-card md:flex">
-      <button type="button" onClick={() => openPanel("crew")} className="flex items-center gap-1 rounded-full px-1.5 text-xs font-bold text-cream-50" title={crew === "online" ? `${members} aboard` : "Not in a crew room"}>
-        <span className={cx("size-2.5 rounded-full", crew === "online" ? "bg-seafoam-400" : crew === "connecting" ? "bg-brass-400" : "bg-cream-50/30")} />
+    <div className={cx("hidden items-center gap-1 rounded-full px-2.5 py-1.5 md:flex", SOFT_PILL)}>
+      <button
+        type="button"
+        onClick={() => openPanel("crew")}
+        className="flex items-center gap-1.5 rounded-full px-1.5 text-xs font-bold text-[#6D655C] hover:text-[#4F4841]"
+        title={crew === "online" ? `${members} in room` : "Crew study room"}
+      >
+        <span
+          className={cx(
+            "size-2 rounded-full",
+            crew === "online" ? "bg-[#7FC8B2]" : crew === "connecting" ? "bg-[#F2D27A]" : "bg-[#C7BFB3]",
+          )}
+        />
         Crew{crew === "online" ? ` ${members}` : ""}
       </button>
-      <button type="button" onClick={() => openPanel("lookout")} className="flex items-center gap-1 rounded-full px-1.5 text-xs font-bold text-cream-50" title={lookout ? "The Lookout is watching" : "The Lookout extension isn't connected"}>
-        <span className={cx("size-2.5 rounded-full", lookout ? "bg-seafoam-400" : "bg-cream-50/30")} />
+      <span className="h-3 w-px bg-[#A29C93]/35" aria-hidden="true" />
+      <button
+        type="button"
+        onClick={() => openPanel("lookout")}
+        className="flex items-center gap-1.5 rounded-full px-1.5 text-xs font-bold text-[#6D655C] hover:text-[#4F4841]"
+        title={lookout ? "Lookout connected" : "Lookout extension"}
+      >
+        <span className={cx("size-2 rounded-full", lookout ? "bg-[#7FC8B2]" : "bg-[#C7BFB3]")} />
         Lookout
       </button>
     </div>
-  );
-}
-
-function Toolbar() {
-  const open = useUi((s) => s.panel);
-  const openPanel = useUi((s) => s.openPanel);
-  const cards = useRecall((s) => s.cards);
-  const now = useNow(30_000);
-  const due = dueNow(cards, now).length;
-  return (
-    <nav
-      aria-label="Ship's quarters"
-      className="pointer-events-auto relative z-20 flex max-w-full gap-0.5 overflow-x-auto rounded-2xl border-2 border-ink bg-navy-900/90 p-1 shadow-card backdrop-blur sm:absolute sm:top-1/2 sm:left-3 sm:gap-1 sm:overflow-visible sm:p-1.5 sm:-translate-y-1/2 sm:flex-col"
-    >
-      {PANELS.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => openPanel(id)}
-          title={`${label} (${shortcutFor(id)})`}
-          aria-label={label}
-          className={cx(
-            "group relative grid size-10 place-items-center rounded-xl text-cream-50 transition hover:bg-cream-50/15 sm:size-11",
-            open === id && "bg-brass-400 text-ink hover:bg-brass-400",
-          )}
-        >
-          <Icon size={22} />
-          {id === "flashcards" && due > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-5 rounded-full border-2 border-ink bg-coral-500 px-1 text-[11px] font-extrabold text-white">{due > 99 ? "99+" : due}</span>
-          )}
-          <span className="pointer-events-none absolute left-full ml-2 hidden rounded-lg bg-ink px-2 py-1 text-xs font-bold whitespace-nowrap text-cream-50 opacity-0 transition group-hover:opacity-100 sm:block">
-            {label}
-          </span>
-        </button>
-      ))}
-    </nav>
   );
 }
 
@@ -198,20 +270,19 @@ function Toasts() {
   const toasts = useUi((s) => s.toasts);
   const dismiss = useUi((s) => s.dismissToast);
   return (
-    <div aria-live="polite" className="pointer-events-none absolute inset-x-0 top-20 z-40 flex flex-col items-center gap-2 px-3">
+    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-16 z-40 flex flex-col items-center gap-2 px-3">
       {toasts.map((t) => (
         <button
           key={t.id}
           type="button"
           onClick={() => dismiss(t.id)}
           className={cx(
-            "pointer-events-auto max-w-md rounded-2xl border-2 border-ink px-4 py-2 text-left font-bold shadow-card",
-            t.tone === "reward" && "bg-brass-300 text-ink",
-            t.tone === "info" && "bg-cream-50 text-ink",
-            t.tone === "warning" && "bg-coral-400 text-ink",
+            "pointer-events-auto max-w-md rounded-2xl border border-[#A29C93]/60 px-4 py-2 text-left text-sm font-bold text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] focus:outline-none",
+            t.tone === "reward" && "bg-[#FFF7D6]",
+            t.tone === "info" && "bg-[#FAF6E8]",
+            t.tone === "warning" && "bg-[#FDE8E4]",
           )}
         >
-          {t.tone === "reward" && <span className="mr-1.5 inline-block align-[-4px]"><Doubloon size={18} /></span>}
           {t.text}
         </button>
       ))}

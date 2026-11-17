@@ -107,6 +107,12 @@ export const IconDeck = (p: IconProps) => (
     <path d="M3 16h18l-3 4H6zM12 3v13M12 4l7 9h-7" />
   </Icon>
 );
+export const IconCalendar = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="4" y="5" width="16" height="15" rx="2" />
+    <path d="M8 3v4M16 3v4M4 10h16" />
+  </Icon>
+);
 export const IconMic = (p: IconProps) => (
   <Icon {...p}>
     <rect x="9" y="3" width="6" height="11" rx="3" />

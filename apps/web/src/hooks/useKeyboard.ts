@@ -8,6 +8,7 @@ import { useVoyage } from "../stores/voyageStore.js";
 
 export const PANEL_KEYS: Record<string, PanelId> = {
   h: "helm",
+  p: "planner",
   l: "log",
   f: "flashcards",
   s: "shipwright",

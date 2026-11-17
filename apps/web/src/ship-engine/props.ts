@@ -7,34 +7,63 @@ import { INK, OUTLINE, alpha, circlePath, line, mix, paint, rng, roundRectPath, 
 import type { Ctx, FrameInfo, Point } from "./types.js";
 
 /** A ship's wheel on a pedestal. `angle` turns it. */
-export function drawHelm(ctx: Ctx, at: Point, angle: number, trim: string): void {
-  if (drawHelmSprite(ctx, at, angle)) return;
-  const wood = "#9C6B3F";
+export function drawHelm(ctx: Ctx, at: Point, angle: number, trim: string, tinyInk = false): void {
+  if (!tinyInk && drawHelmSprite(ctx, at, angle)) return;
+  const wood = tinyInk ? "#FFFDF6" : "#9C6B3F";
+  const hub = tinyInk ? "#FFF3A8" : trim;
+  const ink = tinyInk ? "#A29C93" : INK;
   const cx = at.x;
   const cy = at.y - 74;
+  if (tinyInk) {
+    paint(ctx, (c) => {
+      c.moveTo(cx - 10, at.y + 2);
+      c.lineTo(cx - 6, cy + 10);
+      c.lineTo(cx + 12, cy + 10);
+      c.lineTo(cx + 16, at.y + 2);
+      c.closePath();
+    }, "#EAE5DA", { stroke: false });
+  }
   paint(ctx, (c) => {
     c.moveTo(cx - 12, at.y);
     c.lineTo(cx - 8, cy + 8);
     c.lineTo(cx + 8, cy + 8);
     c.lineTo(cx + 12, at.y);
     c.closePath();
-  }, shade(wood, -0.1));
+  }, tinyInk ? wood : shade(wood, -0.1), { stroke: ink });
   withTransform(ctx, { x: cx, y: cy, rotate: angle }, () => {
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
+    for (let i = 0; i < (tinyInk ? 6 : 8); i++) {
+      const a = (i / (tinyInk ? 6 : 8)) * Math.PI * 2;
       // Spokes stick out past the rim as handles.
-      line(ctx, [{ x: 0, y: 0 }, { x: Math.cos(a) * 44, y: Math.sin(a) * 44 }], INK, 9);
-      line(ctx, [{ x: 0, y: 0 }, { x: Math.cos(a) * 44, y: Math.sin(a) * 44 }], wood, 5);
+      line(ctx, [{ x: 0, y: 0 }, { x: Math.cos(a) * 42, y: Math.sin(a) * 42 }], ink, tinyInk ? 7.5 : 9);
+      line(ctx, [{ x: 0, y: 0 }, { x: Math.cos(a) * 42, y: Math.sin(a) * 42 }], wood, tinyInk ? 3.5 : 5);
     }
-    ctx.beginPath();
-    ctx.arc(0, 0, 31, 0, Math.PI * 2);
-    ctx.lineWidth = 11;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
-    ctx.lineWidth = 6.5;
-    ctx.strokeStyle = wood;
-    ctx.stroke();
-    paint(ctx, (c) => circlePath(c, 0, 0, 9), trim);
+    if (tinyInk) {
+      // Hand-sketched slightly wobbly wheel rim (never a ruler-perfect circle)
+      const rimPts: Point[] = [];
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const r = 30 + Math.sin(i * 2.7 + 0.4) * 1.6;
+        rimPts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+      }
+      ctx.beginPath();
+      smoothClosedPath(ctx, rimPts, 0.55);
+      ctx.lineWidth = 8.5;
+      ctx.strokeStyle = ink;
+      ctx.stroke();
+      ctx.lineWidth = 4.5;
+      ctx.strokeStyle = wood;
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, 30, 0, Math.PI * 2);
+      ctx.lineWidth = 11;
+      ctx.strokeStyle = ink;
+      ctx.stroke();
+      ctx.lineWidth = 6.5;
+      ctx.strokeStyle = wood;
+      ctx.stroke();
+    }
+    paint(ctx, (c) => circlePath(c, 0, 0, 9), hub, { stroke: ink });
   });
 }
 
@@ -60,10 +89,10 @@ const FRUIT_SPOTS: Point[] = [
 ];
 
 /** A potted citrus tree, about 90 wide and 190 tall, standing on `at`. */
-export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: FrameInfo, seed = 1): void {
+export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: FrameInfo, seed = 1, tinyInk = false): void {
   const wilted = look.state === "wilted";
   const lean = sway(frame.t, 0.9, seed, frame.reducedMotion) * 0.035 * (0.4 + frame.wind) + (look.shake < 0.6 ? Math.sin(look.shake * 40) * 0.05 * (1 - look.shake / 0.6) : 0);
-  if (drawCitrusSprite(ctx, at, {
+  if (!tinyInk && drawCitrusSprite(ctx, at, {
     look: wilted ? "wilted" : look.state === "blooming" ? "blooming" : "normal",
     lean,
     fruit: FRUIT_SPOTS.slice(0, Math.min(look.fruit, FRUIT_SPOTS.length)),
@@ -74,14 +103,19 @@ export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: Frame
     return;
   }
   // Pot.
+  const potInk = tinyInk ? "#A29C93" : undefined;
+  if (tinyInk) {
+    paint(ctx, (c) => c.ellipse(at.x + 2, at.y + 1, 28, 5, 0, 0, Math.PI * 2), "#EAE5DA", { stroke: false });
+  }
   paint(ctx, (c) => {
     c.moveTo(at.x - 34, at.y - 44);
-    c.lineTo(at.x + 34, at.y - 44);
-    c.lineTo(at.x + 26, at.y);
-    c.lineTo(at.x - 26, at.y);
+    c.quadraticCurveTo(at.x, at.y - 45, at.x + 34, at.y - 44);
+    c.quadraticCurveTo(at.x + 31, at.y - 22, at.x + 26, at.y);
+    c.quadraticCurveTo(at.x, at.y + 1.5, at.x - 26, at.y);
+    c.quadraticCurveTo(at.x - 31, at.y - 22, at.x - 34, at.y - 44);
     c.closePath();
-  }, "#C8693F");
-  paint(ctx, (c) => roundRectPath(c, at.x - 40, at.y - 54, 80, 14, 5), "#D9804F");
+  }, tinyInk ? "#F5F0E2" : "#C8693F", { stroke: potInk });
+  paint(ctx, (c) => roundRectPath(c, at.x - 40, at.y - 54, 80, 14, 5), tinyInk ? "#FFFDF6" : "#D9804F", { stroke: potInk });
 
   withTransform(ctx, { x: at.x, y: at.y - 50, rotate: lean }, () => {
     // Trunk.
@@ -91,25 +125,25 @@ export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: Frame
       c.lineTo(5, -78);
       c.quadraticCurveTo(2, -40, 8, 0);
       c.closePath();
-    }, "#7A5230");
+    }, tinyInk ? "#E6DFCE" : "#7A5230", { stroke: potInk });
 
-    const leaf = wilted ? "#A3974E" : "#4FA05A";
+    const leaf = tinyInk ? (wilted ? "#EAE5DA" : "#DCEAD2") : (wilted ? "#A3974E" : "#4FA05A");
     const droop = wilted ? 16 : 0;
     const rand = rng(seed * 97);
     const canopy: Point[] = [];
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
-      const r = 52 + rand() * 10;
-      canopy.push({ x: Math.cos(a) * r, y: -128 + droop + Math.sin(a) * (wilted ? 34 : 44) + (wilted && Math.sin(a) > 0 ? 10 : 0) });
+      const r = (tinyInk ? 46 : 52) + rand() * 10;
+      canopy.push({ x: Math.cos(a) * r, y: -128 + droop + Math.sin(a) * (wilted ? 34 : 42) + (wilted && Math.sin(a) > 0 ? 10 : 0) });
     }
-    paint(ctx, (c) => smoothClosedPath(c, canopy), leaf);
+    paint(ctx, (c) => smoothClosedPath(c, canopy), leaf, { stroke: potInk });
     // A lighter patch on top gives the canopy some roundness.
-    paint(ctx, (c) => c.ellipse(-10, -146 + droop, 30, 16, -0.2, 0, Math.PI * 2), shade(leaf, 0.18), { stroke: false });
+    paint(ctx, (c) => c.ellipse(-10, -146 + droop, 30, 16, -0.2, 0, Math.PI * 2), tinyInk ? alpha("#FFFFFF", 0.55) : shade(leaf, 0.18), { stroke: false });
 
     if (wilted) {
       for (let i = 0; i < 4; i++) {
         const x = -40 + i * 26;
-        paint(ctx, (c) => c.ellipse(x, -88 + (i % 2) * 6, 9, 4, 1.2, 0, Math.PI * 2), shade(leaf, -0.15), { width: 2 });
+        paint(ctx, (c) => c.ellipse(x, -88 + (i % 2) * 6, 9, 4, 1.2, 0, Math.PI * 2), shade(leaf, -0.15), { width: 2, stroke: potInk });
       }
     }
 
@@ -123,12 +157,14 @@ export function drawCitrusTree(ctx: Ctx, at: Point, look: TreeLook, frame: Frame
     for (let i = 0; i < fruit; i++) {
       const p = FRUIT_SPOTS[i];
       const bob = sway(frame.t, 1.3, i, frame.reducedMotion) * 1.5;
-      paint(ctx, (c) => circlePath(c, p.x, p.y + droop + bob, 11), wilted ? "#D9822B" : "#FF9F2E");
-      paint(ctx, (c) => c.ellipse(p.x - 3, p.y + droop + bob - 4, 3.5, 2.2, -0.5, 0, Math.PI * 2), "#FFE0A6", { stroke: false });
-      paint(ctx, (c) => c.ellipse(p.x + 4, p.y + droop + bob - 11, 5, 2.5, 0.6, 0, Math.PI * 2), "#4FA05A", { width: 2 });
+      const fColor = tinyInk ? "#FFE1A8" : (wilted ? "#D9822B" : "#FF9F2E");
+      const fLeaf = tinyInk ? "#DCEAD2" : "#4FA05A";
+      paint(ctx, (c) => circlePath(c, p.x, p.y + droop + bob, 11), fColor, { stroke: potInk });
+      paint(ctx, (c) => c.ellipse(p.x - 3, p.y + droop + bob - 4, 3.5, 2.2, -0.5, 0, Math.PI * 2), "#FFFFFF", { stroke: false });
+      paint(ctx, (c) => c.ellipse(p.x + 4, p.y + droop + bob - 11, 5, 2.5, 0.6, 0, Math.PI * 2), fLeaf, { width: 2, stroke: potInk });
     }
     if (look.fruit > FRUIT_SPOTS.length) {
-      drawLabel(ctx, `×${look.fruit}`, 0, -196, 0.8);
+      drawLabel(ctx, `×${look.fruit}`, 0, -196, 0.8, "plain", tinyInk);
     }
   });
 }
@@ -151,15 +187,15 @@ function drawBlossom(ctx: Ctx, x: number, y: number, r: number): void {
 }
 
 /** The ship's bell on a little bracket. `swing` is radians. */
-export function drawBell(ctx: Ctx, at: Point, swing: number, glow: string): void {
-  if (!drawBellSprite(ctx, at, swing)) drawBellBody(ctx, at, swing);
+export function drawBell(ctx: Ctx, at: Point, swing: number, glow: string, tinyInk = false): void {
+  if (tinyInk || !drawBellSprite(ctx, at, swing)) drawBellBody(ctx, at, swing, tinyInk);
   if (Math.abs(swing) > 0.05) {
     // Little sound-lines while it rings (even with sound off, you can see it).
     for (const side of [-1, 1]) {
       for (let i = 0; i < 2; i++) {
         ctx.beginPath();
         ctx.arc(at.x, at.y + 26, 34 + i * 10, side < 0 ? Math.PI * 0.85 : -Math.PI * 0.15, side < 0 ? Math.PI * 1.15 : Math.PI * 0.15);
-        ctx.strokeStyle = alpha(mix(glow, "#FFFFFF", 0.4), Math.min(1, Math.abs(swing) * 2.5));
+        ctx.strokeStyle = alpha(tinyInk ? "#A29C93" : mix(glow, "#FFFFFF", 0.4), Math.min(1, Math.abs(swing) * 2.5));
         ctx.lineWidth = 3;
         ctx.stroke();
       }
@@ -167,10 +203,12 @@ export function drawBell(ctx: Ctx, at: Point, swing: number, glow: string): void
   }
 }
 
-function drawBellBody(ctx: Ctx, at: Point, swing: number): void {
-  const brass = "#E3B341";
-  line(ctx, [{ x: at.x - 18, y: at.y }, { x: at.x + 18, y: at.y }], INK, 8);
-  line(ctx, [{ x: at.x - 18, y: at.y }, { x: at.x + 18, y: at.y }], "#7A5230", 4.5);
+function drawBellBody(ctx: Ctx, at: Point, swing: number, tinyInk = false): void {
+  const brass = tinyInk ? "#FFF3A8" : "#E3B341";
+  const clapper = tinyInk ? "#EAE5DA" : shade(brass, -0.35);
+  const ink = tinyInk ? "#A29C93" : INK;
+  line(ctx, [{ x: at.x - 18, y: at.y }, { x: at.x + 18, y: at.y }], ink, 8);
+  line(ctx, [{ x: at.x - 18, y: at.y }, { x: at.x + 18, y: at.y }], tinyInk ? "#F5F0E2" : "#7A5230", 4.5);
   withTransform(ctx, { x: at.x, y: at.y + 4, rotate: swing }, () => {
     paint(ctx, (c) => {
       c.moveTo(-6, 0);
@@ -180,22 +218,62 @@ function drawBellBody(ctx: Ctx, at: Point, swing: number): void {
       c.quadraticCurveTo(16, 40, 14, 26);
       c.quadraticCurveTo(12, 6, 6, 0);
       c.closePath();
-    }, brass);
-    paint(ctx, (c) => c.ellipse(-6, 22, 3, 10, 0.1, 0, Math.PI * 2), alpha("#FFF6C8", 0.8), { stroke: false });
-    paint(ctx, (c) => circlePath(c, Math.sin(swing * 2) * 6, 50, 5), shade(brass, -0.35));
+    }, brass, { stroke: ink });
+    paint(ctx, (c) => c.ellipse(-6, 22, 3, 10, 0.1, 0, Math.PI * 2), alpha("#FFFFFF", 0.85), { stroke: false });
+    paint(ctx, (c) => circlePath(c, Math.sin(swing * 2) * 6, 50, 5), clapper, { stroke: ink });
+  });
+}
+
+/** Tiny cute hand-drawn Mr. Tiny white bird perched on deck. */
+export function drawDeckCritters(ctx: Ctx, birdAt: Point, _crabAt: Point, frame: FrameInfo): void {
+  const m = frame.reducedMotion ? 0 : 1;
+  const ink = "#8D8D8D";
+  const birdBob = Math.sin(frame.t * 2.4) * 1.2 * m;
+  const blink = !frame.reducedMotion && Math.sin(frame.t * 1.3) > 0.97;
+  withTransform(ctx, { x: birdAt.x, y: birdAt.y + birdBob }, () => {
+    // Clean plump kawaii white bird sitting neatly on the bow edge
+    paint(ctx, (c) => smoothClosedPath(c, [
+      { x: -13, y: -8 },
+      { x: -7, y: -18 },
+      { x: 6, y: -19 },
+      { x: 13, y: -10 },
+      { x: 8, y: 0 },
+      { x: -6, y: 0 },
+    ]), "#FFFFFF", { width: 2.8, stroke: ink });
+    // Wing arc
+    ctx.beginPath();
+    ctx.arc(-2, -10, 6, 0.2, Math.PI * 0.9);
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    // Tiny beak in pastel butter
+    paint(ctx, (c) => {
+      c.moveTo(11, -13);
+      c.lineTo(17, -10.5);
+      c.lineTo(11, -8.5);
+      c.closePath();
+    }, "#FFF3A8", { width: 2.2, stroke: ink });
+    // Eye
+    if (blink) {
+      line(ctx, [{ x: 5, y: -14 }, { x: 9, y: -14 }], ink, 2.2);
+    } else {
+      paint(ctx, (c) => circlePath(c, 7, -14, 2.2), ink, { stroke: false });
+    }
   });
 }
 
 /** A rounded name tag, centered on (x, y). */
-export function drawLabel(ctx: Ctx, text: string, x: number, y: number, scale = 1, tone: "plain" | "ghost" = "plain"): void {
+export function drawLabel(ctx: Ctx, text: string, x: number, y: number, scale = 1, tone: "plain" | "ghost" = "plain", tinyInk = false): void {
   ctx.save();
   ctx.font = `700 ${Math.round(17 * scale)}px ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const w = ctx.measureText(text).width + 18 * scale;
   const h = 26 * scale;
-  paint(ctx, (c) => roundRectPath(c, x - w / 2, y - h / 2, w, h, h / 2), tone === "ghost" ? "rgba(233,236,255,0.75)" : "#FFFDF5", { width: OUTLINE * 0.6 * scale, stroke: INK });
-  ctx.fillStyle = INK;
+  const stroke = tinyInk ? "#A29C93" : INK;
+  paint(ctx, (c) => roundRectPath(c, x - w / 2, y - h / 2, w, h, h / 2), tone === "ghost" ? "rgba(233,236,255,0.75)" : "#FFFDF5", { width: OUTLINE * 0.6 * scale, stroke });
+  ctx.fillStyle = tinyInk ? "#8A8277" : INK;
   ctx.fillText(text, x, y + 1 * scale);
   ctx.restore();
 }

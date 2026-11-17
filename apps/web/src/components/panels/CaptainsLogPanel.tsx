@@ -3,7 +3,7 @@
 // grades it when the sailor has added their own key in Settings; otherwise,
 // or when Gemini can't answer, the offline engine does.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { BLURT_STATUS_COLORS } from "@ship/shared-types";
 import type { BlurtConceptResult, BlurtResult } from "@ship/shared-types";
 import { annotateBlurt, annotateNotes } from "@ship/active-recall-engine";
@@ -15,7 +15,7 @@ import { useRecall } from "../../stores/recallStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { IconLog } from "../icons.js";
-import { Badge, Button, Card, EmptyState, Field, Panel, ProgressBar, Select, Tabs, TextArea, TextInput, cx } from "../ui.js";
+import { Badge, Button, Card, EmptyState, Field, Panel, ProgressBar, Select, Tabs, TextArea, TextInput, cx, readFile } from "../ui.js";
 
 type Step = "notes" | "blurt" | "results";
 
@@ -38,6 +38,7 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<Step>("notes");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
+  const [hashtags, setHashtags] = useState<string[]>([]);
   const [blurt, setBlurt] = useState("");
   const [result, setResult] = useState<BlurtResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,11 +53,18 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
     setResult(graded.result);
     setNotice(graded.notice);
     setStep("results");
-    saveBlurt({ title: title.trim() || "Untitled notes", notes, blurt, coverage: graded.result.coverage, gradedBy: graded.result.gradedBy ?? "heuristic" });
+    saveBlurt({
+      title: title.trim() || "Untitled notes",
+      notes,
+      blurt,
+      coverage: graded.result.coverage,
+      hashtags: hashtags.length > 0 ? hashtags : undefined,
+      gradedBy: graded.result.gradedBy ?? "heuristic",
+    });
   };
 
   return (
-    <Panel title="Captain's Log" subtitle="Blurt everything you remember, then check it against your notes" icon={<IconLog />} onClose={onClose} wide>
+    <Panel title="Study Sheets" subtitle="Upload notes, add #hashtags, and practice active recall" icon={<IconLog />} onClose={onClose} wide>
       <Tabs
         value={tab}
         onChange={setTab}
@@ -67,9 +75,10 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
       />
       {tab === "history" ? (
         <History
-          onOpen={(t, n) => {
+          onOpen={(t, n, nextTags) => {
             setTitle(t);
             setNotes(n);
+            setHashtags(nextTags ?? []);
             setBlurt("");
             setResult(null);
             setStep("notes");
@@ -77,7 +86,7 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
           }}
         />
       ) : step === "notes" ? (
-        <NotesStep title={title} notes={notes} onTitle={setTitle} onNotes={setNotes} onStart={() => setStep("blurt")} />
+        <NotesStep title={title} notes={notes} hashtags={hashtags} onTitle={setTitle} onNotes={setNotes} onHashtags={setHashtags} onStart={() => setStep("blurt")} />
       ) : step === "blurt" ? (
         <BlurtStep title={title} blurt={blurt} onBlurt={setBlurt} onBack={() => setStep("notes")} onCheck={() => void check()} grading={grading} usesGemini={usesGemini} />
       ) : (
@@ -106,9 +115,44 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function NotesStep({ title, notes, onTitle, onNotes, onStart }: { title: string; notes: string; onTitle: (v: string) => void; onNotes: (v: string) => void; onStart: () => void }) {
+function normalizeHashtag(raw: string): string | null {
+  const cleaned = raw.trim().replace(/^#+/, "").replace(/\s+/g, "-");
+  return cleaned ? `#${cleaned}` : null;
+}
+
+function NotesStep({
+  title,
+  notes,
+  hashtags,
+  onTitle,
+  onNotes,
+  onHashtags,
+  onStart,
+}: {
+  title: string;
+  notes: string;
+  hashtags: string[];
+  onTitle: (v: string) => void;
+  onNotes: (v: string) => void;
+  onHashtags: (v: string[]) => void;
+  onStart: () => void;
+}) {
   const imported = useFleet((s) => s.notes);
   const library = useFleet((s) => s.library);
+  const importFiles = useFleet((s) => s.importFiles);
+  const toast = useUi((s) => s.toast);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+
+  const addHashtagsFromInput = (raw: string) => {
+    const parts = raw.split(/[\s,]+/).map(normalizeHashtag).filter((x): x is string => Boolean(x));
+    if (parts.length === 0) return;
+    const merged = Array.from(new Set([...hashtags, ...parts]));
+    onHashtags(merged);
+    setTagDraft("");
+  };
+
   const sources = useMemo<NoteSource[]>(
     () => [
       // PDF and PowerPoint pages keep their real numbers, even when a blank one was left out.
@@ -125,10 +169,59 @@ function NotesStep({ title, notes, onTitle, onNotes, onStart }: { title: string;
     onTitle(from === 0 && to === pages.length - 1 ? source.title : `${source.title} (${range})`);
     onNotes(pages.slice(from, to + 1).map((p) => p.text).join("\n\n"));
   };
+
+  const handleUpload = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    try {
+      const files = await Promise.all(Array.from(fileList).map(readFile));
+      const summary = await importFiles(files);
+      const latestNote = useFleet.getState().notes.at(-1);
+      if (latestNote) {
+        onTitle(latestNote.title);
+        onNotes(latestNote.pages.map((p) => p.text).join("\n\n"));
+      }
+      toast(`Uploaded ${summary.files} file${summary.files === 1 ? "" : "s"} (${summary.notes} note${summary.notes === 1 ? "" : "s"}).`, "reward");
+    } catch {
+      toast("Could not read one of the uploaded files.", "warning");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const words = notes.trim() ? notes.trim().split(/\s+/).length : 0;
+  const blurts = useRecall((s) => s.blurts);
+  const defaultSuggestions = ["#biology", "#math", "#history", "#english", "#unit1", "#unit2", "#chapter1", "#week1", "#student-council"];
+  const knownTags = Array.from(new Set([...blurts.flatMap((b) => b.hashtags ?? []), ...defaultSuggestions]));
+  const tagQuery = tagDraft.trim().replace(/^#+/, "").toLowerCase();
+  const suggestions = knownTags
+    .filter((t) => !hashtags.includes(t) && (!tagQuery || t.toLowerCase().includes(tagQuery)))
+    .slice(0, 6);
+
   return (
     <div className="space-y-3">
-      {sources.length === 0 && <p className="text-sm text-ink/60">Upload files or paste links in the Fleet Log to practice on them here.</p>}
+      {/* Direct file upload inside Study Sheets */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-ink/25 bg-cream-50 px-3.5 py-2.5">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-ink">Upload study sheets</p>
+          <p className="text-xs text-ink/60">PDF, Parchment, Markdown, Word (.docx), PowerPoint (.pptx), or TXT</p>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          accept=".pdf,.md,.txt,.docx,.pptx,.parchment,.csv,.apkg"
+          className="hidden"
+          onChange={(e) => {
+            void handleUpload(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <Button size="sm" variant="secondary" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? "Uploading…" : "Upload file(s)"}
+        </Button>
+      </div>
+
       {sources.length > 0 && (
         <Field label="Use an uploaded file or note">
           <Select
@@ -186,8 +279,61 @@ function NotesStep({ title, notes, onTitle, onNotes, onStart }: { title: string;
       <Field label="Topic">
         <TextInput value={title} onChange={(e) => onTitle(e.target.value)} placeholder="e.g. Cellular respiration" />
       </Field>
+
+      {/* Hashtag tags */}
+      <Field label="Tags" hint="Type hashtags like #bio101 #unit2 #ch4 #week3 and press Space or Enter.">
+        <div className="space-y-2">
+          <TextInput
+            value={tagDraft}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.endsWith(" ") || val.endsWith(",")) addHashtagsFromInput(val);
+              else setTagDraft(val);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addHashtagsFromInput(tagDraft);
+              }
+            }}
+            onBlur={() => addHashtagsFromInput(tagDraft)}
+            placeholder="#class #unit #chapter #week"
+          />
+          {suggestions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-[#8E887F]">Suggestions:</span>
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onHashtags(Array.from(new Set([...hashtags, s])))}
+                  className="bg-transparent px-1.5 py-0.5 text-[#6D655C] hover:underline underline-offset-4"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          {hashtags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {hashtags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => onHashtags(hashtags.filter((t) => t !== tag))}
+                  className="rounded-full bg-[#FFF3A8]/70 px-2.5 py-0.5 text-xs text-[#6D655C] hover:underline"
+                  title="Click to remove tag"
+                >
+                  {tag} ×
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+
       <Field label="Reference notes" hint="Headings, “Term: definition” lines and **bold** words count as key ideas.">
-        <TextArea value={notes} onChange={(e) => onNotes(e.target.value)} className="min-h-56" placeholder="Paste your notes here. Study them, then start blurting." />
+        <TextArea value={notes} onChange={(e) => onNotes(e.target.value)} className="min-h-48" placeholder="Paste your notes here or upload a file above. Study them, then start blurting." />
       </Field>
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-ink/60">{words} words</span>
@@ -415,21 +561,36 @@ function Results({
   );
 }
 
-function History({ onOpen }: { onOpen: (title: string, notes: string) => void }) {
+function History({ onOpen }: { onOpen: (title: string, notes: string, hashtags?: string[]) => void }) {
   const blurts = useRecall((s) => s.blurts);
-  if (!blurts.length) return <EmptyState title="No log entries yet">Your blurts and their scores will be kept here.</EmptyState>;
+  const [filter, setFilter] = useState("");
+  if (!blurts.length) return <EmptyState title="No study entries yet">Your blurts, #hashtags, and scores will be kept here.</EmptyState>;
+  const q = filter.trim().toLowerCase();
+  const visible = [...blurts]
+    .reverse()
+    .filter((b) => {
+      if (!q) return true;
+      const hay = [b.title, ...(b.hashtags ?? [])].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
   return (
-    <ul className="space-y-1.5">
-      {[...blurts].reverse().map((b) => (
-        <li key={b.id}>
-          <button type="button" onClick={() => onOpen(b.title, b.notes)} className="flex w-full items-center gap-3 rounded-xl border-2 border-ink/10 bg-cream-50 px-3 py-2 text-left hover:border-ink/30">
-            <Badge tone={b.coverage >= 0.75 ? "seafoam" : b.coverage >= 0.4 ? "brass" : "coral"}>{Math.round(b.coverage * 100)}%</Badge>
-            <span className="min-w-0 flex-1 truncate font-bold">{b.title}</span>
-            {b.gradedBy === "gemini" && <Badge tone="navy">Gemini</Badge>}
-            <span className="text-xs text-ink/50">{relativeTime(b.at)}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2.5">
+      <TextInput value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by #hashtag or topic…" />
+      <ul className="space-y-1.5">
+        {visible.map((b) => (
+          <li key={b.id}>
+            <button type="button" onClick={() => onOpen(b.title, b.notes, b.hashtags)} className="flex w-full flex-wrap items-center gap-2 rounded-xl bg-cream-50/70 px-3 py-2 text-left hover:underline">
+              <Badge tone={b.coverage >= 0.75 ? "seafoam" : b.coverage >= 0.4 ? "brass" : "coral"}>{Math.round(b.coverage * 100)}%</Badge>
+              <span className="min-w-0 flex-1 truncate">{b.title}</span>
+              {(b.hashtags ?? []).map((tag) => (
+                <Badge key={tag} tone="brass">{tag}</Badge>
+              ))}
+              {b.gradedBy === "gemini" && <Badge tone="navy">Gemini</Badge>}
+              <span className="text-xs text-ink/50">{relativeTime(b.at)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -7,6 +7,7 @@ import { FlashcardsPanel } from "./panels/FlashcardsPanel.js";
 import { FleetLogPanel } from "./panels/FleetLogPanel.js";
 import { HelmPanel } from "./panels/HelmPanel.js";
 import { LookoutPanel } from "./panels/LookoutPanel.js";
+import { PlannerPanel } from "./panels/PlannerPanel.js";
 import { SettingsPanel } from "./panels/SettingsPanel.js";
 import { ShipwrightPanel } from "./panels/ShipwrightPanel.js";
 import { WardrobePanel } from "./panels/WardrobePanel.js";
@@ -17,6 +18,8 @@ export function PanelHost() {
   switch (panel) {
     case "helm":
       return <HelmPanel onClose={close} />;
+    case "planner":
+      return <PlannerPanel onClose={close} />;
     case "log":
       return <CaptainsLogPanel onClose={close} />;
     case "flashcards":

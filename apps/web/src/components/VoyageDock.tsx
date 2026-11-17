@@ -1,127 +1,309 @@
-// The voyage controls at the bottom of the screen: pick a voyage and set
-// sail, then watch the clock, pause, or come back from shore leave.
+// Compact Pwedo Pomo timer pill at the bottom of the Mr. Tiny Studio scene.
 
 import { useEffect, useState } from "react";
-import { DOUBLOONS_PER_FOCUS_MINUTE, VOYAGE_PRESETS } from "@ship/shared-types";
+import { VOYAGE_PRESETS } from "@ship/shared-types";
 import type { VoyagePresetId } from "@ship/shared-types";
-import { formatClock, formatDue } from "../lib/format.js";
+import { formatClock } from "../lib/format.js";
 import { focusProgress, remainingFocusMs } from "../lib/voyageLogic.js";
-import { isDone, sortItinerary, useFleet } from "../stores/fleetStore.js";
+import { PORT_THEMES } from "../ship-engine/tinyInk.js";
+import type { PortThemeId } from "../ship-engine/tinyInk.js";
 import { useSettings } from "../stores/settingsStore.js";
+import type { SoundTrackId } from "../stores/settingsStore.js";
 import { useVoyage } from "../stores/voyageStore.js";
 import { useNow } from "./Hud.js";
-import { Doubloon, IconAnchor, IconPause, IconPlay, IconStop } from "./icons.js";
-import { Button, cx } from "./ui.js";
+import { IconAnchor, IconPause, IconPlay, IconStop } from "./icons.js";
+import { cx } from "./ui.js";
+
+const AUDIO_OPTIONS: { id: SoundTrackId | "off"; label: string }[] = [
+  { id: "off", label: "Audio: Off" },
+  { id: "rain", label: "Rain Drops" },
+  { id: "asmr", label: "ASMR" },
+  { id: "lofi", label: "Lo-fi" },
+  { id: "ocean", label: "Ocean Waves" },
+];
 
 export function VoyageDock() {
   const phase = useVoyage((s) => s.phase);
+  const prepEndsAt = useVoyage((s) => s.prepEndsAt);
+
   return (
-    <section aria-label="Voyage" className="pointer-events-auto relative z-20 w-full max-w-3xl rounded-3xl border-[3px] border-ink bg-cream-100/95 p-3 text-ink shadow-card backdrop-blur sm:absolute sm:inset-x-2 sm:bottom-3 sm:mx-auto">
-      {phase === "docked" ? <Docked /> : <Underway />}
+    <section
+      aria-label="Pwedo Pomo"
+      className="pointer-events-auto relative z-20 flex flex-col items-center gap-1.5"
+    >
+      {phase === "docked" ? (prepEndsAt !== null ? <BearingsPrep /> : <DockedPill />) : <ActivePill />}
+      <a
+        href="#study-materials"
+        className="text-[11px] font-semibold tracking-wide text-[#8E887F] transition hover:text-[#6D655C]"
+      >
+        Scroll for study sheets &amp; task form ↓
+      </a>
     </section>
   );
 }
 
-function Docked() {
-  const presetId = useSettings((s) => s.presetId);
-  const customFocus = useSettings((s) => s.customFocusMinutes);
-  const customBreak = useSettings((s) => s.customBreakMinutes);
-  const set = useSettings((s) => s.set);
-  const start = useVoyage((s) => s.start);
-  const assignments = useFleet((s) => s.assignments);
-  const done = useFleet((s) => s.done);
-  const [objective, setObjective] = useState("");
-  const [assignmentId, setAssignmentId] = useState("");
-
-  const upcoming = sortItinerary(assignments, done).filter((a) => !isDone(a, done)).slice(0, 40);
-
-  const setSail = () => {
-    const picked = upcoming.find((a) => a.id === assignmentId);
-    start({
-      presetId,
-      focusMinutes: presetId === "custom" ? customFocus : undefined,
-      breakMinutes: presetId === "custom" ? customBreak : undefined,
-      objective: objective.trim() || picked?.title || null,
-      assignmentId: picked?.id ?? null,
-    });
-    setObjective("");
-    setAssignmentId("");
-  };
+function BearingsPrep() {
+  const prepEndsAt = useVoyage((s) => s.prepEndsAt);
+  const objective = useVoyage((s) => s.objective);
+  const skipPrep = useVoyage((s) => s.skipPrep);
+  const cancelPrep = useVoyage((s) => s.cancelPrep);
+  const now = useNow(200);
+  const remaining = Math.max(0, (prepEndsAt ?? now) - now);
 
   return (
-    <div className="flex flex-col gap-2.5 md:flex-row md:items-center">
-      <div className="flex shrink-0 gap-1.5" role="radiogroup" aria-label="Voyage length">
-        {(Object.keys(VOYAGE_PRESETS) as VoyagePresetId[]).map((id) => {
-          const p = VOYAGE_PRESETS[id];
-          const focus = id === "custom" ? customFocus : p.focusMinutes;
-          const brk = id === "custom" ? customBreak : p.breakMinutes;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={presetId === id}
-              onClick={() => set({ presetId: id })}
-              className={cx(
-                "rounded-xl border-2 px-2.5 py-1 text-left leading-tight transition",
-                presetId === id ? "border-ink bg-navy-900 text-cream-50" : "border-ink/20 bg-cream-50 hover:border-ink/50",
-              )}
-            >
-              <span className="block font-display text-sm font-extrabold">{p.label.split(" ")[0]}</span>
-              <span className="block text-xs opacity-75 tabular-nums">
-                {focus}/{brk} min
-              </span>
-            </button>
-          );
-        })}
+    <div className="flex flex-wrap items-center gap-3 rounded-full border border-[#A29C93]/60 bg-[#FAF6E8]/95 px-4 py-2 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm">
+      <span className="rounded-full border border-[#A29C93]/45 bg-[#FFF3A8] px-2.5 py-0.5 font-serif text-xs tracking-[0.14em] text-[#5D564E]">
+        Pwedo Pomo
+      </span>
+      <span className="font-display text-sm font-bold tabular-nums">
+        Ready in {formatClock(remaining)}
+        {objective ? ` · ${objective}` : ""}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={cancelPrep}
+          className="rounded-full border border-transparent bg-[#FFFDF7] px-3 py-1 font-serif text-xs font-bold text-[#6D655C] transition hover:border-[#A29C93]/60 hover:bg-[#EFE9DA] hover:underline underline-offset-4 focus:outline-none"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={skipPrep}
+          className="inline-flex items-center gap-1 rounded-full border border-transparent bg-[#FFF3A8] px-3.5 py-1 font-serif text-xs font-extrabold text-[#5D564E] transition hover:border-[#A29C93]/60 hover:bg-[#FCEB8B] hover:underline underline-offset-4 focus:outline-none"
+        >
+          <IconPlay size={13} /> Start now
+        </button>
       </div>
-
-      {presetId === "custom" && (
-        <div className="flex shrink-0 items-center gap-1.5 text-sm font-bold">
-          <input type="number" min={1} max={240} value={customFocus} onChange={(e) => set({ customFocusMinutes: Number(e.target.value) || 1 })} className="w-16 rounded-lg border-2 border-ink/25 bg-cream-50 px-2 py-1" aria-label="Focus minutes" />
-          <span>/</span>
-          <input type="number" min={0} max={60} value={customBreak} onChange={(e) => set({ customBreakMinutes: Math.max(0, Number(e.target.value) || 0) })} className="w-14 rounded-lg border-2 border-ink/25 bg-cream-50 px-2 py-1" aria-label="Break minutes" />
-        </div>
-      )}
-
-      <div className="flex min-w-0 flex-1 gap-1.5">
-        <input
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && setSail()}
-          placeholder="What are you studying?"
-          aria-label="Voyage goal"
-          className="min-w-0 flex-1 rounded-xl border-2 border-ink/25 bg-cream-50 px-3 py-2 focus:border-navy-600 focus:outline-none"
-        />
-        {upcoming.length > 0 && (
-          <select
-            value={assignmentId}
-            onChange={(e) => setAssignmentId(e.target.value)}
-            aria-label="Sail for an assignment"
-            className="w-36 min-w-0 rounded-xl border-2 border-ink/25 bg-cream-50 px-2 py-2 text-sm"
-          >
-            <option value="">Assignment…</option>
-            {upcoming.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.title} · {formatDue(a.dueAt)}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      <Button variant="primary" size="lg" onClick={setSail} title="Set sail (Space)">
-        <IconPlay size={18} />
-        Set sail
-      </Button>
     </div>
   );
 }
 
-function Underway() {
+function DockedPill() {
+  const presetId = useSettings((s) => s.presetId);
+  const customFocus = useSettings((s) => s.customFocusMinutes);
+  const customBreak = useSettings((s) => s.customBreakMinutes);
+  const portTheme = useSettings((s) => s.portTheme);
+  const pomodoroCycles = useSettings((s) => s.pomodoroCycles);
+  const soundOn = useSettings((s) => s.soundOn);
+  const soundTrack = useSettings((s) => s.soundTrack);
+  const set = useSettings((s) => s.set);
+
+  const start = useVoyage((s) => s.start);
+  const [objective, setObjective] = useState("");
+  const [showOptions, setShowOptions] = useState(false);
+  const [tinyMethod, setTinyMethod] = useState(
+    () => presetId === "custom" && customFocus === 50 && customBreak === 10 && pomodoroCycles === 3,
+  );
+
+  const activePreset = VOYAGE_PRESETS[presetId];
+  const focusMin = presetId === "custom" ? customFocus : activePreset.focusMinutes;
+
+  const selectPreset = (id: VoyagePresetId) => {
+    setTinyMethod(false);
+    set({ presetId: id });
+  };
+
+  const selectTinyMethod = () => {
+    setTinyMethod(true);
+    set({
+      presetId: "custom",
+      customFocusMinutes: 50,
+      customBreakMinutes: 10,
+      pomodoroCycles: 3,
+    });
+  };
+
+  const depart = () => {
+    start({
+      presetId,
+      focusMinutes: presetId === "custom" ? customFocus : undefined,
+      breakMinutes: presetId === "custom" ? customBreak : undefined,
+      cycles: pomodoroCycles,
+      prep: true,
+      objective: objective.trim() || null,
+      assignmentId: null,
+    });
+    setObjective("");
+    setShowOptions(false);
+  };
+
+  return (
+    <div className="relative flex flex-col items-center">
+      {showOptions && (
+        <div className="mb-2.5 flex w-[min(92vw,430px)] flex-col gap-2.5 rounded-2xl border border-[#A29C93]/60 bg-[#FAF6E8]/98 p-3.5 text-xs text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => selectPreset("coastal")}
+              className={cx(
+                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                !tinyMethod && presetId === "coastal"
+                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
+                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+              )}
+            >
+              25/5
+            </button>
+            <button
+              type="button"
+              onClick={() => selectPreset("ocean")}
+              className={cx(
+                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                !tinyMethod && presetId === "ocean"
+                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
+                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+              )}
+            >
+              50/10
+            </button>
+            <button
+              type="button"
+              onClick={selectTinyMethod}
+              className={cx(
+                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                tinyMethod
+                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
+                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+              )}
+            >
+              50/40/30 Tiny Method
+            </button>
+            <button
+              type="button"
+              onClick={() => selectPreset("custom")}
+              className={cx(
+                "rounded-xl border px-2.5 py-1 font-bold transition focus:outline-none",
+                !tinyMethod && presetId === "custom"
+                  ? "border-[#A29C93]/70 bg-[#FFF3A8] text-[#5D564E]"
+                  : "border-[#A29C93]/45 bg-[#FFFDF7] hover:bg-[#F3EDE0]",
+              )}
+            >
+              Custom
+            </button>
+          </div>
+
+          {presetId === "custom" && !tinyMethod && (
+            <div className="flex items-center gap-2 font-bold">
+              <span>Custom:</span>
+              <input
+                type="number"
+                min={1}
+                max={240}
+                value={customFocus}
+                onChange={(e) => set({ customFocusMinutes: Math.max(1, Number(e.target.value) || 1) })}
+                className="w-14 rounded-lg border border-[#A29C93]/55 bg-[#FFFDF7] px-2 py-1 text-center focus:outline-none"
+                aria-label="Focus minutes"
+              />
+              <span>/</span>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={customBreak}
+                onChange={(e) => set({ customBreakMinutes: Math.max(0, Number(e.target.value) || 0) })}
+                className="w-14 rounded-lg border border-[#A29C93]/55 bg-[#FFFDF7] px-2 py-1 text-center focus:outline-none"
+                aria-label="Break minutes"
+              />
+              <span>min</span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <label className="flex items-center gap-1 rounded-xl border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 font-bold">
+              <span>Cycles:</span>
+              <select
+                aria-label="Pwedo Pomo cycles"
+                value={pomodoroCycles}
+                onChange={(e) => set({ pomodoroCycles: Number(e.target.value) })}
+                className="bg-transparent font-bold focus:outline-none"
+              >
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    {n}x
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex items-center gap-1 rounded-xl border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 font-bold">
+              <span>Scene:</span>
+              <select
+                aria-label="Port theme"
+                value={portTheme}
+                onChange={(e) => set({ portTheme: e.target.value as PortThemeId })}
+                className="bg-transparent font-bold focus:outline-none"
+              >
+                {(Object.keys(PORT_THEMES) as PortThemeId[]).map((id) => (
+                  <option key={id} value={id}>
+                    {PORT_THEMES[id].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <select
+              aria-label="Relaxing audio"
+              value={soundOn ? soundTrack : "off"}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "off") set({ soundOn: false });
+                else set({ soundOn: true, soundTrack: val as SoundTrackId });
+              }}
+              className="rounded-xl border border-[#A29C93]/45 bg-[#FFFDF7] px-2 py-1 font-bold focus:outline-none"
+            >
+              {AUDIO_OPTIONS.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-center gap-2 rounded-full border border-[#A29C93]/60 bg-[#FAF6E8]/95 px-3 py-1.5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm sm:flex-nowrap sm:px-3.5">
+        <button
+          type="button"
+          onClick={() => setShowOptions((v) => !v)}
+          className="flex items-center gap-2 rounded-full border border-transparent bg-[#FFFDF7] px-3 py-1 font-serif text-xs text-[#6D655C] transition hover:border-[#A29C93]/60 hover:bg-[#F3EDE0] hover:underline underline-offset-4 focus:outline-none"
+          title="Configure Pwedo Pomo timer & audio"
+        >
+          <span className="font-serif tracking-[0.14em]">Pwedo Pomo</span>
+          <span className="font-display text-xs font-extrabold text-[#5D564E] tabular-nums">
+            {focusMin}:00
+          </span>
+        </button>
+
+        <input
+          value={objective}
+          onChange={(e) => setObjective(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && depart()}
+          placeholder="What are you focusing on?"
+          aria-label="Focus task"
+          className="w-40 bg-transparent px-1.5 text-sm font-medium text-[#6D655C] placeholder:text-[#A29C93] focus:outline-none sm:w-52"
+        />
+
+        <button
+          type="button"
+          onClick={depart}
+          title="Start Pwedo Pomo (Space)"
+          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-[#FFF3A8] px-3.5 py-1 font-serif text-sm font-extrabold text-[#5D564E] transition hover:border-[#A29C93]/60 hover:bg-[#FCEB8B] hover:underline underline-offset-4 focus:outline-none"
+        >
+          <IconPlay size={14} />
+          <span>Depart</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ActivePill() {
   const v = useVoyage();
   const now = useNow(250);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [taskDraft, setTaskDraft] = useState("");
+
   useEffect(() => {
     if (!confirmEnd) return;
     const t = setTimeout(() => setConfirmEnd(false), 4000);
@@ -132,58 +314,124 @@ function Underway() {
   const drifting = v.phase === "drifting";
   const remaining = ashore ? Math.max(0, (v.breakEndsAt ?? now) - now) : remainingFocusMs(v, now);
   const progress = ashore ? 1 - remaining / Math.max(1, v.breakMinutes * 60_000) : focusProgress(v, now);
-  const earned = v.paidMinutes * DOUBLOONS_PER_FOCUS_MINUTE;
+  const roundLabel = `${Math.min(v.cyclesCompleted + (ashore ? 0 : 1), v.cyclesTotal)}/${v.cyclesTotal}`;
 
-  const status = ashore ? "Shore leave" : drifting ? (v.pausedReason === "idle" ? "Drifting: you stepped away" : "Anchored (paused)") : "Under sail";
+  const addQuickTask = () => {
+    if (!taskDraft.trim()) return;
+    v.addSessionTask(taskDraft.trim());
+    setTaskDraft("");
+  };
 
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-      <div className="flex items-center gap-3">
-        <div className={cx("font-display text-4xl font-extrabold tabular-nums sm:text-5xl", ashore ? "text-seafoam-700" : drifting ? "text-ink/50" : "text-navy-900")} aria-live="off">
-          {formatClock(remaining)}
+    <div className="flex flex-col items-center gap-1.5">
+      {v.sessionTasks.length > 0 && (
+        <div className="flex max-w-[92vw] flex-wrap items-center justify-center gap-1.5">
+          {v.sessionTasks.map((t) => (
+            <label
+              key={t.id}
+              className={cx(
+                "flex cursor-pointer items-center gap-1.5 rounded-full border border-[#A29C93]/45 bg-[#FFFDF7]/92 px-2.5 py-0.5 text-xs font-semibold text-[#6D655C] transition",
+                t.done && "line-through opacity-55",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={t.done}
+                onChange={() => v.toggleSessionTask(t.id)}
+                className="accent-[#8E887F]"
+              />
+              <span className="max-w-36 truncate">{t.text}</span>
+            </label>
+          ))}
         </div>
-        <div className="min-w-0 sm:hidden">
-          <p className="font-display text-sm font-extrabold">{status}</p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-center gap-2.5 rounded-full border border-[#A29C93]/60 bg-[#FAF6E8]/95 px-3.5 py-1.5 text-[#6D655C] shadow-[3px_3px_0_#EAE5DA] backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <span
+            className={cx(
+              "rounded-full border border-[#A29C93]/40 px-2.5 py-0.5 font-serif text-[11px] tracking-[0.12em]",
+              ashore ? "bg-[#E2F3EC] text-[#457263]" : drifting ? "bg-[#EFECE5] text-[#8E887F]" : "bg-[#FFF3A8] text-[#5D564E]",
+            )}
+          >
+            Pwedo Pomo · {ashore ? "Break" : drifting ? "Paused" : "Focus"} {roundLabel}
+          </span>
+          <span
+            className={cx(
+              "font-display text-lg font-extrabold tabular-nums",
+              ashore ? "text-[#457263]" : drifting ? "text-[#8E887F]" : "text-[#5D564E]",
+            )}
+            aria-live="off"
+          >
+            {formatClock(remaining)}
+          </span>
         </div>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="hidden truncate font-display font-extrabold sm:block">
-            {status}
-            {v.objective && <span className="font-body font-semibold text-ink/70"> · {v.objective}</span>}
-          </p>
-          {!ashore && (
-            <span className="flex shrink-0 items-center gap-1 text-sm font-bold tabular-nums" title="Doubloons earned this voyage">
-              <Doubloon size={16} /> {earned}
-            </span>
+
+        <div className="hidden h-2 w-20 overflow-hidden rounded-full bg-[#EAE5DA] sm:block">
+          <div
+            className={cx(
+              "h-full rounded-full transition-[width] duration-300",
+              ashore ? "bg-[#7FC8B2]" : drifting ? "bg-[#B8B0A4]" : "bg-[#F2D27A]",
+            )}
+            style={{ width: `${Math.round(progress * 1000) / 10}%` }}
+          />
+        </div>
+
+        <input
+          value={taskDraft}
+          onChange={(e) => setTaskDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addQuickTask()}
+          placeholder="+ quick task..."
+          aria-label="Add quick task"
+          className="w-28 border-b border-[#A29C93]/45 bg-transparent px-1 py-0.5 text-xs text-[#6D655C] placeholder:text-[#A29C93] focus:border-[#A29C93] focus:outline-none sm:w-32"
+        />
+
+        <div className="flex items-center gap-1.5">
+          {ashore ? (
+            <button
+              type="button"
+              onClick={v.endBreak}
+              className="inline-flex items-center gap-1 rounded-full border border-[#A29C93]/60 bg-[#E2F3EC] px-3 py-1 text-xs font-extrabold text-[#457263] transition hover:bg-[#D4ECE2] focus:outline-none"
+            >
+              <IconAnchor size={14} />
+              {v.cyclesCompleted < v.cyclesTotal ? "Next round" : "Finish"}
+            </button>
+          ) : (
+            <>
+              {drifting ? (
+                <button
+                  type="button"
+                  onClick={v.resume}
+                  title="Resume (Space)"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#A29C93]/60 bg-[#E2F3EC] px-3 py-1 text-xs font-extrabold text-[#457263] transition hover:bg-[#D4ECE2] focus:outline-none"
+                >
+                  <IconPlay size={13} /> Resume
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => v.pause("manual")}
+                  title="Pause (Space)"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#A29C93]/55 bg-[#FFFDF7] px-3 py-1 text-xs font-bold text-[#6D655C] transition hover:bg-[#EFE9DA] focus:outline-none"
+                >
+                  <IconPause size={13} /> Pause
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => (confirmEnd ? (setConfirmEnd(false), v.abandon()) : setConfirmEnd(true))}
+                className={cx(
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold transition focus:outline-none",
+                  confirmEnd
+                    ? "border-[#D89A90] bg-[#FDE8E4] text-[#8A4A40]"
+                    : "border-[#A29C93]/50 bg-[#FFFDF7] text-[#8E887F] hover:text-[#6D655C]",
+                )}
+              >
+                <IconStop size={12} /> {confirmEnd ? "Confirm?" : "End"}
+              </button>
+            </>
           )}
         </div>
-        <div className="mt-1.5 h-3 overflow-hidden rounded-full border-2 border-ink/30 bg-ink/10">
-          <div className={cx("h-full rounded-full transition-[width] duration-300", ashore ? "bg-seafoam-500" : drifting ? "bg-ink/30" : "bg-brass-400")} style={{ width: `${Math.round(progress * 1000) / 10}%` }} />
-        </div>
-        {v.objective && <p className="mt-1 truncate text-sm text-ink/70 sm:hidden">{v.objective}</p>}
-      </div>
-      <div className="flex shrink-0 gap-1.5">
-        {ashore ? (
-          <Button variant="primary" onClick={v.endBreak}>
-            <IconAnchor size={18} /> Back to the helm
-          </Button>
-        ) : (
-          <>
-            {drifting ? (
-              <Button variant="seafoam" onClick={v.resume} title="Resume (Space)">
-                <IconPlay size={18} /> Sail on
-              </Button>
-            ) : (
-              <Button onClick={() => v.pause("manual")} title="Pause (Space)">
-                <IconPause size={18} /> Anchor
-              </Button>
-            )}
-            <Button variant={confirmEnd ? "danger" : "secondary"} onClick={() => (confirmEnd ? (setConfirmEnd(false), v.abandon()) : setConfirmEnd(true))}>
-              <IconStop size={16} /> {confirmEnd ? "End? The tree will wilt" : "End"}
-            </Button>
-          </>
-        )}
       </div>
     </div>
   );

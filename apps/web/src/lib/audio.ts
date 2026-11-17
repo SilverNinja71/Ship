@@ -2,13 +2,25 @@
 // a rolling-sea ambience and bell chimes. Nothing here runs until the sailor
 // turns sound on, and the AudioContext is only created then.
 
+import type { SoundTrackId } from "../stores/settingsStore.js";
+
 export type ChimeKind = "bell" | "shore-leave" | "set-sail";
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private ambience: { source: AudioBufferSourceNode; gain: GainNode; lfo: OscillatorNode } | null = null;
+  private ambience: { stop: () => void; gain: GainNode } | null = null;
   private volume = 0.35;
+  private track: SoundTrackId = "rain";
+
+  setTrack(track: SoundTrackId): void {
+    if (this.track === track) return;
+    this.track = track;
+    if (this.ambience) {
+      this.stopAmbience();
+      this.startAmbience();
+    }
+  }
 
   private context(): AudioContext {
     if (!this.ctx) {
@@ -30,41 +42,81 @@ class SoundEngine {
   startAmbience(): void {
     if (this.ambience) return;
     const ctx = this.context();
-    // Brown noise: a random walk, which sounds like distant surf once low-passed.
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.gain.setTargetAtTime(this.volume * 0.5, ctx.currentTime, 1.0);
+    gain.connect(this.master!);
+
     const buffer = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < data.length; i++) {
-      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
-      data[i] = last * 3.5;
+
+    if (this.track === "rain" || this.track === "asmr") {
+      // Pink-ish noise for soft rain or ASMR paper/firelight texture.
+      let b0 = 0, b1 = 0, b2 = 0;
+      for (let i = 0; i < data.length; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.997 * b0 + white * 0.029;
+        b1 = 0.985 * b1 + white * 0.032;
+        b2 = 0.950 * b2 + white * 0.048;
+        const crackle = this.track === "asmr" && Math.random() < 0.0006 ? (Math.random() * 2 - 1) * 0.35 : 0;
+        data[i] = (b0 + b1 + b2 + white * 0.03) * 0.75 + crackle;
+      }
+    } else {
+      let last = 0;
+      for (let i = 0; i < data.length; i++) {
+        last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+        data[i] = last * 3.5;
+      }
     }
+
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
+
     const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = 520;
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    gain.gain.setTargetAtTime(this.volume * 0.5, ctx.currentTime, 1.5);
-    // A slow swell, like waves rolling in every ~11 seconds.
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.09;
-    const lfoDepth = ctx.createGain();
-    lfoDepth.gain.value = 260;
-    lfo.connect(lfoDepth).connect(filter.frequency);
-    source.connect(filter).connect(gain).connect(this.master!);
+    filter.type = this.track === "rain" ? "bandpass" : "lowpass";
+    filter.frequency.value = this.track === "rain" ? 1150 : this.track === "asmr" ? 1600 : this.track === "lofi" ? 340 : 520;
+    if (this.track === "rain") filter.Q.value = 0.55;
+
+    const extraOscs: OscillatorNode[] = [];
+    if (this.track === "ocean") {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.09;
+      const lfoDepth = ctx.createGain();
+      lfoDepth.gain.value = 260;
+      lfo.connect(lfoDepth).connect(filter.frequency);
+      lfo.start();
+      extraOscs.push(lfo);
+    } else if (this.track === "lofi") {
+      // Soft warm Cmaj7 hum beneath vinyl warmth.
+      for (const freq of [130.81, 164.81, 196.0, 246.94]) {
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const og = ctx.createGain();
+        og.gain.value = 0.055;
+        osc.connect(og).connect(gain);
+        osc.start();
+        extraOscs.push(osc);
+      }
+    }
+
+    source.connect(filter).connect(gain);
     source.start();
-    lfo.start();
-    this.ambience = { source, gain, lfo };
+
+    this.ambience = {
+      gain,
+      stop: () => {
+        gain.gain.setTargetAtTime(0, ctx.currentTime, 0.35);
+        source.stop(ctx.currentTime + 1.6);
+        for (const o of extraOscs) o.stop(ctx.currentTime + 1.6);
+      },
+    };
   }
 
   stopAmbience(): void {
     if (!this.ambience || !this.ctx) return;
-    const { source, gain, lfo } = this.ambience;
-    gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
-    source.stop(this.ctx.currentTime + 2);
-    lfo.stop(this.ctx.currentTime + 2);
+    this.ambience.stop();
     this.ambience = null;
   }
 

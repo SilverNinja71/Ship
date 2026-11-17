@@ -65,8 +65,41 @@ export function surfaceAt(x: number, geo: SeaGeometry, frame: FrameInfo): number
   return (waveY(1, x, geo, frame) + waveY(2, x, geo, frame)) / 2 - LAYERS[1].offset * geo.unit * 0.5 - LAYERS[2].offset * geo.unit * 0.5;
 }
 
-export function drawSky(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+export function drawSky(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo, tinyInk = false): void {
   const { width: w, height: h } = geo;
+  if (tinyInk) {
+    ctx.fillStyle = "#FAF6E8";
+    ctx.fillRect(0, 0, w, h);
+    if (env.celestial !== "none") {
+      const cx = w * 0.82;
+      const cy = Math.min(geo.seaY * 0.3, h * 0.2);
+      const r = Math.max(24, geo.unit * 46);
+      paint(ctx, (c) => circlePath(c, cx + 3 * geo.unit, cy + 3 * geo.unit, r), "#EAE5DA", { stroke: false });
+      paint(ctx, (c) => circlePath(c, cx, cy, r), env.celestial === "sun" ? "#FFF3A8" : "#F3EFE2", {
+        width: Math.max(1.8, 2.4 * geo.unit),
+        stroke: "#A29C93",
+      });
+      if (env.celestial === "sun") {
+        ctx.save();
+        ctx.strokeStyle = alpha("#A29C93", 0.65);
+        ctx.lineWidth = Math.max(1.5, 2 * geo.unit);
+        ctx.lineCap = "round";
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2 + frame.t * motion(frame) * 0.04;
+          const r1 = r * 1.24;
+          const r2 = r * (k % 2 === 0 ? 1.48 : 1.38);
+          const midR = (r1 + r2) / 2;
+          const wob = (k % 2 === 0 ? 0.06 : -0.06);
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+          ctx.quadraticCurveTo(cx + Math.cos(a + wob) * midR, cy + Math.sin(a + wob) * midR, cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    return;
+  }
   if (drawSkySprite(ctx, env.id, w, h)) return;
   ctx.fillStyle = linearGradient(ctx, 0, 0, 0, geo.seaY, [
     [0, env.skyTop],
@@ -350,7 +383,33 @@ export function drawScenery(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, f
   ctx.restore();
 }
 
-export function drawClouds(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+export function drawClouds(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo, tinyInk = false): void {
+  if (tinyInk) {
+    const rand = rng(env.id.length * 7 + 3);
+    const count = 5;
+    const span = geo.width + 360 * geo.unit;
+    for (let i = 0; i < count; i++) {
+      const depth = 0.55 + rand() * 0.45;
+      const speed = (6 + rand() * 6) * depth * motion(frame);
+      const x = ((rand() * span + frame.t * speed * geo.unit) % span) - 180 * geo.unit;
+      const y = geo.seaY * (0.14 + rand() * 0.36);
+      const s = geo.unit * (0.7 + depth * 0.55);
+      const traceCloud = (c: Ctx, ox: number, oy: number) => {
+        c.moveTo(x + ox - 56 * s, y + oy + 16 * s);
+        c.bezierCurveTo(x + ox - 74 * s, y + oy + 16 * s, x + ox - 74 * s, y + oy - 14 * s, x + ox - 44 * s, y + oy - 14 * s);
+        c.bezierCurveTo(x + ox - 36 * s, y + oy - 42 * s, x + ox + 4 * s, y + oy - 46 * s, x + ox + 16 * s, y + oy - 22 * s);
+        c.bezierCurveTo(x + ox + 44 * s, y + oy - 28 * s, x + ox + 72 * s, y + oy - 8 * s, x + ox + 58 * s, y + oy + 16 * s);
+        c.closePath();
+      };
+      // Soft grey drop shadow, then single unified cloud silhouette (no overlapping circle lines).
+      paint(ctx, (c) => traceCloud(c, 3 * s, 4 * s), "#EAE5DA", { stroke: false });
+      paint(ctx, (c) => traceCloud(c, 0, 0), "#FFFDF8", {
+        width: Math.max(1.6, 2.2 * geo.unit),
+        stroke: alpha("#A29C93", 0.75),
+      });
+    }
+    return;
+  }
   if (drawCloudSprite(ctx, env.id, geo.width, geo.seaY, frame.t * motion(frame) * 8 * geo.unit)) return;
   const rand = rng(env.id.length * 7 + 3);
   const count = 7;
@@ -378,8 +437,8 @@ export function drawClouds(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, fr
       ctx.arc(x + p.x * s, y + p.y * s, p.r * s, 0, Math.PI * 2);
     }
     ctx.fill();
-    // A soft shadow along the underside gives them some volume.
-    ctx.fillStyle = shade(color, -0.07);
+    // A soft shadow along the underside gives them some volume without harsh outlines.
+    ctx.fillStyle = shade(color, -0.05);
     ctx.beginPath();
     ctx.ellipse(x, y + 22 * s, 78 * s, 12 * s, 0, 0, Math.PI);
     ctx.fill();
@@ -411,7 +470,27 @@ function cloudCrest(ctx: Ctx, i: number, geo: SeaGeometry, frame: FrameInfo, col
 }
 
 /** The far and middle wave layers, drawn behind the ship. */
-export function drawSeaBack(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+export function drawSeaBack(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo, tinyInk = false): void {
+  if (tinyInk) {
+    const step = Math.max(8, geo.width / 120);
+    ctx.beginPath();
+    layerPath(ctx, 1, geo, frame, geo.height + 10);
+    ctx.fillStyle = "#F4EFE2";
+    ctx.fill();
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(1.4, 1.8 * geo.unit);
+    ctx.strokeStyle = alpha("#A29C93", 0.45);
+    ctx.beginPath();
+    for (let x = -10; x <= geo.width + 10; x += step) {
+      const y = waveY(1, x, geo, frame);
+      if (x === -10) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   if (drawWaveSprites(ctx, env.id, waveBands(geo, frame), 0, 1, geo.unit, geo.width, geo.height)) return;
   for (let i = 0; i < 2; i++) {
     const color = env.cloudSea ? mix(env.sea[i], env.skyBottom, 0.25 - i * 0.1) : env.sea[i];
@@ -458,7 +537,40 @@ function drawGlints(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: Fr
 }
 
 /** The near wave layer, drawn in front of the hull so the ship sits in the water. */
-export function drawSeaFront(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo): void {
+export function drawSeaFront(ctx: Ctx, env: EnvironmentTheme, geo: SeaGeometry, frame: FrameInfo, tinyInk = false): void {
+  if (tinyInk) {
+    const i = 2;
+    const step = Math.max(6, geo.width / 140);
+    ctx.beginPath();
+    layerPath(ctx, i, geo, frame, geo.height + 10);
+    ctx.fillStyle = "#EFEAE0";
+    ctx.fill();
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(1.8, 2.4 * geo.unit);
+    ctx.strokeStyle = "#A29C93";
+    ctx.beginPath();
+    for (let x = -10; x <= geo.width + 10; x += step) {
+      const y = waveY(i, x, geo, frame);
+      if (x === -10) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Gentle minimal wave ripple lines in soft grey
+    ctx.strokeStyle = alpha("#A29C93", 0.5);
+    ctx.lineWidth = Math.max(1.2, 1.6 * geo.unit);
+    for (let x = 36 * geo.unit; x < geo.width; x += 150 * geo.unit) {
+      const y = waveY(i, x, geo, frame) + 28 * geo.unit;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + 22 * geo.unit, y - 4 * geo.unit, x + 44 * geo.unit, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
   if (drawWaveSprites(ctx, env.id, waveBands(geo, frame), 2, 2, geo.unit, geo.width, geo.height)) return;
   const i = 2;
   const color = env.cloudSea ? mix(env.sea[i], "#FFFFFF", 0.15) : env.sea[i];

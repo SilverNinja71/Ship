@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { newId } from "../lib/ids.js";
 
-export type PanelId = "helm" | "log" | "flashcards" | "shipwright" | "wardrobe" | "crew" | "fleet" | "lookout" | "settings";
+export type PanelId = "helm" | "planner" | "log" | "flashcards" | "shipwright" | "wardrobe" | "crew" | "fleet" | "lookout" | "settings";
 
 export type ToastTone = "reward" | "info" | "warning";
 

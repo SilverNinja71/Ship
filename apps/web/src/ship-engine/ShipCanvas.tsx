@@ -16,10 +16,13 @@ import { useVoyage } from "../stores/voyageStore.js";
 import { shipLayout } from "../ships/index.js";
 import { drawRegions, hitTest } from "./hitRegions.js";
 import type { HitId, HitRegion } from "./hitRegions.js";
+import { setHandDrawnMode } from "./draw.js";
 import { ParticleField } from "./ParticleFX.js";
 import { renderQuarters } from "./QuartersRenderer.js";
 import { renderDeck } from "./ShipRenderer.js";
+import { renderStudyDeskScene } from "./StudySceneRenderer.js";
 import { sprites } from "./sprites/store.js";
+import { drawPaperTexture } from "./tinyInk.js";
 import type { CrewOnDeck, Viewport } from "./ShipRenderer.js";
 import type { FrameInfo } from "./types.js";
 
@@ -121,46 +124,58 @@ export function ShipCanvas() {
 
       const frame: FrameInfo = { t: s.t, dt, reducedMotion: reduced, wind: s.wind };
       const me = { avatar, state: myAvatarState(voyage.phase, idle, hidden) };
+      const tinyInk = settings.visualStyle === "tiny-ink";
+      setHandDrawnMode(tinyInk);
 
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       let regions: HitRegion[] = [];
 
       if (s.view < 1) {
-        const others = crew.members.filter((m) => m.peerId !== crew.peerId).sort((a, b) => a.seat - b.seat);
-        const onDeck: CrewOnDeck[] = others.map((m) => ({ id: m.peerId, name: m.name, avatar: m.avatar, state: m.state, ghost: false }));
-        for (const g of absentGhosts(crew.ghosts, crew.members)) {
-          onDeck.push({ id: g.id, name: g.name, avatar: g.avatar, state: ghostStateAt(g, s.t + g.recordedAt / 1000), ghost: true });
+        if (tinyInk && voyage.phase === "sailing") {
+          renderStudyDeskScene(ctx, view, frame, {
+            portTheme: settings.portTheme,
+            objective: voyage.objective,
+          });
+        } else {
+          const others = crew.members.filter((m) => m.peerId !== crew.peerId).sort((a, b) => a.seat - b.seat);
+          const onDeck: CrewOnDeck[] = others.map((m) => ({ id: m.peerId, name: m.name, avatar: m.avatar, state: m.state, ghost: false }));
+          for (const g of absentGhosts(crew.ghosts, crew.members)) {
+            onDeck.push({ id: g.id, name: g.name, avatar: g.avatar, state: ghostStateAt(g, s.t + g.recordedAt / 1000), ghost: true });
+          }
+          const out = renderDeck(
+            ctx,
+            view,
+            frame,
+            {
+              ship,
+              loadout,
+              env,
+              me,
+              crew: onDeck,
+              tree: { state: voyage.tree.state, fruit: voyage.tree.fruit, progress: focusProgress(voyage, nowMs), shake: s.t - s.harvestedAt },
+              helmAngle: s.helmAngle,
+              bellSwing,
+              tinyInk,
+            },
+            shipLayout(ship),
+          );
+          s.treeAt = out.treeAt;
+          s.unit = out.unit;
+          particles.current.emit(ship.particles, out.emitter, dt, reduced);
+          particles.current.update(dt, view.height);
+          particles.current.draw(ctx);
+          regions = out.regions;
         }
-        const out = renderDeck(
-          ctx,
-          view,
-          frame,
-          {
-            ship,
-            loadout,
-            env,
-            me,
-            crew: onDeck,
-            tree: { state: voyage.tree.state, fruit: voyage.tree.fruit, progress: focusProgress(voyage, nowMs), shake: s.t - s.harvestedAt },
-            helmAngle: s.helmAngle,
-            bellSwing,
-          },
-          shipLayout(ship),
-        );
-        s.treeAt = out.treeAt;
-        s.unit = out.unit;
-        particles.current.emit(ship.particles, out.emitter, dt, reduced);
-        particles.current.update(dt, view.height);
-        particles.current.draw(ctx);
-        regions = out.regions;
       }
       if (s.view > 0) {
         ctx.save();
         ctx.globalAlpha = s.view;
-        const quarterRegions = renderQuarters(ctx, view, frame, { ship, loadout, env, me });
+        const quarterRegions = renderQuarters(ctx, view, frame, { ship, loadout, env, me, tinyInk });
         ctx.restore();
         if (s.view >= 0.5) regions = quarterRegions;
       }
+
+      if (tinyInk) drawPaperTexture(ctx, view.width, view.height);
 
       s.regions = regions;
       if (settings.showHitRegions) drawRegions(ctx, regions, s.hover);

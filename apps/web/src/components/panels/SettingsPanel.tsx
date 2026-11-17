@@ -10,7 +10,7 @@ import { browserFetch } from "../../lib/network.js";
 import { clearNotes, saveNotes } from "../../lib/noteVault.js";
 import { useFleet } from "../../stores/fleetStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
-import type { MotionPreference } from "../../stores/settingsStore.js";
+import type { MotionPreference, VisualStyle } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { PANELS } from "../Hud.js";
 import { IconGear } from "../icons.js";
@@ -92,6 +92,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         </Card>
 
         <GeminiCard />
+
+        <Card>
+          <h3 className="mb-2 font-display font-extrabold">Appearance</h3>
+          <Field label="Visual style" hint="Ink & Paper draws the ship in cozy black-and-white with occasional pops of color.">
+            <Select value={s.visualStyle} onChange={(e) => s.set({ visualStyle: e.target.value as VisualStyle })}>
+              <option value="tiny-ink">Ink &amp; Paper (Mr. Tiny)</option>
+              <option value="storybook">Full Color (Storybook)</option>
+            </Select>
+          </Field>
+        </Card>
 
         <Card>
           <h3 className="mb-2 font-display font-extrabold">Motion</h3>

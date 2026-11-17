@@ -16,6 +16,8 @@ import { drawClouds, drawLightShafts, drawMist, drawScenery, drawSeaBack, drawSe
 import type { Viewport } from "./ShipRenderer.js";
 import { drawSprite } from "./sprites/paint.js";
 import { sprites } from "./sprites/store.js";
+import { drawPastelMinion } from "./minions.js";
+import { toTinyInkAvatar, toTinyInkEnv, toTinyInkShip } from "./tinyInk.js";
 import type { Ctx, FrameInfo } from "./types.js";
 
 export interface QuartersScene {
@@ -23,6 +25,7 @@ export interface QuartersScene {
   loadout: ShipLoadout;
   env: EnvironmentTheme;
   me: { avatar: AvatarLoadout; state: AvatarState };
+  tinyInk?: boolean;
 }
 
 const ROOM_W = 1000;
@@ -31,13 +34,22 @@ const FLOOR = 540;
 const STATION_SCALE = 2.05;
 const PORTHOLE = CABIN_PORTHOLE;
 
-export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, scene: QuartersScene): HitRegion[] {
+export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, rawScene: QuartersScene): HitRegion[] {
+  const tiny = Boolean(rawScene.tinyInk);
+  const scene: QuartersScene = tiny
+    ? {
+        ...rawScene,
+        env: toTinyInkEnv(rawScene.env),
+        ship: toTinyInkShip(rawScene.ship),
+        me: { ...rawScene.me, avatar: toTinyInkAvatar(rawScene.me.avatar) },
+      }
+    : rawScene;
   const { env, ship } = scene;
   const availH = Math.max(200, view.height - view.insetTop - view.insetBottom * 0.6);
   const u = clamp(Math.min(view.width / ROOM_W, availH / ROOM_H), 0.25, 2.2);
   const ox = (view.width - ROOM_W * u) / 2;
   const oy = view.insetTop + (availH - ROOM_H * u) / 2;
-  const wood = mix("#8A5A36", ship.palette.hullDark, 0.18);
+  const wood = tiny ? "#F3EFE6" : mix("#8A5A36", ship.palette.hullDark, 0.18);
   const regions: HitRegion[] = [];
 
   // Walls fill the whole screen, so wide windows never show a gap.
@@ -56,18 +68,30 @@ export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, scene
   } else {
     drawWall(ctx, wood, view, ox, oy, u);
     drawPorthole(ctx, env, frame, u, ox, oy, view.dpr);
-    drawBookshelf(ctx, ship.id);
-    drawRug(ctx, ship.palette.accent);
+    drawBookshelf(ctx, ship.id, tiny);
+    drawRug(ctx, ship.palette.accent, tiny);
     drawLantern(ctx, frame, ship.palette.glow ?? "#FFD27A", env.night);
   }
   regions.push(rectRegion(ctx, view.dpr, "porthole", "Porthole: back to the deck", PORTHOLE.x - PORTHOLE.r, PORTHOLE.y - PORTHOLE.r, PORTHOLE.r * 2, PORTHOLE.r * 2));
   regions.push(rectRegion(ctx, view.dpr, "bookshelf", "Bookshelf: open the Captain's Log", 40, 150, 210, FLOOR - 150));
 
-  drawCabinDecor(ctx, ship.id, { x: 905, y: FLOOR }, frame);
-  regions.push(rectRegion(ctx, view.dpr, "decor", "Cabin decor", 835, FLOOR - 200, 140, 200));
+  if (!tiny) {
+    drawCabinDecor(ctx, ship.id, { x: 905, y: FLOOR }, frame);
+    regions.push(rectRegion(ctx, view.dpr, "decor", "Cabin decor", 835, FLOOR - 200, 140, 200));
+  }
 
   const desk = { x: 500, y: FLOOR + 6 };
-  drawStudyStation(ctx, { avatar: scene.me.avatar, state: scene.me.state, desk: scene.loadout.desk, at: desk, scale: STATION_SCALE, seed: 1 }, frame);
+  if (tiny) {
+    // Cozy Mr. Tiny cream desk & pastel minion crew in Quarters
+    paint(ctx, (c) => roundRectPath(c, desk.x - 150, desk.y - 82, 300, 82, 18), "#FFFDF7", { width: 3.2, stroke: "#8D8D8D" });
+    paint(ctx, (c) => roundRectPath(c, desk.x - 52, desk.y - 102, 104, 24, 8), "#FFF5B8", { width: 2.6, stroke: "#8D8D8D" });
+    drawPastelMinion(ctx, { x: desk.x, y: desk.y - 80 }, "captain", frame, { scale: 1.85, seed: 3, shadow: false });
+  } else {
+    drawStudyStation(ctx, { avatar: scene.me.avatar, state: scene.me.state, desk: scene.loadout.desk, at: desk, scale: STATION_SCALE, seed: 1 }, frame);
+    regions.push(rectRegion(ctx, view.dpr, "avatar", "You: open the Wardrobe", desk.x - 110, desk.y - STATION_HEIGHT * STATION_SCALE, 220, STATION_HEIGHT * STATION_SCALE - 150));
+  }
+  drawPastelMinion(ctx, { x: desk.x - 175, y: FLOOR + 4 }, "teddy", frame, { scale: 1.75, seed: 4 });
+  drawPastelMinion(ctx, { x: desk.x + 185, y: FLOOR + 4 }, "banana", frame, { scale: 1.7, seed: 5 });
   regions.push(rectRegion(ctx, view.dpr, "avatar", "You: open the Wardrobe", desk.x - 110, desk.y - STATION_HEIGHT * STATION_SCALE, 220, STATION_HEIGHT * STATION_SCALE - 150));
   regions.push(rectRegion(ctx, view.dpr, "desk", "Desk: review flashcards", desk.x - 160, desk.y - 150, 320, 150));
   ctx.restore();
@@ -174,38 +198,47 @@ function drawPortholeRim(ctx: Ctx, x: number, y: number, r: number): void {
   }
 }
 
-function drawBookshelf(ctx: Ctx, shipId: string): void {
+function drawBookshelf(ctx: Ctx, shipId: string, tinyInk = false): void {
   const x = 40;
   const top = 150;
   const w = 210;
-  const shelfWood = "#6B4423";
-  paint(ctx, (c) => roundRectPath(c, x, top, w, FLOOR - top, 8), shelfWood);
+  const shelfWood = tinyInk ? "#F4EFE4" : "#6B4423";
+  paint(ctx, (c) => roundRectPath(c, x, top, w, FLOOR - top, tinyInk ? 18 : 8), shelfWood);
   const rand = rng(shipId.length * 17 + 3);
-  const colors = ["#C2524A", "#2E5E8B", "#3F7A4A", "#D9822B", "#6B4C9A", "#E3B341", "#1F8A8A", "#F2E6C9"];
+  const colors = tinyInk
+    ? ["#FFFDF7", "#FFF3A8", "#FADBD7", "#EAE0FA", "#D8EEDB", "#DCEAF9"]
+    : ["#C2524A", "#2E5E8B", "#3F7A4A", "#D9822B", "#6B4C9A", "#E3B341", "#1F8A8A", "#F2E6C9"];
   for (let s = 0; s < 4; s++) {
     const shelfY = top + 22 + s * 92;
-    ctx.fillStyle = shade(shelfWood, -0.35);
-    ctx.fillRect(x + 12, shelfY, w - 24, 76);
+    if (tinyInk) {
+      paint(ctx, (c) => roundRectPath(c, x + 12, shelfY, w - 24, 76, 10), "#EAE5DA", { stroke: false });
+    } else {
+      ctx.fillStyle = shade(shelfWood, -0.35);
+      ctx.fillRect(x + 12, shelfY, w - 24, 76);
+    }
     let bx = x + 16;
-    while (bx < x + w - 34) {
-      const bw = 13 + rand() * 12;
-      const bh = 48 + rand() * 24;
-      const lean = rand() > 0.88 ? 0.18 : 0;
+    while (bx < x + w - 36) {
+      const bw = (tinyInk ? 18 : 13) + rand() * 12;
+      const bh = 46 + rand() * 24;
+      const lean = rand() > 0.88 ? 0.16 : 0;
       const color = colors[Math.floor(rand() * colors.length)];
       withTransform(ctx, { x: bx, y: shelfY + 76, rotate: lean }, () => {
-        paint(ctx, (c) => roundRectPath(c, 0, -bh, bw, bh, 2), color, { width: 2.5 });
-        ctx.fillStyle = alpha("#FFFFFF", 0.35);
-        ctx.fillRect(2, -bh + 8, bw - 4, 3);
+        paint(ctx, (c) => roundRectPath(c, 0, -bh, bw, bh, tinyInk ? 7 : 2), color, { width: 2.5 });
+        ctx.fillStyle = alpha("#FFFFFF", 0.45);
+        ctx.fillRect(4, -bh + 9, bw - 8, 3);
+        if (tinyInk && bw >= 20) {
+          paint(ctx, (c) => circlePath(c, bw / 2, -bh / 2, 2.2), "#A29C93", { stroke: false });
+        }
       });
-      bx += bw + (lean ? 8 : 2);
+      bx += bw + (lean ? 8 : 3);
     }
-    paint(ctx, (c) => c.rect(x + 6, shelfY + 76, w - 12, 10), shade(shelfWood, 0.1), { width: 2.5 });
+    paint(ctx, (c) => roundRectPath(c, x + 6, shelfY + 76, w - 12, 10, tinyInk ? 5 : 2), tinyInk ? "#FAF6E8" : shade(shelfWood, 0.1), { width: 2.5 });
   }
 }
 
-function drawRug(ctx: Ctx, accent: string): void {
-  paint(ctx, (c) => c.ellipse(500, FLOOR + 40, 300, 34, 0, 0, Math.PI * 2), mix(accent, "#C2524A", 0.4), { width: 3 });
-  ctx.strokeStyle = alpha("#FFF1D6", 0.6);
+function drawRug(ctx: Ctx, accent: string, tinyInk = false): void {
+  paint(ctx, (c) => c.ellipse(500, FLOOR + 40, 300, 34, 0, 0, Math.PI * 2), tinyInk ? "#E6E1D5" : mix(accent, "#C2524A", 0.4), { width: 3 });
+  ctx.strokeStyle = tinyInk ? alpha(accent, 0.85) : alpha("#FFF1D6", 0.6);
   ctx.lineWidth = 3;
   ctx.setLineDash([10, 8]);
   ctx.beginPath();

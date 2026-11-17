@@ -41,8 +41,25 @@ export interface VoyageStartOptions {
   presetId: VoyagePresetId;
   focusMinutes?: number;
   breakMinutes?: number;
+  cycles?: number;
+  prep?: boolean;
   objective?: string | null;
   assignmentId?: string | null;
+}
+
+export interface SessionTask {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export interface BreakReflection {
+  id: string;
+  at: number;
+  cycle: number;
+  howWasSession: string;
+  whatWorked: string;
+  nextAdjustment: string;
 }
 
 export interface VoyageState extends VoyageClock {
@@ -50,17 +67,30 @@ export interface VoyageState extends VoyageClock {
   assignmentId: string | null;
   records: VoyageRecord[];
   tree: CitrusTree;
+  prepEndsAt: number | null;
+  cyclesTotal: number;
+  cyclesCompleted: number;
+  showBreakReflection: boolean;
+  breakReflections: BreakReflection[];
+  sessionTasks: SessionTask[];
   start(opts: VoyageStartOptions): void;
+  skipPrep(): void;
+  cancelPrep(): void;
   pause(reason?: PauseReason): void;
   resume(): void;
   /** Ends the voyage early. Minutes already sailed stay paid; the tree wilts. */
   abandon(): void;
-  /** Cuts shore leave short and docks. */
+  /** Cuts shore leave short and docks (or starts next cycle). */
   endBreak(): void;
   /** Advances the clock to `now`: pays new minutes and moves between phases. */
   tick(now?: number): void;
   /** Picks the ripe fruit and returns the doubloons it paid. */
   harvest(): number;
+  addSessionTask(text: string): void;
+  toggleSessionTask(id: string): void;
+  removeSessionTask(id: string): void;
+  submitBreakReflection(entry: Omit<BreakReflection, "id" | "at" | "cycle">): void;
+  dismissBreakReflection(): void;
 }
 
 type Listener<T> = (value: T) => void;
@@ -120,14 +150,59 @@ export const useVoyage = create<VoyageState>()(
         assignmentId: null,
         records: [],
         tree: { state: "resting", fruit: 0 },
+        prepEndsAt: null,
+        cyclesTotal: 2,
+        cyclesCompleted: 0,
+        showBreakReflection: false,
+        breakReflections: [],
+        sessionTasks: [],
 
         start: (opts) => {
           const s = get();
-          if (s.phase === "sailing" || s.phase === "drifting") return;
+          if (s.phase === "sailing" || s.phase === "drifting" || s.prepEndsAt !== null) return;
           const preset = VOYAGE_PRESETS[opts.presetId];
-          const clock = startVoyage(opts.presetId, opts.focusMinutes ?? preset.focusMinutes, opts.breakMinutes ?? preset.breakMinutes, Date.now());
-          set({ ...clock, objective: opts.objective?.trim() || null, assignmentId: opts.assignmentId ?? null, tree: { ...s.tree, state: "blooming" } });
+          const focusMinutes = opts.focusMinutes ?? preset.focusMinutes;
+          const breakMinutes = opts.breakMinutes ?? preset.breakMinutes;
+          const cycles = Math.max(1, Math.min(8, opts.cycles ?? 1));
+          const now = Date.now();
+          if (opts.prep) {
+            set({
+              presetId: opts.presetId,
+              focusMinutes,
+              breakMinutes,
+              cyclesTotal: cycles,
+              cyclesCompleted: 0,
+              prepEndsAt: now + 60_000,
+              objective: opts.objective?.trim() || null,
+              assignmentId: opts.assignmentId ?? null,
+              showBreakReflection: false,
+            });
+            return;
+          }
+          const clock = startVoyage(opts.presetId, focusMinutes, breakMinutes, now);
+          set({
+            ...clock,
+            prepEndsAt: null,
+            cyclesTotal: cycles,
+            cyclesCompleted: 0,
+            showBreakReflection: false,
+            objective: opts.objective?.trim() || null,
+            assignmentId: opts.assignmentId ?? null,
+            tree: { ...s.tree, state: "blooming" },
+          });
           emit(eventListeners, "started");
+        },
+
+        skipPrep: () => {
+          const s = get();
+          if (s.prepEndsAt === null) return;
+          const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, Date.now());
+          set({ ...clock, prepEndsAt: null, tree: { ...s.tree, state: "blooming" } });
+          emit(eventListeners, "started");
+        },
+
+        cancelPrep: () => {
+          set({ prepEndsAt: null });
         },
 
         pause: (reason = "manual") => {
@@ -156,26 +231,55 @@ export const useVoyage = create<VoyageState>()(
         },
 
         endBreak: () => {
-          if (get().phase !== "shore-leave") return;
-          set({ ...dock(clockOf(get())), objective: null, assignmentId: null });
+          const s = get();
+          if (s.phase !== "shore-leave") return;
+          if (s.cyclesCompleted < s.cyclesTotal) {
+            const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, Date.now());
+            set({ ...clock, showBreakReflection: false, tree: { ...s.tree, state: "blooming" } });
+            emit(eventListeners, "started");
+            return;
+          }
+          set({ ...dock(clockOf(s)), objective: null, assignmentId: null, showBreakReflection: false });
           emit(eventListeners, "break-over");
         },
 
         tick: (now = Date.now()) => {
           const s = get();
+          if (s.phase === "docked" && s.prepEndsAt !== null) {
+            if (now >= s.prepEndsAt) {
+              const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, now);
+              set({ ...clock, prepEndsAt: null, tree: { ...s.tree, state: "blooming" } });
+              emit(eventListeners, "started");
+            }
+            return;
+          }
           if (s.phase === "sailing" || s.phase === "drifting") {
             const clock = settle(now);
             if (isFocusDone(clock, now)) {
               useEconomy.getState().earn(VOYAGE_COMPLETION_BONUS, 0, "Voyage complete!");
               const records = record(true, now);
               const next = beginShoreLeave(clock, now);
+              const cyclesCompleted = s.cyclesCompleted + 1;
               const tree: CitrusTree = { state: "resting", fruit: get().tree.fruit + fruitForVoyage(clock.focusMinutes) };
-              set({ ...next, records, tree, ...(next.phase === "docked" ? { objective: null, assignmentId: null } : {}) });
+              set({
+                ...next,
+                records,
+                tree,
+                cyclesCompleted,
+                showBreakReflection: next.phase === "shore-leave",
+                ...(next.phase === "docked" ? { objective: null, assignmentId: null } : {}),
+              });
               emit(eventListeners, "focus-complete");
             }
           } else if (isBreakOver(clockOf(s), now)) {
-            set({ ...dock(clockOf(s)), objective: null, assignmentId: null });
-            emit(eventListeners, "break-over");
+            if (s.cyclesCompleted < s.cyclesTotal) {
+              const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, now);
+              set({ ...clock, showBreakReflection: false, tree: { ...s.tree, state: "blooming" } });
+              emit(eventListeners, "started");
+            } else {
+              set({ ...dock(clockOf(s)), objective: null, assignmentId: null, showBreakReflection: false });
+              emit(eventListeners, "break-over");
+            }
           }
         },
 
@@ -187,13 +291,60 @@ export const useVoyage = create<VoyageState>()(
           set({ tree: { state, fruit: 0 } });
           return coins;
         },
+
+        addSessionTask: (text) => {
+          const trimmed = text.trim();
+          if (!trimmed) return;
+          set((s) => ({
+            sessionTasks: [...s.sessionTasks, { id: newId("task"), text: trimmed, done: false }],
+          }));
+        },
+
+        toggleSessionTask: (id) => {
+          set((s) => ({
+            sessionTasks: s.sessionTasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+          }));
+        },
+
+        removeSessionTask: (id) => {
+          set((s) => ({
+            sessionTasks: s.sessionTasks.filter((t) => t.id !== id),
+          }));
+        },
+
+        submitBreakReflection: (entry) => {
+          const s = get();
+          const item: BreakReflection = {
+            id: newId("reflect"),
+            at: Date.now(),
+            cycle: s.cyclesCompleted,
+            ...entry,
+          };
+          set({
+            breakReflections: [item, ...s.breakReflections].slice(0, 100),
+            showBreakReflection: false,
+          });
+        },
+
+        dismissBreakReflection: () => set({ showBreakReflection: false }),
       };
     },
     {
       name: storageKey("voyage"),
       storage: shipStorage,
       version: 1,
-      partialize: (s) => ({ ...clockOf(s), objective: s.objective, assignmentId: s.assignmentId, records: s.records, tree: s.tree }),
+      partialize: (s) => ({
+        ...clockOf(s),
+        objective: s.objective,
+        assignmentId: s.assignmentId,
+        records: s.records,
+        tree: s.tree,
+        prepEndsAt: s.prepEndsAt,
+        cyclesTotal: s.cyclesTotal,
+        cyclesCompleted: s.cyclesCompleted,
+        breakReflections: s.breakReflections,
+        sessionTasks: s.sessionTasks,
+      }),
     },
   ),
 );

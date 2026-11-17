@@ -5,10 +5,13 @@ import { persist } from "zustand/middleware";
 import { SIGNALING_DEFAULT_PORT } from "@ship/shared-types";
 import { DEFAULT_GEMINI_MODEL } from "@ship/integrations";
 import type { SchedulerKind, VoyagePresetId } from "@ship/shared-types";
+import type { PortThemeId } from "../ship-engine/tinyInk.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 
 export type MotionPreference = "system" | "reduce" | "full";
 export type CameraView = "deck" | "quarters";
+export type VisualStyle = "tiny-ink" | "storybook";
+export type SoundTrackId = "ocean" | "lofi" | "asmr" | "rain";
 
 export interface SettingsState {
   soundOn: boolean;
@@ -20,6 +23,10 @@ export interface SettingsState {
   crewServer: string;
   scheduler: SchedulerKind;
   motion: MotionPreference;
+  visualStyle: VisualStyle;
+  portTheme: PortThemeId;
+  pomodoroCycles: number;
+  soundTrack: SoundTrackId;
   view: CameraView;
   presetId: VoyagePresetId;
   customFocusMinutes: number;
@@ -47,6 +54,10 @@ export const useSettings = create<SettingsState>()(
       crewServer: `http://localhost:${SIGNALING_DEFAULT_PORT}`,
       scheduler: "sm2",
       motion: "system",
+      visualStyle: "tiny-ink",
+      portTheme: "classic",
+      pomodoroCycles: 2,
+      soundTrack: "rain",
       view: "deck",
       presetId: "coastal",
       customFocusMinutes: 40,

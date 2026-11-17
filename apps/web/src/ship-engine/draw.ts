@@ -67,7 +67,20 @@ export function alpha(color: string, a: number): string {
 
 /** The outline that goes with a fill: a dark, slightly saturated version of it. */
 export function outlineFor(fill: string): string {
+  if (handDrawnMode) return SOFT_GREY_INK;
   return mix(shade(fill, -0.62), INK, 0.35);
+}
+
+export const SOFT_GREY_INK = "#8D8D8D";
+let handDrawnMode = false;
+let grainyGreyPattern: CanvasPattern | null = null;
+
+export function setHandDrawnMode(enabled: boolean): void {
+  handDrawnMode = enabled;
+}
+
+function getGrainyGreyStroke(_ctx: Ctx): string {
+  return SOFT_GREY_INK;
 }
 
 export interface PaintOptions {
@@ -85,13 +98,24 @@ export function paint(ctx: Ctx, build: (ctx: Ctx) => void, fill: string | Canvas
   build(ctx);
   ctx.fillStyle = fill;
   ctx.fill();
-  const stroke = opts.stroke ?? (typeof fill === "string" ? outlineFor(fill) : INK);
+  const stroke = opts.stroke ?? (typeof fill === "string" ? outlineFor(fill) : handDrawnMode ? SOFT_GREY_INK : INK);
   if (stroke !== false) {
     ctx.lineWidth = opts.width ?? OUTLINE;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.strokeStyle = stroke;
-    ctx.stroke();
+    if (handDrawnMode) {
+      const c = parseColor(stroke);
+      const lum = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
+      ctx.save();
+      ctx.strokeStyle = lum > 0.65 && opts.stroke ? stroke : getGrainyGreyStroke(ctx);
+      ctx.shadowBlur = 1.2;
+      ctx.shadowColor = lum > 0.65 && opts.stroke ? alpha(stroke, 0.35) : "rgba(141, 141, 141, 0.32)";
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+    }
   }
 }
 
@@ -100,33 +124,148 @@ export function line(ctx: Ctx, points: Point[], color: string, width = OUTLINE):
   if (points.length < 2) return;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  if (handDrawnMode && points.length >= 2) {
+    // Subtle hand-drawn midpoint wobble so lines aren't ruler-perfect
+    for (let i = 1; i < points.length; i++) {
+      const p0 = points[i - 1];
+      const p1 = points[i];
+      const mx = (p0.x + p1.x) / 2;
+      const my = (p0.y + p1.y) / 2;
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const wobble = Math.sin((p0.x + p0.y + i * 7.3) * 0.17) * Math.min(2.2, Math.hypot(dx, dy) * 0.025);
+      ctx.quadraticCurveTo(mx - wobble * 0.4, my + wobble, p1.x, p1.y);
+    }
+  } else {
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  }
   ctx.lineWidth = width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = color;
-  ctx.stroke();
+  if (handDrawnMode) {
+    const c = parseColor(color);
+    const lum = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
+    if (c.a < 0.85 && lum <= 0.65) {
+      ctx.strokeStyle = alpha(SOFT_GREY_INK, c.a);
+      ctx.stroke();
+    } else if (lum <= 0.65) {
+      ctx.strokeStyle = getGrainyGreyStroke(ctx);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(0.55, 0.45);
+      ctx.globalAlpha *= 0.35;
+      ctx.lineWidth = Math.max(1, width * 0.7);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+  } else {
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
+}
+
+function hashCoords(a: number, b: number, c = 0, d = 0): number {
+  let h = 2166136261;
+  const mixInt = (n: number) => {
+    const v = Math.round(n * 16) | 0;
+    h = Math.imul(h ^ v, 16777619);
+  };
+  mixInt(a);
+  mixInt(b);
+  mixInt(c);
+  mixInt(d);
+  return h >>> 0;
 }
 
 export function roundRectPath(ctx: Ctx, x: number, y: number, w: number, h: number, r: number | [number, number, number, number]): void {
   const [tl, tr, br, bl] = typeof r === "number" ? [r, r, r, r] : r;
   const k = (v: number) => Math.max(0, Math.min(v, w / 2, h / 2));
-  ctx.moveTo(x + k(tl), y);
-  ctx.lineTo(x + w - k(tr), y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + k(tr));
-  ctx.lineTo(x + w, y + h - k(br));
-  ctx.quadraticCurveTo(x + w, y + h, x + w - k(br), y + h);
-  ctx.lineTo(x + k(bl), y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - k(bl));
-  ctx.lineTo(x, y + k(tl));
-  ctx.quadraticCurveTo(x, y, x + k(tl), y);
+  if (!handDrawnMode || w <= 0 || h <= 0) {
+    ctx.moveTo(x + k(tl), y);
+    ctx.lineTo(x + w - k(tr), y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + k(tr));
+    ctx.lineTo(x + w, y + h - k(br));
+    ctx.quadraticCurveTo(x + w, y + h, x + w - k(br), y + h);
+    ctx.lineTo(x + k(bl), y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - k(bl));
+    ctx.lineTo(x, y + k(tl));
+    ctx.quadraticCurveTo(x, y, x + k(tl), y);
+    ctx.closePath();
+    return;
+  }
+
+  // Deterministic coordinate-seeded hand-drawn rounded rect with slight corner asymmetry
+  const rand = rng(hashCoords(x, y, w, h));
+  const j = (amp: number) => (rand() - 0.5) * 2 * amp;
+  const minDim = Math.min(w, h);
+  const maxDim = Math.max(w, h);
+  const cAmp = Math.min(0.6, minDim * 0.015);
+  const eAmp = Math.min(0.7, maxDim * 0.008);
+
+  const rtl = k(tl * (0.9 + rand() * 0.2));
+  const rtr = k(tr * (0.9 + rand() * 0.2));
+  const rbr = k(br * (0.9 + rand() * 0.2));
+  const rbl = k(bl * (0.9 + rand() * 0.2));
+
+  const x0 = x + j(cAmp * 0.45);
+  const y0 = y + j(cAmp * 0.45);
+  const x1 = x + w + j(cAmp * 0.45);
+  const y1 = y + h + j(cAmp * 0.45);
+
+  const pTopStart = { x: x0 + rtl, y: y0 + j(cAmp * 0.3) };
+  const pTopEnd = { x: x1 - rtr, y: y + j(cAmp * 0.35) };
+  const pRightStart = { x: x1 + j(cAmp * 0.35), y: y + rtr };
+  const pRightEnd = { x: x1 + j(cAmp * 0.35), y: y1 - rbr };
+  const pBotStart = { x: x1 - rbr, y: y1 + j(cAmp * 0.35) };
+  const pBotEnd = { x: x0 + rbl, y: y1 + j(cAmp * 0.35) };
+  const pLeftStart = { x: x0 + j(cAmp * 0.35), y: y1 - rbl };
+  const pLeftEnd = { x: x0 + j(cAmp * 0.35), y: y0 + rtl };
+
+  ctx.moveTo(pTopStart.x, pTopStart.y);
+  ctx.quadraticCurveTo((pTopStart.x + pTopEnd.x) * 0.5 + j(eAmp * 0.3), (pTopStart.y + pTopEnd.y) * 0.5 + j(eAmp), pTopEnd.x, pTopEnd.y);
+  ctx.quadraticCurveTo(x1 + j(cAmp * 0.4), y + j(cAmp * 0.4), pRightStart.x, pRightStart.y);
+  ctx.quadraticCurveTo((pRightStart.x + pRightEnd.x) * 0.5 + j(eAmp), (pRightStart.y + pRightEnd.y) * 0.5 + j(eAmp * 0.3), pRightEnd.x, pRightEnd.y);
+  ctx.quadraticCurveTo(x1 + j(cAmp * 0.4), y1 + j(cAmp * 0.4), pBotStart.x, pBotStart.y);
+  ctx.quadraticCurveTo((pBotStart.x + pBotEnd.x) * 0.5 + j(eAmp * 0.3), (pBotStart.y + pBotEnd.y) * 0.5 + j(eAmp), pBotEnd.x, pBotEnd.y);
+  ctx.quadraticCurveTo(x0 + j(cAmp * 0.4), y1 + j(cAmp * 0.4), pLeftStart.x, pLeftStart.y);
+  ctx.quadraticCurveTo((pLeftStart.x + pLeftEnd.x) * 0.5 + j(eAmp), (pLeftStart.y + pLeftEnd.y) * 0.5 + j(eAmp * 0.3), pLeftEnd.x, pLeftEnd.y);
+  ctx.quadraticCurveTo(x0 + j(cAmp * 0.4), y0 + j(cAmp * 0.4), pTopStart.x, pTopStart.y);
   ctx.closePath();
 }
 
 export function ellipsePath(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, rotation = 0): void {
-  ctx.moveTo(cx + rx * Math.cos(rotation), cy + rx * Math.sin(rotation));
-  ctx.ellipse(cx, cy, rx, ry, rotation, 0, Math.PI * 2);
-  ctx.closePath();
+  if (!handDrawnMode || rx <= 0 || ry <= 0) {
+    ctx.moveTo(cx + rx * Math.cos(rotation), cy + rx * Math.sin(rotation));
+    ctx.ellipse(cx, cy, rx, ry, rotation, 0, Math.PI * 2);
+    ctx.closePath();
+    return;
+  }
+
+  // Deterministic coordinate-seeded organic wobbly ellipse
+  const rand = rng(hashCoords(cx, cy, rx, ry));
+  const n = 12;
+  const minR = Math.min(rx, ry);
+  const amp = Math.min(2.2, minR * 0.085);
+  const skewX = (rand() - 0.5) * 0.08;
+  const skewY = (rand() - 0.5) * 0.08;
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const pts: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const dr = (rand() - 0.5) * 2 * amp;
+    const da = (rand() - 0.5) * 0.085;
+    const lx = (rx * (1 + skewX * Math.sin(a)) + dr) * Math.cos(a + da);
+    const ly = (ry * (1 + skewY * Math.cos(a)) + dr) * Math.sin(a + da);
+    pts.push({
+      x: cx + lx * cosR - ly * sinR,
+      y: cy + lx * sinR + ly * cosR,
+    });
+  }
+  smoothClosedPath(ctx, pts, 0.5);
 }
 
 export function circlePath(ctx: Ctx, cx: number, cy: number, r: number): void {

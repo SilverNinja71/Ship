@@ -11,11 +11,11 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "seafoam";
 
 const BUTTON: Record<ButtonVariant, string> = {
-  primary: "bg-brass-400 text-ink border-ink hover:bg-brass-300 shadow-[0_3px_0_0_var(--color-ink)] active:translate-y-[2px] active:shadow-[0_1px_0_0_var(--color-ink)]",
-  seafoam: "bg-seafoam-500 text-white border-ink hover:bg-seafoam-400 shadow-[0_3px_0_0_var(--color-ink)] active:translate-y-[2px] active:shadow-[0_1px_0_0_var(--color-ink)]",
-  secondary: "bg-cream-50 text-ink border-ink/70 hover:bg-white shadow-[0_2px_0_0_rgb(42_34_56/0.5)] active:translate-y-[1px]",
-  ghost: "bg-transparent text-current border-transparent hover:bg-ink/8",
-  danger: "bg-coral-500 text-white border-ink hover:bg-coral-400 shadow-[0_3px_0_0_var(--color-ink)] active:translate-y-[2px]",
+  primary: "bg-transparent text-[#5D564E] border-0 shadow-none hover:underline underline-offset-4",
+  seafoam: "bg-transparent text-[#457263] border-0 shadow-none hover:underline underline-offset-4",
+  secondary: "bg-transparent text-[#6D655C] border-0 shadow-none hover:underline underline-offset-4",
+  ghost: "bg-transparent text-current border-0 shadow-none hover:underline underline-offset-4",
+  danger: "bg-transparent text-[#9A473D] border-0 shadow-none hover:underline underline-offset-4",
 };
 
 export function Button({
@@ -28,12 +28,12 @@ export function Button({
     <button
       type="button"
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-xl border-2 font-display font-bold transition select-none",
-        "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brass-400",
-        "disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:translate-y-0",
-        size === "sm" && "px-2.5 py-1 text-sm",
-        size === "md" && "px-3.5 py-1.5 text-[15px]",
-        size === "lg" && "px-5 py-2.5 text-lg",
+        "inline-flex items-center justify-center gap-1.5 font-serif font-normal tracking-wide transition select-none",
+        "focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[#A29C93]",
+        "disabled:cursor-not-allowed disabled:opacity-45",
+        size === "sm" && "px-1.5 py-0.5 text-sm",
+        size === "md" && "px-2 py-1 text-[15px]",
+        size === "lg" && "px-2.5 py-1 text-base",
         BUTTON[variant],
         className,
       )}
@@ -60,19 +60,19 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
         aria-labelledby={titleId}
         tabIndex={-1}
         className={cx(
-          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border-[3px] border-ink bg-cream-100 text-ink shadow-card outline-none sm:rounded-3xl",
+          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#A29C93]/45 bg-[#FFFDF7] font-serif text-[#6D655C] shadow-[4px_4px_0_#EAE5DA] outline-none sm:rounded-3xl",
           wide ? "sm:max-w-5xl" : "sm:max-w-3xl",
         )}
       >
-        <header className="flex items-center gap-3 border-b-[3px] border-ink/15 bg-cream-200 px-5 py-3">
-          {icon && <span className="grid size-10 place-items-center rounded-xl border-2 border-ink bg-brass-400 text-ink">{icon}</span>}
+        <header className="flex items-center gap-3 border-b border-[#A29C93]/20 bg-[#FAF6E8] px-5 py-3">
+          {icon && <span className="grid size-10 place-items-center rounded-xl border border-[#A29C93]/40 bg-[#FFF7D6] text-[#6D655C]">{icon}</span>}
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="font-display text-xl font-extrabold leading-tight">
+            <h2 id={titleId} className="font-serif text-xl font-normal tracking-wide leading-tight">
               {title}
             </h2>
-            {subtitle && <p className="truncate text-sm text-ink/70">{subtitle}</p>}
+            {subtitle && <p className="truncate text-sm text-[#8E887F]">{subtitle}</p>}
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="grid size-9 place-items-center rounded-full border-2 border-ink/20 hover:bg-ink/10 focus-visible:outline-3 focus-visible:outline-brass-400">
+          <button type="button" onClick={onClose} aria-label="Close" className="grid size-9 place-items-center rounded-full text-[#8E887F] hover:underline focus-visible:outline-1 focus-visible:outline-[#A29C93]">
             <IconClose />
           </button>
         </header>

@@ -15,6 +15,11 @@ export function ringChime(kind: ChimeKind): void {
 export function useAmbiance(): void {
   const soundOn = useSettings((s) => s.soundOn);
   const volume = useSettings((s) => s.ambienceVolume);
+  const track = useSettings((s) => s.soundTrack);
+
+  useEffect(() => {
+    sound.setTrack(track);
+  }, [track]);
 
   useEffect(() => {
     if (!soundOn) {
@@ -23,7 +28,7 @@ export function useAmbiance(): void {
     }
     sound.setVolume(volume);
     sound.startAmbience();
-  }, [soundOn, volume]);
+  }, [soundOn, volume, track]);
 
   useEffect(
     () =>

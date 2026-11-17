@@ -22,6 +22,7 @@ export interface BlurtSession {
   notes: string;
   blurt: string;
   coverage: number;
+  hashtags?: string[];
   /** Missing on entries from before Gemini grading: those were graded offline. */
   gradedBy?: BlurtGrader;
 }
