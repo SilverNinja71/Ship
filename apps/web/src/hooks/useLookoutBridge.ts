@@ -82,9 +82,15 @@ export function useLookoutBridge(): void {
     window.addEventListener("message", onMessage);
     post({ t: "hello", version: BRIDGE_PROTOCOL_VERSION });
 
-    const sendVoyage = () => post({ t: "voyage", voyage: lookoutVoyageState() });
+    const sendVoyage = () => {
+      if (!lookout().connected) post({ t: "hello", version: BRIDGE_PROTOCOL_VERSION });
+      post({ t: "voyage", voyage: lookoutVoyageState() });
+    };
     const sendCards = () => post({ t: "cards", cards: gateCards() });
-    const claim = () => post({ t: "claim-rewards" });
+    const claim = () => {
+      if (!lookout().connected) post({ t: "hello", version: BRIDGE_PROTOCOL_VERSION });
+      post({ t: "claim-rewards" });
+    };
 
     // Voyage changes go out right away; the heartbeat lets the Lookout notice a closed tab.
     const unVoyage = useVoyage.subscribe((s, prev) => {

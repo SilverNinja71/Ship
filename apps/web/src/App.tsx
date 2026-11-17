@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAmbiance } from "./hooks/useAmbiance.js";
+import { useAutoSync } from "./hooks/useAutoSync.js";
 import { useCrewSync } from "./hooks/useCrewSync.js";
 import { useIdleDetection } from "./hooks/useIdleDetection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
@@ -23,6 +24,7 @@ export function App() {
   useKeyboard();
   useAmbiance();
   useLookoutBridge();
+  useAutoSync();
   useCrewSync();
   useWebRTC();
   return (
