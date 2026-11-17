@@ -110,20 +110,14 @@ export function PastelMinionBadge({
         </>
       ) : (
         <>
-          {/* Soft pastel goggle strap & big kawaii sparkle eyes */}
-          <line x1="17.5" y1="30" x2="46.5" y2="30" stroke="#D5CEC3" strokeWidth="3.4" strokeLinecap="round" />
-          <circle cx="26.5" cy="30" r="5.4" fill="#FFFFFF" stroke={ink} strokeWidth="2" />
-          <circle cx="37.5" cy="30" r="5.4" fill="#FFFFFF" stroke={ink} strokeWidth="2" />
-          <circle cx="26.8" cy="30" r="2.4" fill={pupil} />
-          <circle cx="37.8" cy="30" r="2.4" fill={pupil} />
-          {/* Tiny white eye-shine dots */}
-          <circle cx="25.9" cy="29.1" r="0.9" fill="#FFFFFF" />
-          <circle cx="36.9" cy="29.1" r="0.9" fill="#FFFFFF" />
-
-          {/* Rosy pastel cheeks & sweet tiny kawaii smile */}
-          <ellipse cx="21.8" cy="36.8" rx="2.9" ry="1.8" fill={blush} />
-          <ellipse cx="42.2" cy="36.8" rx="2.9" ry="1.8" fill={blush} />
-          <path d="M29 37.2c.8 1.3 2.2 1.3 3 0 .8 1.3 2.2 1.3 3 0" stroke={pupil} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Cute hand-drawn Mochi/Lumi dot eyes (no goggles!), rosy cheeks & gentle smile */}
+          <circle cx="26.5" cy="29.5" r="2.4" fill={pupil} />
+          <circle cx="37.5" cy="29.5" r="2.4" fill={pupil} />
+          <circle cx="25.8" cy="28.7" r="0.8" fill="#FFFFFF" />
+          <circle cx="36.8" cy="28.7" r="0.8" fill="#FFFFFF" />
+          <ellipse cx="21.5" cy="35.2" rx="3.1" ry="1.9" fill={blush} />
+          <ellipse cx="42.5" cy="35.2" rx="3.1" ry="1.9" fill={blush} />
+          <path d="M29.5 35.8q2.5 2.4 5 0" stroke={pupil} strokeWidth="1.9" strokeLinecap="round" />
         </>
       )}
     </svg>
