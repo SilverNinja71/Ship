@@ -3,6 +3,13 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
+import {
+  dismissSignInPromptStorage,
+  getSavedProfile,
+  hasSeenTutorial,
+  isSignInPromptDismissed,
+  saveLocalProfile,
+} from "../lib/accountData.js";
 import { signInWithGoogle, signOutGoogle, subscribeAuthUser } from "../lib/firebase.js";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
@@ -11,12 +18,8 @@ import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useSettings } from "../stores/settingsStore.js";
 import { useUi } from "../stores/uiStore.js";
 import type { PanelId } from "../stores/uiStore.js";
-import {
-  OnboardingModal,
-  SIGNIN_PROMPT_DISMISSED_KEY,
-  SignInPromptToast,
-  TUTORIAL_SEEN_KEY,
-} from "./OnboardingModal.js";
+import { LegalModal, type LegalTab } from "./LegalModal.js";
+import { OnboardingModal, SignInPromptToast } from "./OnboardingModal.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import {
   IconCabin,
@@ -31,6 +34,7 @@ import {
   IconScroll,
   IconShirt,
   IconSpyglass,
+  IconSwap,
 } from "./icons.js";
 import { cx } from "./ui.js";
 import { VoyageDock } from "./VoyageDock.js";
@@ -60,13 +64,7 @@ export function useNow(ms = 1000): number {
 
 export function Hud() {
   const [loginOpen, setLoginOpen] = useState(false);
-  const [tutorialOpen, setTutorialOpen] = useState(() => {
-    try {
-      return localStorage.getItem(TUTORIAL_SEEN_KEY) !== "1";
-    } catch {
-      return false;
-    }
-  });
+  const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial());
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const driveConnected = useFleet((s) => Boolean(s.statuses["google-drive"]?.connected));
@@ -78,15 +76,8 @@ export function Hud() {
       setShowSignInPrompt(false);
       return;
     }
-    const isDismissed = () => {
-      try {
-        return localStorage.getItem(SIGNIN_PROMPT_DISMISSED_KEY) === "1";
-      } catch {
-        return false;
-      }
-    };
     const triggerPrompt = () => {
-      if (!useFleet.getState().statuses["google-drive"]?.connected && !isDismissed()) {
+      if (!useFleet.getState().statuses["google-drive"]?.connected && !isSignInPromptDismissed()) {
         setShowSignInPrompt(true);
       }
     };
@@ -128,11 +119,7 @@ export function Hud() {
 
   const dismissSignInPrompt = () => {
     setShowSignInPrompt(false);
-    try {
-      localStorage.setItem(SIGNIN_PROMPT_DISMISSED_KEY, "1");
-    } catch {
-      // ignore storage errors
-    }
+    dismissSignInPromptStorage();
   };
 
   return (
@@ -164,7 +151,7 @@ export function Hud() {
 }
 
 const SOFT_PILL =
-  "border-0 bg-transparent font-serif font-normal tracking-wide text-[#6D655C] shadow-none transition hover:underline underline-offset-4 focus:outline-none";
+  "border-0 bg-transparent font-serif font-normal tracking-wide text-[var(--page-ink)] shadow-none transition hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]";
 
 function TopBar({
   authUser,
@@ -231,7 +218,9 @@ function TopBar({
           className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
           title="Switch view (Q)"
         >
-          {view === "deck" ? <IconCabin size={15} /> : <IconDeck size={15} />}
+          <IconSwap swapKey={view}>
+            {view === "deck" ? <IconCabin size={15} /> : <IconDeck size={15} />}
+          </IconSwap>
           <span className="hidden sm:inline">{view === "deck" ? "Desk" : "Ship"}</span>
         </button>
 
@@ -278,11 +267,18 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
   const connectDrive = useFleet((s) => s.connectDrive);
   const driveStatus = useFleet((s) => s.statuses["google-drive"]);
   const toast = useUi((s) => s.toast);
-  const [name, setName] = useState(() => authUser?.displayName ?? localStorage.getItem("ship:profile-name") ?? "");
-  const [email, setEmail] = useState(() => authUser?.email ?? localStorage.getItem("ship:profile-email") ?? "");
+  const [initialProfile] = useState(() => getSavedProfile());
+  const [name, setName] = useState(() => authUser?.displayName ?? initialProfile.name);
+  const [email, setEmail] = useState(() => authUser?.email ?? initialProfile.email);
   const [authBusy, setAuthBusy] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab | null>(null);
 
   const handleGoogleSignIn = async () => {
+    if (!consentChecked) {
+      toast("Please confirm age (13+) and Privacy Policy consent before signing in.", "warning");
+      return;
+    }
     setAuthBusy(true);
     try {
       const user = await signInWithGoogle();
@@ -309,83 +305,111 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
   };
 
   const saveProfile = () => {
-    localStorage.setItem("ship:profile-name", name.trim());
-    localStorage.setItem("ship:profile-email", email.trim());
+    saveLocalProfile(name, email);
     toast("Saved profile locally!", "info");
     onClose();
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Log in" className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[#6D655C]/20 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-sm rounded-3xl bg-[#FFFDF7] p-6 font-serif text-[#6D655C] shadow-[4px_4px_0_#EAE5DA]">
+    <div role="dialog" aria-modal="true" aria-label="Log in" className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[rgb(0_0_0_/_0.22)] p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-sm rounded-3xl border border-[rgb(0_0_0_/_0.12)] bg-[#FFFDF7] p-6 font-serif text-[#5C544B] shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <PastelMinionBadge costume="banana" size={44} />
             <div>
-              <h2 className="text-lg tracking-wide text-[#5D564E]">Log in &amp; Sync</h2>
-              <p className="text-xs text-[#8E887F]">Keep your sheets and Banana Planna together</p>
+              <h2 className="text-lg tracking-wide text-[#4D453E]">Log in &amp; Sync</h2>
+              <p className="text-xs text-[#6B635B]">Keep your sheets and Banana Planna together</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="text-sm text-[#8E887F] hover:underline">
+          <button type="button" onClick={onClose} className="text-sm text-[#6B635B] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5C544B]">
             Close
           </button>
         </div>
 
-        <div className="mb-4 rounded-2xl bg-[#FAF6E8] p-3.5 text-sm">
+        <div className="mb-4 space-y-2.5 rounded-[14px] border border-[rgb(0_0_0_/_0.08)] bg-[#FAF6E8] p-3 text-sm">
           {authUser ? (
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate font-semibold text-[#5D564E]">{authUser.displayName ?? "Google Account"}</p>
-                <p className="truncate text-xs text-[#8E887F]">{authUser.email}</p>
+                <p className="truncate font-semibold text-[#4D453E]">{authUser.displayName ?? "Google Account"}</p>
+                <p className="truncate text-xs text-[#6B635B]">{authUser.email}</p>
               </div>
               <button
                 type="button"
                 disabled={authBusy}
                 onClick={() => void handleGoogleSignOut()}
-                className="shrink-0 text-xs text-[#8E887F] hover:text-[#5D564E] hover:underline underline-offset-4"
+                className="shrink-0 text-xs text-[#6B635B] hover:text-[#4D453E] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5C544B]"
               >
                 Sign out
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              disabled={authBusy}
-              onClick={() => void handleGoogleSignIn()}
-              className="w-full rounded-full bg-[#FFF3A8] px-4 py-2 text-center font-semibold text-[#5D564E] transition hover:bg-[#FCEB8B] hover:underline underline-offset-4 disabled:opacity-60"
-            >
-              {authBusy ? "Signing in..." : "Sign in with Google"}
-            </button>
+            <>
+              <label className="flex cursor-pointer items-start gap-2 text-xs leading-snug text-[#5C544B]">
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  className="mt-0.5 accent-[#6B635B]"
+                />
+                <span>
+                  I confirm I am 13+ (or have parent/school permission) and agree to the{" "}
+                  <button
+                    type="button"
+                    onClick={() => setLegalTab("privacy")}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Privacy Policy
+                  </button>{" "}
+                  &amp;{" "}
+                  <button
+                    type="button"
+                    onClick={() => setLegalTab("terms")}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Terms
+                  </button>
+                  .
+                </span>
+              </label>
+              <button
+                type="button"
+                disabled={authBusy || !consentChecked}
+                onClick={() => void handleGoogleSignIn()}
+                className="w-full rounded-full border border-[rgb(0_0_0_/_0.12)] bg-[#FFF3A8] px-4 py-2 text-center font-semibold text-[#4D453E] transition hover:bg-[#FCEB8B] hover:underline underline-offset-4 disabled:cursor-not-allowed disabled:bg-[#F3EDE0] disabled:text-[#6B635B]"
+              >
+                {authBusy ? "Signing in..." : "Sign in with Google"}
+              </button>
+            </>
           )}
         </div>
 
         <div className="space-y-3 text-sm">
           <label className="block">
-            <span className="mb-1 block text-xs tracking-wider text-[#8E887F]">Name</span>
+            <span className="mb-1 block text-xs tracking-wider text-[#6B635B]">Name</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name..."
-              className="w-full border-b border-[#A29C93]/40 bg-transparent py-1 focus:border-[#6D655C] focus:outline-none"
+              className="w-full border-b border-[rgb(0_0_0_/_0.16)] bg-transparent py-1 focus:border-[#5C544B] focus:outline-none"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs tracking-wider text-[#8E887F]">Email (for monthly reports)</span>
+            <span className="mb-1 block text-xs tracking-wider text-[#6B635B]">Email (for monthly reports)</span>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full border-b border-[#A29C93]/40 bg-transparent py-1 focus:border-[#6D655C] focus:outline-none"
+              className="w-full border-b border-[rgb(0_0_0_/_0.16)] bg-transparent py-1 focus:border-[#5C544B] focus:outline-none"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs tracking-wider text-[#8E887F]">Google Drive OAuth Client ID (optional)</span>
+            <span className="mb-1 block text-xs tracking-wider text-[#6B635B]">Google Drive OAuth Client ID (optional)</span>
             <input
               value={driveClientId}
               onChange={(e) => setDriveClientId(e.target.value)}
               placeholder="123456.apps.googleusercontent.com"
-              className="w-full border-b border-[#A29C93]/40 bg-transparent py-1 text-xs focus:border-[#6D655C] focus:outline-none"
+              className="w-full border-b border-[rgb(0_0_0_/_0.16)] bg-transparent py-1 text-xs focus:border-[#5C544B] focus:outline-none"
             />
           </label>
         </div>
@@ -394,15 +418,25 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
           <button
             type="button"
             onClick={() => void connectDrive()}
-            className="text-[#5D564E] hover:underline underline-offset-4"
+            className="text-[#4D453E] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5C544B]"
           >
             {driveStatus?.connected ? "Google Drive Connected ✓" : "Sign in with Google Drive"}
           </button>
-          <button type="button" onClick={saveProfile} className="rounded-full bg-[#FFF3A8] px-4 py-1 text-[#5D564E] hover:underline underline-offset-4">
+          <button type="button" onClick={saveProfile} className="rounded-full border border-[rgb(0_0_0_/_0.12)] bg-[#FFF3A8] px-4 py-1 text-[#4D453E] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5C544B]">
             Save
           </button>
         </div>
+
+        <div className="mt-3 flex items-center justify-between border-t border-[rgb(0_0_0_/_0.08)] pt-2.5 text-xs text-[#6B635B]">
+          <button type="button" onClick={() => setLegalTab("privacy")} className="hover:underline underline-offset-4">
+            Privacy &amp; Terms
+          </button>
+          <button type="button" onClick={() => setLegalTab("refunds")} className="text-[#8A3B31] hover:underline underline-offset-4">
+            Delete account &amp; data
+          </button>
+        </div>
       </div>
+      {legalTab && <LegalModal initialTab={legalTab} onClose={() => setLegalTab(null)} />}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   normalizeGeminiModel,
   parseJsonLoose,
   readBlurtGrades,
+  validateJsonSchema,
 } from "./index.js";
 import { fakeFetch } from "./testing/fakeFetch.js";
 
@@ -175,5 +176,18 @@ describe("gradeBlurtWithGemini", () => {
     await expect(gradeBlurtWithGemini(fakeFetch(() => ({ status: 429, body: { error: { message: "quota" } } })), { apiKey: "k", model: "m" }, blurt, notes)).rejects.toThrow(
       "HTTP 429: quota",
     );
+  });
+
+  it("enforces strict JSON schemas on AI outputs", async () => {
+    const schema = {
+      type: "OBJECT",
+      properties: { verdict: { type: "STRING", enum: ["PASS", "BLOCK"] }, score: { type: "NUMBER" } },
+      required: ["verdict", "score"],
+    } as const;
+    expect(validateJsonSchema({ verdict: "PASS", score: 0.9 }, schema)).toEqual({ ok: true });
+    expect(validateJsonSchema({ verdict: "MAYBE", score: 0.9 }, schema)).toMatchObject({ ok: false, path: "$.verdict" });
+    await expect(
+      generateGeminiJson(fakeFetch(() => answer({ verdict: "PASS" })), { apiKey: "k", model: "m", timeoutMs: 1000 }, {}, schema),
+    ).rejects.toThrow("schema check at $.score");
   });
 });

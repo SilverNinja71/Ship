@@ -8,6 +8,7 @@ import { useLookoutBridge } from "./hooks/useLookoutBridge.js";
 import { useVoyageTicker } from "./hooks/useVoyageTicker.js";
 import { useWebRTC } from "./hooks/useWebRTC.js";
 import { BreakReflectModal } from "./components/BreakReflectModal.js";
+import { ConsentBanner, LegalFooter } from "./components/ConsentBanner.js";
 import { Hud } from "./components/Hud.js";
 import { MonthlyStatsModal } from "./components/MonthlyStatsModal.js";
 import { PanelHost } from "./components/PanelHost.js";
@@ -29,15 +30,17 @@ export function App() {
   useCrewSync();
   useWebRTC();
   return (
-    <div id="top" className="min-h-screen w-full bg-[var(--page-bg)]">
-      <div className="relative h-screen min-h-[580px] w-full overflow-hidden">
+    <div id="top" className="min-h-[100dvh] w-full bg-[var(--page-bg)]">
+      <div className="relative h-[100dvh] min-h-[580px] w-full overflow-hidden">
         <ShipCanvas />
         <Hud />
       </div>
       <StudyMaterialsSection />
+      <LegalFooter />
       <PanelHost />
       <BreakReflectModal />
       <MonthlyStatsModal />
+      <ConsentBanner />
     </div>
   );
 }

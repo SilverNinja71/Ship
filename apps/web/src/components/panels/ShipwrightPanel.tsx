@@ -221,8 +221,8 @@ function Ships() {
               key={ship.id}
               style={{ backgroundColor: kawaii?.cardBg ?? "#FFFDF7" }}
               className={cx(
-                "overflow-hidden rounded-3xl border transition shadow-[3px_3px_0_#EAE5DA]",
-                active ? "border-[#C9A66B] ring-2 ring-[#FFF3A8]" : "border-[#A29C93]/50",
+                "overflow-hidden rounded-3xl border border-[var(--border-subtle)] transition shadow-sm",
+                active && "ring-2 ring-[#FFF3A8]",
               )}
             >
               <KawaiiShipPreview ship={ship} width={340} height={190} className="block" />

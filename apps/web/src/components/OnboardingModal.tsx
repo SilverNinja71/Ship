@@ -2,11 +2,9 @@
 // in Mr. Tiny Studio stationery style.
 
 import { useState } from "react";
+import { markTutorialSeen } from "../lib/accountData.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { cx } from "./ui.js";
-
-export const TUTORIAL_SEEN_KEY = "ship:tutorial-seen";
-export const SIGNIN_PROMPT_DISMISSED_KEY = "ship:signin-prompt-dismissed";
 
 interface TutorialStep {
   id: string;
@@ -62,7 +60,7 @@ const STEPS: TutorialStep[] = [
     badgeText: "#3F6948",
     title: "Plan your week with Banana Planna",
     subtitle: "Weekly Plan, Habits & Pomodoro Tracker",
-    body: "Scroll down below the ship—or click Banana Planna in the top bar—to fill in your numbered Weekly Plan, check off daily habits, and log tasks inside your Pomodoro sessions.",
+    body: "Scroll down below the ship, or click Banana Planna in the top bar, to fill in your numbered Weekly Plan, check off daily habits, and log tasks inside your Pomodoro sessions.",
     tip: "Tip: Sign in with Google Drive anytime to keep your plans, notes, and progress synced across devices.",
   },
 ];
@@ -81,11 +79,7 @@ export function OnboardingModal({
   const isLast = stepIdx === STEPS.length - 1;
 
   const finish = () => {
-    try {
-      localStorage.setItem(TUTORIAL_SEEN_KEY, "1");
-    } catch {
-      // ignore storage errors
-    }
+    markTutorialSeen();
     onClose();
   };
 

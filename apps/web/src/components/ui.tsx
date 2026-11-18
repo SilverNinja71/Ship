@@ -11,11 +11,11 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "seafoam";
 
 const BUTTON: Record<ButtonVariant, string> = {
-  primary: "bg-transparent text-[#5D564E] border-0 shadow-none hover:underline underline-offset-4",
-  seafoam: "bg-transparent text-[#457263] border-0 shadow-none hover:underline underline-offset-4",
-  secondary: "bg-transparent text-[#6D655C] border-0 shadow-none hover:underline underline-offset-4",
+  primary: "bg-transparent text-[#4D453E] border-0 shadow-none hover:underline underline-offset-4",
+  seafoam: "bg-transparent text-[#386657] border-0 shadow-none hover:underline underline-offset-4",
+  secondary: "bg-transparent text-[#5C544B] border-0 shadow-none hover:underline underline-offset-4",
   ghost: "bg-transparent text-current border-0 shadow-none hover:underline underline-offset-4",
-  danger: "bg-transparent text-[#9A473D] border-0 shadow-none hover:underline underline-offset-4",
+  danger: "bg-transparent text-[#8A3B31] border-0 shadow-none hover:underline underline-offset-4",
 };
 
 export function Button({
@@ -29,8 +29,8 @@ export function Button({
       type="button"
       className={cx(
         "inline-flex items-center justify-center gap-1.5 font-serif font-normal tracking-wide transition select-none",
-        "focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[#A29C93]",
-        "disabled:cursor-not-allowed disabled:opacity-45",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+        "disabled:cursor-not-allowed disabled:text-[var(--muted-ink)]",
         size === "sm" && "px-1.5 py-0.5 text-sm",
         size === "md" && "px-2 py-1 text-[15px]",
         size === "lg" && "px-2.5 py-1 text-base",
@@ -52,7 +52,7 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
     return () => previous?.focus?.();
   }, []);
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-navy-950/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-[rgb(0_0_0_/_0.26)] p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         ref={ref}
         role="dialog"
@@ -60,23 +60,25 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
         aria-labelledby={titleId}
         tabIndex={-1}
         className={cx(
-          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#A29C93]/45 bg-[#FFFDF7] font-serif text-[#6D655C] shadow-[4px_4px_0_#EAE5DA] outline-none sm:rounded-3xl",
+          "relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] font-serif text-[var(--page-ink)] shadow-sm outline-none sm:rounded-3xl sm:p-2",
           wide ? "sm:max-w-5xl" : "sm:max-w-3xl",
         )}
       >
-        <header className="flex items-center gap-3 border-b border-[#A29C93]/20 bg-[#FAF6E8] px-5 py-3">
-          {icon && <span className="grid size-10 place-items-center rounded-xl border border-[#A29C93]/40 bg-[#FFF7D6] text-[#6D655C]">{icon}</span>}
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="font-serif text-xl font-normal tracking-wide leading-tight">
-              {title}
-            </h2>
-            {subtitle && <p className="truncate text-sm text-[#8E887F]">{subtitle}</p>}
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="grid size-9 place-items-center rounded-full text-[#8E887F] hover:underline focus-visible:outline-1 focus-visible:outline-[#A29C93]">
-            <IconClose />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:rounded-[16px]">
+          <header className="flex items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-2)] px-5 py-3">
+            {icon && <span className="grid size-10 place-items-center rounded-xl border border-[var(--border-subtle)] bg-[#FFF7D6] text-[#5C544B]">{icon}</span>}
+            <div className="min-w-0 flex-1">
+              <h2 id={titleId} className="font-serif text-xl font-normal tracking-wide leading-tight">
+                {title}
+              </h2>
+              {subtitle && <p className="truncate text-sm text-[var(--muted-ink)]">{subtitle}</p>}
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="grid size-9 place-items-center rounded-full text-[var(--muted-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]">
+              <IconClose />
+            </button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        </div>
       </div>
     </div>
   );
@@ -84,7 +86,7 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; badge?: number }[]; value: T; onChange: (id: T) => void }) {
   return (
-    <div role="tablist" className="mb-4 flex flex-wrap gap-1.5 rounded-2xl bg-cream-200 p-1.5">
+    <div role="tablist" className="mb-4 flex flex-wrap gap-1.5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-1">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -93,8 +95,8 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
           className={cx(
-            "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-display text-sm font-bold transition",
-            value === t.id ? "bg-navy-900 text-cream-50 shadow" : "text-ink/70 hover:bg-cream-50",
+            "flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-display text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+            value === t.id ? "bg-navy-900 text-cream-50 shadow-sm" : "text-[var(--muted-ink)] hover:bg-[var(--surface-1)] hover:text-[var(--page-ink)]",
           )}
         >
           {t.label}
@@ -108,14 +110,14 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-bold text-ink/80">{label}</span>
+      <span className="mb-1 block text-sm font-bold text-[var(--page-ink)]">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-ink/60">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-[var(--muted-ink)]">{hint}</span>}
     </label>
   );
 }
 
-const INPUT = "w-full rounded-xl border-2 border-ink/25 bg-cream-50 px-3 py-2 text-ink placeholder:text-ink/40 focus:border-navy-600 focus:outline-none focus:ring-2 focus:ring-brass-300";
+const INPUT = "w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 text-[var(--page-ink)] placeholder:text-[var(--muted-ink)] focus-visible:border-navy-600 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brass-400";
 
 // React 19 passes `ref` through as an ordinary prop, so these need no forwardRef.
 export function TextInput(props: ComponentProps<"input">) {
@@ -131,13 +133,13 @@ export function Select(props: ComponentProps<"select">) {
 }
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx("rounded-2xl border-2 border-ink/15 bg-cream-50 p-4", className)}>{children}</div>;
+  return <div className={cx("rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4", className)}>{children}</div>;
 }
 
 export function Badge({ children, tone = "plain", className }: { children: ReactNode; tone?: "plain" | "brass" | "seafoam" | "coral" | "navy"; className?: string }) {
   const tones = {
-    plain: "bg-ink/8 text-ink/80",
-    brass: "bg-brass-300 text-ink",
+    plain: "bg-[rgb(0_0_0_/_0.06)] text-[var(--page-ink)]",
+    brass: "bg-brass-300 text-[#4D453E]",
     seafoam: "bg-seafoam-500 text-white",
     coral: "bg-coral-500 text-white",
     navy: "bg-navy-800 text-cream-50",
@@ -148,7 +150,7 @@ export function Badge({ children, tone = "plain", className }: { children: React
 export function ProgressBar({ value, color = "var(--color-seafoam-500)", label, className }: { value: number; color?: string; label?: string; className?: string }) {
   const pct = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
-    <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={label} className={cx("h-3 w-full overflow-hidden rounded-full border-2 border-ink/30 bg-ink/10", className)}>
+    <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={label} className={cx("h-3 w-full overflow-hidden rounded-full border border-[var(--border-subtle)] bg-[rgb(0_0_0_/_0.08)]", className)}>
       <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: color }} />
     </div>
   );
@@ -156,9 +158,9 @@ export function ProgressBar({ value, color = "var(--color-seafoam-500)", label, 
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="rounded-2xl border-2 border-dashed border-ink/20 px-6 py-8 text-center">
+    <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] px-6 py-8 text-center">
       <p className="font-display text-lg font-bold">{title}</p>
-      {children && <div className="mt-1 text-sm text-ink/70">{children}</div>}
+      {children && <div className="mt-1 text-sm text-[var(--muted-ink)]">{children}</div>}
     </div>
   );
 }
@@ -168,16 +170,19 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
     <label className="flex cursor-pointer items-start justify-between gap-4 py-2">
       <span>
         <span className="block font-bold">{label}</span>
-        {hint && <span className="block text-sm text-ink/60">{hint}</span>}
+        {hint && <span className="block text-sm text-[var(--muted-ink)]">{hint}</span>}
       </span>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={cx("relative mt-0.5 h-7 w-12 shrink-0 rounded-full border-2 border-ink transition", checked ? "bg-seafoam-500" : "bg-ink/20")}
+        className={cx(
+          "relative mt-0.5 h-7 w-12 shrink-0 rounded-full border border-[var(--border-subtle)] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+          checked ? "bg-seafoam-500" : "bg-[rgb(0_0_0_/_0.14)]",
+        )}
       >
-        <span className={cx("absolute top-0.5 size-5 rounded-full border-2 border-ink bg-cream-50 transition-all", checked ? "left-[22px]" : "left-0.5")} />
+        <span className={cx("absolute top-0.5 size-5 rounded-full border border-[rgb(0_0_0_/_0.2)] bg-cream-50 transition-all", checked ? "left-[22px]" : "left-0.5")} />
       </button>
     </label>
   );

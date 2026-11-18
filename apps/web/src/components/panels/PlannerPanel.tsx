@@ -2,6 +2,7 @@
 // Pomodoro Tracker, and Monthly Calendar, with pastel costume minions.
 
 import { useState } from "react";
+import { buildMonthlyReportText, buildObsidianMarkdown, downloadTextFile } from "../../lib/plannerExport.js";
 import { DAYS, todayDateKey, usePlanner } from "../../stores/plannerStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { useVoyage } from "../../stores/voyageStore.js";
@@ -38,7 +39,7 @@ export function PlannerPanel({ onClose }: { onClose: () => void }) {
   const isStartOfWeek = now.getDay() === 0 || now.getDay() === 1;
 
   return (
-    <Panel title="Banana Planna" subtitle="Mr. Tiny Studio pastel sheets — plan your weeks, habits, and months" icon={<IconCalendar />} onClose={onClose} wide>
+    <Panel title="Banana Planna" subtitle="Mr. Tiny Studio pastel sheets · plan your weeks, habits, and months" icon={<IconCalendar />} onClose={onClose} wide>
       {(isStartOfMonth || isStartOfWeek) && !checkedInToday && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#FFF9DC] px-4 py-2 text-xs text-ink">
           <span>
@@ -422,81 +423,6 @@ function MonthlySheet() {
   );
 }
 
-function buildObsidianMarkdown(): string {
-  const p = usePlanner.getState();
-  const v = useVoyage.getState();
-  const lines: string[] = [
-    `# Ship Tiny Planner — ${p.monthTitle || new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}`,
-    "",
-    `## Weekly Plan (${p.weeklyTitle || "This Week"})`,
-    `**Goal:** ${p.weeklyGoal || "—"}`,
-    "",
-    ...DAYS.map((day, dIdx) => {
-      const items = p.weeklyCells.map((row) => row[dIdx]?.trim()).filter(Boolean);
-      return `### ${day}\n${items.length ? items.map((item) => `- ${item}`).join("\n") : "- [ ] "}`;
-    }),
-    "",
-    "## Session Tasks",
-    ...(v.sessionTasks.length ? v.sessionTasks.map((t) => `- [${t.done ? "x" : " "}] ${t.text}`) : ["- [ ] No tasks added yet"]),
-    "",
-    "## Habit Tracker",
-    ...p.habits.map((h) => {
-      const count = h.checks.filter(Boolean).length;
-      return `- ${h.label}: ${count}/31 days`;
-    }),
-    "",
-    "## Monthly Notes",
-    p.monthNotes || "—",
-    "",
-    "## Recent Break Reflections",
-    ...(v.breakReflections.length
-      ? v.breakReflections.slice(0, 10).flatMap((r) => [
-          `### ${new Date(r.at).toLocaleString()} (Round ${r.cycle})`,
-          `- **How was your session?** ${r.howWasSession || "—"}`,
-          `- **What worked / didn't?** ${r.whatWorked || "—"}`,
-          `- **Improve next round:** ${r.nextAdjustment || "—"}`,
-        ])
-      : ["- No reflections recorded yet."]),
-  ];
-  return lines.join("\n");
-}
-
-function buildMonthlyReportText(): string {
-  const v = useVoyage.getState();
-  const p = usePlanner.getState();
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const monthVoyages = v.records.filter((r) => r.startedAt >= monthStart);
-  const totalMinutes = monthVoyages.reduce((acc, r) => acc + r.focusedMinutes, 0);
-  const completedCount = monthVoyages.filter((r) => r.completed).length;
-  const tasksDone = v.sessionTasks.filter((t) => t.done).length;
-  const habitChecks = p.habits.reduce((acc, h) => acc + h.checks.filter(Boolean).length, 0);
-  const monthLabel = now.toLocaleString("en-US", { month: "long", year: "numeric" });
-
-  return [
-    `Ship Monthly Progress Report — ${monthLabel}`,
-    `==========================================`,
-    `Focus Minutes Sailed: ${totalMinutes} min`,
-    `Completed Voyages: ${completedCount} / ${monthVoyages.length}`,
-    `Session Tasks Completed: ${tasksDone} / ${v.sessionTasks.length}`,
-    `Habit Check-ins Logged: ${habitChecks}`,
-    `Weekly Goal: ${p.weeklyGoal || "—"}`,
-    "",
-    "Recent Break Reflections:",
-    ...(v.breakReflections.slice(0, 5).map((r) => `• ${r.howWasSession || "Session"} | Worked: ${r.whatWorked || "—"} | Next: ${r.nextAdjustment || "—"}`)),
-  ].join("\n");
-}
-
-function downloadText(filename: string, content: string, mime = "text/markdown;charset=utf-8") {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function SyncAndReportSheet() {
   const toast = useUi((s) => s.toast);
   const [email, setEmail] = useState("");
@@ -505,8 +431,8 @@ function SyncAndReportSheet() {
   const syncToObsidianFolder = async () => {
     const picker = (window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
     if (!picker) {
-      downloadText("Ship-Planner.md", buildObsidianMarkdown());
-      toast("Downloaded Ship-Planner.md — drop it into your Obsidian vault!", "info");
+      downloadTextFile("Ship-Planner.md", buildObsidianMarkdown());
+      toast("Downloaded Ship-Planner.md so you can drop it into your Obsidian vault!", "info");
       return;
     }
     try {
@@ -522,15 +448,15 @@ function SyncAndReportSheet() {
   };
 
   const emailReport = () => {
-    const subject = encodeURIComponent(`Ship Monthly Progress Report — ${new Date().toLocaleString("en-US", { month: "long", year: "numeric" })}`);
+    const subject = encodeURIComponent(`Ship Monthly Progress Report (${new Date().toLocaleString("en-US", { month: "long", year: "numeric" })})`);
     const body = encodeURIComponent(reportText);
     const to = encodeURIComponent(email.trim());
     window.open(`mailto:${to}?subject=${subject}&body=${body}`, "_blank");
   };
 
   return (
-    <div className="space-y-4 rounded-2xl border-2 border-ink/25 bg-[#FFFDF9] p-4 sm:p-6">
-      <div className="rounded-xl border-2 border-ink/20 bg-cream-50 p-4">
+    <div className="space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4 sm:p-6">
+      <div className="rounded-xl border border-[var(--border-subtle)] bg-cream-50 p-4">
         <h3 className="font-display text-base font-extrabold">Obsidian Vault Sync</h3>
         <p className="mt-1 text-xs text-ink/70">
           Write your Weekly Plan, Session Tasks (`- [ ]`), Habit Tracker, Monthly Notes, and Break Reflections directly to your local Obsidian vault as Markdown.
@@ -539,15 +465,15 @@ function SyncAndReportSheet() {
           <Button variant="primary" size="sm" onClick={syncToObsidianFolder}>
             Sync to Obsidian Folder
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => downloadText("Ship-Planner.md", buildObsidianMarkdown())}>
+          <Button variant="secondary" size="sm" onClick={() => downloadTextFile("Ship-Planner.md", buildObsidianMarkdown())}>
             Download Ship-Planner.md
           </Button>
         </div>
       </div>
 
-      <div className="rounded-xl border-2 border-ink/20 bg-cream-50 p-4">
+      <div className="rounded-xl border border-[var(--border-subtle)] bg-cream-50 p-4">
         <h3 className="font-display text-base font-extrabold">End-of-Month Progress Report</h3>
-        <pre className="mt-2 max-h-44 overflow-auto rounded-lg border border-ink/20 bg-white/80 p-3 font-mono text-xs whitespace-pre-wrap text-ink">
+        <pre className="mt-2 max-h-44 overflow-auto rounded-lg border border-[var(--border-subtle)] bg-white/80 p-3 font-mono text-xs whitespace-pre-wrap text-ink">
           {reportText}
         </pre>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -557,12 +483,12 @@ function SyncAndReportSheet() {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="your@email.com"
             aria-label="Email for monthly progress report"
-            className="min-w-48 flex-1 rounded-xl border-2 border-ink/25 bg-white px-3 py-1.5 text-sm focus:border-ink focus:outline-none"
+            className="min-w-48 flex-1 rounded-xl border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-sm focus:border-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]"
           />
           <Button variant="primary" size="sm" onClick={emailReport}>
             Email Monthly Report
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => downloadText("Ship-Monthly-Report.txt", reportText, "text/plain;charset=utf-8")}>
+          <Button variant="secondary" size="sm" onClick={() => downloadTextFile("Ship-Monthly-Report.txt", reportText, "text/plain;charset=utf-8")}>
             Download Report
           </Button>
         </div>

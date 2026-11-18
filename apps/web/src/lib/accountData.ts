@@ -1,0 +1,99 @@
+// Centralized persistence, consent, tutorial state, and full account/data deletion.
+// Keeps direct browser storage access and Firebase user deletion out of React components.
+
+import { deleteUser, signOut } from "firebase/auth";
+import { clearNotes } from "./noteVault.js";
+import { auth } from "./firebase.js";
+
+export const TUTORIAL_SEEN_KEY = "ship:tutorial-seen";
+export const SIGNIN_PROMPT_DISMISSED_KEY = "ship:signin-prompt-dismissed";
+export const PROFILE_NAME_KEY = "ship:profile-name";
+export const PROFILE_EMAIL_KEY = "ship:profile-email";
+export const COOKIE_CONSENT_KEY = "ship:storage-consent";
+
+function safeGet(key: string): string | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string): void {
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage quota / privacy mode errors cleanly.
+  }
+}
+
+export function getSavedProfile(): { name: string; email: string } {
+  return {
+    name: safeGet(PROFILE_NAME_KEY) ?? "",
+    email: safeGet(PROFILE_EMAIL_KEY) ?? "",
+  };
+}
+
+export function saveLocalProfile(name: string, email: string): void {
+  if (name.trim()) safeSet(PROFILE_NAME_KEY, name.trim());
+  if (email.trim()) safeSet(PROFILE_EMAIL_KEY, email.trim());
+}
+
+export function hasSeenTutorial(): boolean {
+  return safeGet(TUTORIAL_SEEN_KEY) === "1";
+}
+
+export function markTutorialSeen(): void {
+  safeSet(TUTORIAL_SEEN_KEY, "1");
+}
+
+export function isSignInPromptDismissed(): boolean {
+  return safeGet(SIGNIN_PROMPT_DISMISSED_KEY) === "1";
+}
+
+export function dismissSignInPromptStorage(): void {
+  safeSet(SIGNIN_PROMPT_DISMISSED_KEY, "1");
+}
+
+export function getConsentState(): "accepted" | "essential-only" | null {
+  const val = safeGet(COOKIE_CONSENT_KEY);
+  return val === "accepted" || val === "essential-only" ? val : null;
+}
+
+export function setConsentState(choice: "accepted" | "essential-only"): void {
+  safeSet(COOKIE_CONSENT_KEY, choice);
+}
+
+/**
+ * Removes all local Ship data (`ship:*` localStorage keys and the IndexedDB
+ * `ship-notes` store) and deletes or signs out the current Firebase Auth user.
+ */
+export async function deleteAllUserData(): Promise<{ deletedFirebaseAccount: boolean }> {
+  let deletedFirebaseAccount = false;
+  const user = auth.currentUser;
+  if (user) {
+    try {
+      await deleteUser(user);
+      deletedFirebaseAccount = true;
+    } catch {
+      // Recent sign-in may be required for account deletion; still sign out cleanly.
+      await signOut(auth).catch(() => undefined);
+    }
+  }
+
+  try {
+    if (typeof localStorage !== "undefined") {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith("ship:")) keysToRemove.push(key);
+      }
+      for (const k of keysToRemove) localStorage.removeItem(k);
+    }
+  } catch {
+    // Ignore storage cleanup errors.
+  }
+
+  await clearNotes().catch(() => undefined);
+  return { deletedFirebaseAccount };
+}

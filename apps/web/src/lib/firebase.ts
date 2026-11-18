@@ -9,6 +9,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
+import { saveLocalProfile } from "./accountData.js";
 
 const firebaseConfig = {
   projectId: "ship-pwedo-pomo",
@@ -27,8 +28,7 @@ googleProvider.setCustomParameters({ prompt: "select_account" });
 export async function signInWithGoogle(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
   const { user } = result;
-  if (user.displayName) localStorage.setItem("ship:profile-name", user.displayName);
-  if (user.email) localStorage.setItem("ship:profile-email", user.email);
+  saveLocalProfile(user.displayName ?? "", user.email ?? "");
   return user;
 }
 

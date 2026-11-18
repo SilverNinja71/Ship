@@ -18,7 +18,7 @@ export function LookoutPanel({ onClose }: { onClose: () => void }) {
   return (
     <Panel title="The Lookout" subtitle="Keeps the sirens away while you sail" icon={<IconSpyglass />} onClose={onClose}>
       <div className="space-y-4">
-        <Card className={connected ? "border-seafoam-500" : undefined}>
+        <Card className={connected ? "bg-[#E2F3EC]/45" : undefined}>
           <div className="flex items-center justify-between gap-2">
             <p className="font-display text-lg font-extrabold">{connected ? "The Lookout is in the crow's nest" : "The Lookout isn't connected"}</p>
             {connected ? <Badge tone="seafoam">Connected{version ? ` · v${version}` : ""}</Badge> : <Badge>Offline</Badge>}

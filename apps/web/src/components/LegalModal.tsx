@@ -1,0 +1,158 @@
+// Privacy Policy, Terms of Service, Cookie/Storage Policy, Free-Tier/Refund Notice,
+// Operator Contact Info, and one-click Account & Local Data Deletion flow.
+
+import { useState } from "react";
+import { deleteAllUserData } from "../lib/accountData.js";
+import { useUi } from "../stores/uiStore.js";
+import { IconClose } from "./icons.js";
+import { cx } from "./ui.js";
+
+export type LegalTab = "privacy" | "terms" | "cookies" | "refunds";
+
+export function LegalModal({
+  initialTab = "privacy",
+  onClose,
+}: {
+  initialTab?: LegalTab;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<LegalTab>(initialTab);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const toast = useUi((s) => s.toast);
+
+  const handleDeleteAll = async () => {
+    setDeleting(true);
+    try {
+      const { deletedFirebaseAccount } = await deleteAllUserData();
+      toast(
+        deletedFirebaseAccount
+          ? "Deleted your Google account link and all local study data. Reloading..."
+          : "Cleared all local study data and signed out. Reloading...",
+        "info",
+      );
+      setTimeout(() => window.location.reload(), 900);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Legal, Privacy & Data Controls"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[rgb(0_0_0_/_0.22)] p-4 backdrop-blur-[2px]"
+    >
+      <div className="flex max-h-[88dvh] w-full max-w-xl flex-col rounded-3xl border border-[rgb(0_0_0_/_0.12)] bg-[var(--color-cream-50)] p-3 font-serif text-[var(--page-ink)] shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-[rgb(0_0_0_/_0.08)] bg-[var(--surface-1)] p-4">
+          <div className="mb-3 flex items-center justify-between gap-2 border-b border-[rgb(0_0_0_/_0.1)] pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-[var(--page-ink)]">Privacy, Terms & Data Controls</h2>
+              <p className="text-xs text-[var(--muted-ink)]">Ship Pwedo Pomo · Antonio for Secretary Studio</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close legal dialog"
+              className="grid size-8 place-items-center rounded-full text-[var(--muted-ink)] transition hover:bg-[rgb(0_0_0_/_0.06)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+            >
+              <IconClose size={15} />
+            </button>
+          </div>
+
+          <div role="tablist" className="mb-3 flex flex-wrap gap-1 rounded-xl border border-[rgb(0_0_0_/_0.1)] bg-[var(--surface-2)] p-1 text-xs">
+            {(
+              [
+                { id: "privacy", label: "Privacy Policy" },
+                { id: "terms", label: "Terms of Service" },
+                { id: "cookies", label: "Cookies & Storage" },
+                { id: "refunds", label: "Free Tier & Contact" },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.id}
+                onClick={() => setTab(item.id)}
+                className={cx(
+                  "rounded-lg px-2.5 py-1 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+                  tab === item.id
+                    ? "bg-[var(--color-cream-50)] font-bold text-[var(--page-ink)]"
+                    : "text-[var(--muted-ink)] hover:underline underline-offset-4",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 text-sm leading-relaxed text-[var(--page-ink)]">
+            {tab === "privacy" && (
+              <>
+                <p><strong>Minimal Data Collection:</strong> Ship stores your flashcards, study sheets, Pomodoro logs, and Banana Planna schedules locally in your browser (`localStorage` and `IndexedDB`). We do not sell, rent, or run third-party advertising trackers on your study data.</p>
+                <p><strong>Optional Google Sign-In & Drive Sync:</strong> If you choose to sign in with Google (via Firebase Authentication) or connect your own Google Drive OAuth Client ID, Google shares only the basic profile information (name and email) or Drive files you explicitly authorize. If you use your own Gemini API key, prompts go directly from your browser to Google&apos;s Gemini API.</p>
+                <p><strong>Age Gate:</strong> By creating an account or signing in with Google, you confirm that you are 13 years or older (or using Ship with parent/school consent).</p>
+              </>
+            )}
+
+            {tab === "terms" && (
+              <>
+                <p><strong>Acceptable Use:</strong> Ship Pwedo Pomo is provided as a calm student productivity and active-recall study workspace. Please upload only study materials you own or have permission to study from.</p>
+                <p><strong>Service Availability:</strong> Because local-first browser storage depends on your device, keep occasional backups using the Export options or Google Drive sync before clearing browser data.</p>
+                <p><strong>No Unverified Medical or Academic Guarantees:</strong> Study recommendations and spaced-repetition intervals are educational helpers and carry no academic grade warranty.</p>
+              </>
+            )}
+
+            {tab === "cookies" && (
+              <>
+                <p><strong>Essential Browser Storage Only:</strong> Ship uses browser `localStorage` (under `ship:*` keys) and `IndexedDB` (`ship-notes`) strictly to remember your Pomodoro preferences, uploaded notes, tutorial progress, and Firebase Authentication session.</p>
+                <p><strong>Consent Choice:</strong> Choosing &ldquo;Essential Only&rdquo; or &ldquo;Accept Storage&rdquo; lets you keep core session state without third-party analytics cookies.</p>
+              </>
+            )}
+
+            {tab === "refunds" && (
+              <>
+                <p><strong>100% Free & Open Access (Refund Policy):</strong> Ship Pwedo Pomo charges zero subscription fees, zero in-app purchases, and collects no payment card data. Any virtual doubloons shown inside the study workspace are earned through study focus only and have no monetary value, so no refunds apply.</p>
+                <p><strong>Operator & Contact Details:</strong> Ship Pwedo Pomo Student Project · Operated by Antonio Lin · Hosted on Firebase (`ship-pwedo-pomo.web.app`). For privacy or data inquiries, use your GitHub repository issues (`SilverNinja71/Ship`) or delete all local/account data directly below.</p>
+              </>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[rgb(0_0_0_/_0.1)] pt-3 text-xs">
+            <span className="text-[var(--muted-ink)]">Unsubscribe / Data Removal</span>
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => void handleDeleteAll()}
+                  className="rounded-full border border-[rgb(0_0_0_/_0.14)] bg-[#FDE8E4] px-3 py-1 font-bold text-[#8A3B31] transition hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+                >
+                  {deleting ? "Deleting..." : "Confirm Delete All Data"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-[var(--muted-ink)] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="font-semibold text-[#8A3B31] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+              >
+                Delete my account & all local data
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

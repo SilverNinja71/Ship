@@ -8,6 +8,14 @@ import { BLURT_STATUS_COLORS } from "@ship/shared-types";
 import type { BlurtConceptResult, BlurtResult } from "@ship/shared-types";
 import { annotateBlurt, annotateNotes } from "@ship/active-recall-engine";
 import type { TextSpan } from "@ship/active-recall-engine";
+import {
+  FIRST_STRETCH,
+  LONG_FILE_PAGES,
+  buildNoteSources,
+  mergeHashtags,
+  suggestHashtags,
+} from "../../lib/captainsLogService.js";
+import type { NoteSource } from "../../lib/captainsLogService.js";
 import { clozeFront, gradeLogEntry } from "../../lib/blurtGrading.js";
 import { relativeTime } from "../../lib/format.js";
 import { useFleet } from "../../stores/fleetStore.js";
@@ -18,16 +26,6 @@ import { IconLog } from "../icons.js";
 import { Badge, Button, Card, EmptyState, Field, Panel, ProgressBar, Select, Tabs, TextArea, TextInput, cx, readFile } from "../ui.js";
 
 type Step = "notes" | "blurt" | "results";
-
-/** Longer files start on their first stretch, since Ship picks at most 30 key ideas from whatever is chosen. */
-const LONG_FILE_PAGES = 20;
-const FIRST_STRETCH = 10;
-
-interface NoteSource {
-  id: string;
-  title: string;
-  pages: { label: string; text: string }[];
-}
 type Tab = "practice" | "history";
 
 const STATUS_MARK: Record<BlurtConceptResult["status"], string> = { mastered: "✓", partial: "~", missed: "✗" };
@@ -115,11 +113,6 @@ export function CaptainsLogPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function normalizeHashtag(raw: string): string | null {
-  const cleaned = raw.trim().replace(/^#+/, "").replace(/\s+/g, "-");
-  return cleaned ? `#${cleaned}` : null;
-}
-
 function NotesStep({
   title,
   notes,
@@ -147,21 +140,12 @@ function NotesStep({
   const [tagDraft, setTagDraft] = useState("");
 
   const addHashtagsFromInput = (raw: string) => {
-    const parts = raw.split(/[\s,]+/).map(normalizeHashtag).filter((x): x is string => Boolean(x));
-    if (parts.length === 0) return;
-    const merged = Array.from(new Set([...hashtags, ...parts]));
-    onHashtags(merged);
+    const merged = mergeHashtags(hashtags, raw);
+    if (merged.length !== hashtags.length) onHashtags(merged);
     setTagDraft("");
   };
 
-  const sources = useMemo<NoteSource[]>(
-    () => [
-      // PDF and PowerPoint pages keep their real numbers, even when a blank one was left out.
-      ...imported.map((n) => ({ id: n.id, title: n.title, pages: n.pages.map((p, i) => ({ label: /^\d+$/.test(p.id) ? p.id : `${i + 1}`, text: p.text })) })),
-      ...library.filter((l) => l.text).map((l) => ({ id: l.id, title: l.title, pages: [{ label: "1", text: l.text ?? "" }] })),
-    ],
-    [imported, library],
-  );
+  const sources = useMemo<NoteSource[]>(() => buildNoteSources(imported, library), [imported, library]);
   const [picked, setPicked] = useState<{ source: NoteSource; from: number; to: number } | null>(null);
   const choose = (source: NoteSource, from: number, to: number) => {
     setPicked({ source, from, to });
@@ -192,12 +176,7 @@ function NotesStep({
 
   const words = notes.trim() ? notes.trim().split(/\s+/).length : 0;
   const blurts = useRecall((s) => s.blurts);
-  const defaultSuggestions = ["#biology", "#math", "#history", "#english", "#unit1", "#unit2", "#chapter1", "#week1", "#student-council"];
-  const knownTags = Array.from(new Set([...blurts.flatMap((b) => b.hashtags ?? []), ...defaultSuggestions]));
-  const tagQuery = tagDraft.trim().replace(/^#+/, "").toLowerCase();
-  const suggestions = knownTags
-    .filter((t) => !hashtags.includes(t) && (!tagQuery || t.toLowerCase().includes(tagQuery)))
-    .slice(0, 6);
+  const suggestions = useMemo(() => suggestHashtags(blurts, hashtags, tagDraft), [blurts, hashtags, tagDraft]);
 
   return (
     <div className="space-y-3">

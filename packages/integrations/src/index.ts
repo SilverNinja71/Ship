@@ -91,8 +91,9 @@ export {
   generateGeminiJson,
   normalizeGeminiModel,
   parseJsonLoose,
+  validateJsonSchema,
 } from "./gemini.js";
-export type { GeminiCallOptions } from "./gemini.js";
+export type { GeminiCallOptions, JsonSchema, SchemaValidationResult } from "./gemini.js";
 export { BLURT_GEMINI_TIMEOUT_MS, BLURT_SYSTEM_PROMPT, buildBlurtRequest, gradeBlurtWithGemini, readBlurtGrades } from "./geminiBlurt.js";
 export type { GeminiBlurtOptions } from "./geminiBlurt.js";
 

@@ -1,63 +1,73 @@
 @import "tailwindcss";
 
-/* Ship's palette: navy night sea, cream canvas, brass fittings, seafoam and coral for right and wrong. */
+/* Ship's palette in perceptually uniform OKLCH + subtle alpha borders and progressive surfaces. */
 @theme {
-  --color-navy-950: #0F1729;
-  --color-navy-900: #1D2B4A;
-  --color-navy-800: #26385E;
-  --color-navy-700: #33497A;
-  --color-navy-600: #46609A;
-  --color-cream-50: #FFFDF7;
-  --color-cream-100: #FBF5E6;
-  --color-cream-200: #F4EBD9;
-  --color-cream-300: #E8DAC0;
-  --color-brass-300: #F2D27A;
-  --color-brass-400: #E3B341;
-  --color-brass-500: #C9962A;
-  --color-brass-700: #8A6417;
-  --color-seafoam-400: #5FCBB0;
-  --color-seafoam-500: #3FB59A;
-  --color-seafoam-700: #237A66;
-  --color-coral-400: #EE8070;
-  --color-coral-500: #E2604F;
-  --color-coral-700: #A63A2C;
-  --color-amber-sail: #F5D782;
-  --color-ink: #7A7167;
+  --color-navy-950: oklch(0.205 0.038 262);
+  --color-navy-900: oklch(0.295 0.058 262);
+  --color-navy-800: oklch(0.355 0.068 262);
+  --color-navy-700: oklch(0.435 0.082 262);
+  --color-navy-600: oklch(0.515 0.088 262);
+  --color-cream-50: oklch(0.992 0.008 92);
+  --color-cream-100: oklch(0.968 0.018 88);
+  --color-cream-200: oklch(0.935 0.025 82);
+  --color-cream-300: oklch(0.888 0.036 78);
+  --color-brass-300: oklch(0.875 0.115 88);
+  --color-brass-400: oklch(0.795 0.142 82);
+  --color-brass-500: oklch(0.705 0.142 78);
+  --color-brass-700: oklch(0.525 0.105 78);
+  --color-seafoam-400: oklch(0.768 0.112 168);
+  --color-seafoam-500: oklch(0.688 0.118 168);
+  --color-seafoam-700: oklch(0.505 0.095 168);
+  --color-coral-400: oklch(0.715 0.135 28);
+  --color-coral-500: oklch(0.642 0.155 28);
+  --color-coral-700: oklch(0.488 0.132 28);
+  --color-amber-sail: oklch(0.885 0.105 88);
+  --color-ink: oklch(0.525 0.018 72);
 
   --font-display: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-body: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 
-  --shadow-card: 0 3px 0 0 rgb(186 176 162 / 0.45), 0 8px 20px -6px rgb(142 132 121 / 0.14);
+  --shadow-card: 0 3px 0 0 rgb(186 176 162 / 0.38), 0 8px 20px -6px rgb(142 132 121 / 0.12);
 }
 
 :root,
 [data-visual-style="tiny-ink"] {
-  --page-bg: #FFFDF5;
-  --page-ink: #6D655C;
+  --page-bg: oklch(0.992 0.009 92);
+  --page-ink: oklch(0.465 0.016 70);
+  --muted-ink: oklch(0.515 0.015 68);
+  --border-subtle: rgb(0 0 0 / 0.12);
+  --surface-1: oklch(0.996 0.005 92);
+  --surface-2: oklch(0.974 0.014 88);
+  --surface-3: oklch(0.952 0.018 86);
   --hud-bg: rgb(255 253 247 / 0.94);
-  --hud-hover: rgb(158 148 135 / 0.1);
-  --hud-text: #6D655C;
-  --hud-muted: rgb(109 101 92 / 0.65);
-  --hud-track: rgb(158 148 135 / 0.16);
-  --hud-dot-off: rgb(158 148 135 / 0.28);
+  --hud-hover: rgb(0 0 0 / 0.06);
+  --hud-text: oklch(0.465 0.016 70);
+  --hud-muted: rgb(88 80 71 / 0.78);
+  --hud-track: rgb(0 0 0 / 0.12);
+  --hud-dot-off: rgb(0 0 0 / 0.24);
 }
 
 [data-visual-style="storybook"] {
-  --page-bg: var(--color-navy-950);
-  --page-ink: var(--color-cream-100);
-  --hud-bg: rgb(29 43 74 / 0.9);
-  --hud-hover: rgb(255 253 247 / 0.15);
-  --hud-text: var(--color-cream-50);
-  --hud-muted: rgb(255 253 247 / 0.7);
-  --hud-track: rgb(255 253 247 / 0.2);
-  --hud-dot-off: rgb(255 253 247 / 0.3);
-  --shadow-card: 0 2px 0 0 rgb(42 34 56 / 0.25), 0 10px 30px -10px rgb(15 23 41 / 0.5);
+  --page-bg: oklch(0.205 0.038 262);
+  --page-ink: oklch(0.968 0.018 88);
+  --muted-ink: oklch(0.835 0.016 88);
+  --border-subtle: rgb(255 255 255 / 0.14);
+  --surface-1: oklch(0.245 0.042 262);
+  --surface-2: oklch(0.285 0.046 262);
+  --surface-3: oklch(0.325 0.052 262);
+  --hud-bg: rgb(29 43 74 / 0.92);
+  --hud-hover: rgb(255 253 247 / 0.12);
+  --hud-text: oklch(0.992 0.008 92);
+  --hud-muted: rgb(255 253 247 / 0.78);
+  --hud-track: rgb(255 253 247 / 0.22);
+  --hud-dot-off: rgb(255 253 247 / 0.34);
+  --shadow-card: none;
 }
 
 html,
 body,
 #root {
-  min-height: 100%;
+  min-height: 100dvh;
 }
 
 body {
@@ -68,6 +78,26 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.carousel-mask {
+  mask-image: linear-gradient(90deg, transparent, black 15% 85%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 15% 85%, transparent);
+}
+
+@keyframes icon-swap-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.icon-swap-in {
+  animation: icon-swap-in 180ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {

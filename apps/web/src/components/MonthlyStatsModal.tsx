@@ -187,32 +187,33 @@ export function MonthlyStatsModal() {
       onMouseDown={(e) => e.target === e.currentTarget && closeMonthlyStats()}
       className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[#6D655C]/25 p-4 backdrop-blur-[2px]"
     >
-      <div className="flex aspect-square w-full max-w-md flex-col justify-between rounded-3xl border border-[#A29C93]/60 bg-[#FFFDF7] p-6 text-[#6D655C] shadow-[4px_4px_0_#EAE5DA]">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <PastelMinionBadge costume={view.badge} size={38} />
-            <div>
-              <p className="font-serif text-[11px] uppercase tracking-[0.18em] text-[#8E887F]">
-                {formatMonthLabel(activeMonthKey)}
-              </p>
-              <h2 className="font-display text-base font-extrabold text-[#6D655C]">
-                {view.label}
-              </h2>
+      <div className="flex aspect-square w-full max-w-md flex-col justify-between rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2 text-[var(--page-ink)] shadow-sm">
+        <div className="flex flex-1 flex-col justify-between rounded-[16px] border border-[rgb(0_0_0_/_0.06)] bg-[var(--surface-1)] p-4">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <PastelMinionBadge costume={view.badge} size={38} />
+              <div>
+                <p className="font-serif text-[11px] uppercase tracking-[0.18em] text-[var(--muted-ink)]">
+                  {formatMonthLabel(activeMonthKey)}
+                </p>
+                <h2 className="font-display text-base font-extrabold text-[var(--page-ink)]">
+                  {view.label}
+                </h2>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={closeMonthlyStats}
+              aria-label="Close monthly stats"
+              className="grid size-8 place-items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--muted-ink)] transition hover:bg-[#FFF8D6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+            >
+              <IconClose size={14} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={closeMonthlyStats}
-            aria-label="Close monthly stats"
-            className="grid size-8 place-items-center rounded-full border border-[#A29C93]/35 bg-[#FAF6E8] text-[#8E887F] transition hover:bg-[#FFF8D6]"
-          >
-            <IconClose size={14} />
-          </button>
-        </div>
 
-        {/* Stat Slide Body */}
-        <div className={`my-3 flex flex-1 flex-col items-center justify-center rounded-2xl border border-[#A29C93]/30 ${view.tint}/65 p-5 text-center`}>
+          {/* Stat Slide Body with edge carousel fade mask */}
+          <div className={`carousel-mask my-3 flex flex-1 flex-col items-center justify-center rounded-2xl border border-[var(--border-subtle)] ${view.tint}/65 px-7 py-5 text-center`}>
           {view.id === "focus" && (
             <div className="space-y-3">
               <p className="font-display text-4xl font-extrabold text-[#6D655C]">
@@ -264,7 +265,7 @@ export function MonthlyStatsModal() {
                 <span className="font-bold text-[#6D655C]">
                   {stats.totalVoyages > 0
                     ? `${Math.round((stats.completedVoyages / stats.totalVoyages) * 100)}%`
-                    : "—"}
+                    : "0%"}
                 </span>{" "}
                 completion rate
               </div>
@@ -341,7 +342,7 @@ export function MonthlyStatsModal() {
             type="button"
             onClick={prevPage}
             aria-label="Previous stat view"
-            className="grid size-9 place-items-center rounded-full border border-[#A29C93]/45 bg-[#FAF6E8] text-sm font-bold text-[#8E887F] transition hover:bg-[#FFF8D6]"
+            className="grid size-9 place-items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] text-sm font-bold text-[var(--muted-ink)] transition hover:bg-[#FFF8D6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             ←
           </button>
@@ -353,10 +354,10 @@ export function MonthlyStatsModal() {
                 type="button"
                 onClick={() => setPage(idx)}
                 aria-label={`View ${v.label}`}
-                className={`h-2 rounded-full transition-all ${
+                className={`h-2 rounded-full transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)] ${
                   idx === page
-                    ? "w-5 bg-[#A29C93]"
-                    : "w-2 bg-[#A29C93]/35 hover:bg-[#A29C93]/60"
+                    ? "w-5 bg-[#8E887F]"
+                    : "w-2 bg-[rgb(0_0_0_/_0.18)] hover:bg-[rgb(0_0_0_/_0.32)]"
                 }`}
               />
             ))}
@@ -366,10 +367,11 @@ export function MonthlyStatsModal() {
             type="button"
             onClick={nextPage}
             aria-label="Next stat view"
-            className="grid size-9 place-items-center rounded-full border border-[#A29C93]/45 bg-[#FAF6E8] text-sm font-bold text-[#8E887F] transition hover:bg-[#FFF8D6]"
+            className="grid size-9 place-items-center rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] text-sm font-bold text-[var(--muted-ink)] transition hover:bg-[#FFF8D6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             →
           </button>
+          </div>
         </div>
       </div>
     </div>

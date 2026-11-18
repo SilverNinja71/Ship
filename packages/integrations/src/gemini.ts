@@ -136,10 +136,100 @@ export async function postGeminiGenerate(fetch: FetchLike, options: GeminiCallOp
   }
 }
 
-/** POSTs a generateContent request and returns the JSON the model wrote. Also throws GeminiError for refusals and answers that aren't JSON. */
-export async function generateGeminiJson(fetch: FetchLike, options: GeminiCallOptions, request: unknown): Promise<unknown> {
+export interface JsonSchema {
+  readonly type: "STRING" | "NUMBER" | "BOOLEAN" | "OBJECT" | "ARRAY";
+  readonly enum?: readonly string[];
+  readonly properties?: Readonly<Record<string, JsonSchema>>;
+  readonly required?: readonly string[];
+  readonly items?: JsonSchema;
+}
+
+export type SchemaValidationResult =
+  | { ok: true }
+  | { ok: false; path: string; reason: string };
+
+/**
+ * Runtime JSON Schema validator aligned with Gemini `responseSchema` definitions.
+ * Ensures model outputs strictly match declared types, enums, arrays, and required fields.
+ */
+export function validateJsonSchema(value: unknown, schema: JsonSchema, path = "$"): SchemaValidationResult {
+  switch (schema.type) {
+    case "STRING": {
+      if (typeof value !== "string") return { ok: false, path, reason: `expected STRING, got ${typeof value}` };
+      if (schema.enum && !schema.enum.includes(value)) {
+        // Allow case-insensitive enum match when caller normalizes case downstream? No — keep strict unless exact!
+        const lower = value.trim().toLowerCase();
+        if (!schema.enum.some((e) => e.toLowerCase() === lower)) {
+          return { ok: false, path, reason: `expected one of [${schema.enum.join(", ")}], got "${value}"` };
+        }
+      }
+      return { ok: true };
+    }
+    case "NUMBER":
+      if (typeof value === "number" && Number.isFinite(value)) return { ok: true };
+      if (typeof value === "string" && Number.isFinite(Number.parseFloat(value))) return { ok: true };
+      return { ok: false, path, reason: `expected finite NUMBER, got ${typeof value}` };
+    case "BOOLEAN":
+      return typeof value === "boolean"
+        ? { ok: true }
+        : { ok: false, path, reason: `expected BOOLEAN, got ${typeof value}` };
+    case "ARRAY": {
+      if (!Array.isArray(value)) return { ok: false, path, reason: "expected ARRAY" };
+      if (schema.items) {
+        for (let i = 0; i < value.length; i++) {
+          const itemCheck = validateJsonSchema(value[i], schema.items, `${path}[${i}]`);
+          if (!itemCheck.ok) return itemCheck;
+        }
+      }
+      return { ok: true };
+    }
+    case "OBJECT": {
+      if (!isRecord(value)) return { ok: false, path, reason: "expected OBJECT" };
+      if (schema.required) {
+        for (const key of schema.required) {
+          if (!(key in value) || value[key] === undefined) {
+            return { ok: false, path: `${path}.${key}`, reason: "missing required property" };
+          }
+        }
+      }
+      if (schema.properties) {
+        for (const [key, propSchema] of Object.entries(schema.properties)) {
+          if (key in value && value[key] !== undefined) {
+            const propCheck = validateJsonSchema(value[key], propSchema, `${path}.${key}`);
+            if (!propCheck.ok) return propCheck;
+          }
+        }
+      }
+      return { ok: true };
+    }
+  }
+}
+
+function schemaFromRequest(request: unknown): JsonSchema | undefined {
+  if (!isRecord(request) || !isRecord(request.generationConfig)) return undefined;
+  const s = request.generationConfig.responseSchema;
+  return isRecord(s) && typeof s.type === "string" ? (s as unknown as JsonSchema) : undefined;
+}
+
+/**
+ * POSTs a generateContent request and returns parsed JSON. Enforces strict JSON schema
+ * validation whenever `schema` or `request.generationConfig.responseSchema` is present.
+ */
+export async function generateGeminiJson(
+  fetch: FetchLike,
+  options: GeminiCallOptions,
+  request: unknown,
+  schema?: JsonSchema,
+): Promise<unknown> {
   const data = parseJsonLoose(extractCandidateText(await postGeminiGenerate(fetch, options, request)));
   if (data === undefined) throw new GeminiError("Gemini's answer wasn't the JSON we asked for.");
+  const activeSchema = schema ?? schemaFromRequest(request);
+  if (activeSchema) {
+    const check = validateJsonSchema(data, activeSchema);
+    if (!check.ok) {
+      throw new GeminiError(`Gemini's answer wasn't the JSON we asked for (schema check at ${check.path}: ${check.reason}).`);
+    }
+  }
   return data;
 }
 
