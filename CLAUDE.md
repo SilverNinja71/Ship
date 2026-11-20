@@ -12,6 +12,8 @@ Two pasted briefs shaped Ship:
 
 This file is the source of truth for the decisions made since then. Where the two briefs disagree, the 2026-10-28 one wins.
 
+**Since 2026-11-16 the app looks and reads differently from most of this file.** A redesign gave it a pastel "Ink & Paper" look, renamed the main features (the focus timer is **Pwedo Pomo**, the planner is **Banana Planna**, the Captain's Log is **Study Sheets**) and added sign-in, a planner and a second web address. Read "The kawaii redesign" near the end before trusting the older sections about what's on screen. The code names (`voyage`, `log`, `CaptainsLogPanel`) didn't change.
+
 ## The user
 
 - New to coding and wants to learn. Explain what you did in plain language and define jargon.
@@ -53,19 +55,30 @@ ship/
 │   │       ├── ship-engine/ ShipCanvas.tsx (the frame loop), ShipRenderer.ts (main deck), QuartersRenderer.ts,
 │   │       │                OceanEngine.ts, ParticleFX.ts, props.ts (helm, citrus tree, bell), hitRegions.ts,
 │   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks),
-│   │       │                sprites/ (the sprite loader and compositor: store, paint, ship, props, avatar, ocean)
-│   │       ├── ships/       types.ts (the art contract), index.ts (drawShip), one file per HullStyle, parts/, decor.ts
-│   │       ├── components/  Hud, VoyageDock, PanelHost, ui kit, icons, panels/ (Helm, Captain's Log, Flashcards,
-│   │       │                Shipwright, Wardrobe, Crew, Fleet Log, Lookout, Settings)
+│   │       │                sprites/ (the sprite loader and compositor: store, paint, ship, props, avatar, ocean),
+│   │       │                tinyInk.ts (the Ink & Paper palette), minions.ts (the deck characters),
+│   │       │                StudySceneRenderer.ts (the Pwedo Pomo, focus-desk and break scenes)
+│   │       ├── ships/       types.ts (the art contract), index.ts (drawShip), one file per HullStyle, parts/, decor.ts,
+│   │       │                tinyInkShip.ts (pastel palettes for the Shipwright's previews)
+│   │       ├── components/  Hud (top bar, login), VoyageDock (the Pwedo Pomo pill), PanelHost, ui kit, icons,
+│   │       │                StudyMaterialsSection + BananaPlannaSection (the page below the scene),
+│   │       │                OnboardingModal, ConsentBanner, LegalModal, BreakReflectModal, MonthlyStatsModal,
+│   │       │                AudioBrowserModal, PastelMinionBadge,
+│   │       │                panels/ (Helm, Planner, Captain's Log, Flashcards, Shipwright, Wardrobe, Crew,
+│   │       │                Fleet Log, Lookout, Settings)
 │   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore,
-│   │       │                settingsStore, uiStore, activityStore, lookoutStore
+│   │       │                settingsStore, uiStore, activityStore, lookoutStore, plannerStore
 │   │       ├── hooks/       useVoyageTicker, useIdleDetection, useKeyboard, useAmbiance, useLookoutBridge,
-│   │       │                useCrewSync, useWebRTC
-│   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage
+│   │       │                useCrewSync, useWebRTC, useAutoSync
+│   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage,
+│   │                        hosting, backup, noteVault, blurtGrading, firebase (Google sign-in), accountData
+│   │                        (profile, consent, delete everything), captainsLogService (hashtags), plannerExport
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
 │   │   └── src/ background/ content/ popup/ options/; core/videoGroups.ts + videoSort.ts sort watch pages
 │   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
-├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor)
+├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor),
+│                            ARCHITECTURE.md, FUTURE_DRAFTS.md and THIRD_PARTY_NOTICES.md (from the redesign)
+├── firebase.json, .firebaserc   Firebase Hosting for the second web address (see "The kawaii redesign")
 └── packages/
     ├── shared-types/        THE CONTRACTS. Every app and package agrees on these shapes.
     ├── ship-theme-kit/      ship registry, parts catalogs (sails, figureheads, flags, desks), avatar catalog, prices,
@@ -88,15 +101,15 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-11-03)
+## Status (2026-11-20)
 
-Sessions 1–5 are merged into `main`:
+Everything below is on `main`:
 - pull request #1: sessions 1–3;
 - pull request #2: the CLAUDE.md rewrite, the sprite contracts, the sprite compositor and Gemini blurt grading;
 - pull request #3: the Lookout's video groups;
-- pull request #4: the public website (see "The public website").
-
-Uploading coursework, links and images, and matching Parchment's schedule (see "Uploading coursework"), is on branch `claude/coursework-upload`.
+- pull request #4: the public website (see "The public website");
+- pull request #5: uploading coursework, links and images, and matching Parchment's schedule (see "Uploading coursework");
+- 13 commits pushed straight to `main` on 2026-11-16 to 2026-11-18, with no pull request: the kawaii redesign (see "The kawaii redesign"). This file wasn't updated then. That section was written on 2026-11-20 by reading the code, so it records what the code does, not why each choice was made.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -114,18 +127,20 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 852 tests, and all pass:
+`npm test` runs 857 tests, and all pass (run on 2026-11-20):
 
 | Package | Tests |
 |---|---|
 | ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
 | active-recall-engine (incl. Parchment's schedule 24) | 65 |
 | crew server | 100 |
-| integrations (incl. Gemini client and blurt grader 15, uploaded documents 31, links and images 34) | 184 |
+| integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34) | 185 |
 | extension (incl. video groups 25) | 187 |
-| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 11) | 280 |
+| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 11, Ink & Paper palette 4) | 284 |
 
-`npm run typecheck` passes for all 7 workspaces, and `npm run build -w @ship/web` builds.
+`npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds.
+
+**The redesign has almost no tests.** It added about 7,000 lines of code and 5 tests (the palette and the Gemini schema check). The planner, the Pwedo Pomo cycles, sign-in, the consent bar and data deletion have none.
 
 **Verified in session 3** with Playwright's headless Chromium (muted, no pop-ups). Claude Code cloud sessions have no built-in browser pane, so this is the stand-in. Never use the user's own Chrome.
 - Screenshots of the deck, the quarters, every panel and a phone-sized layout, with sample data.
@@ -150,9 +165,11 @@ Every build step now has working code:
 - Whether YouTube watch pages still carry `<meta itemprop="genre">`, the category the video groups read. YouTube was unreachable from the cloud sandbox. Without it the groups simply ignore the category.
 - The Lookout's options page has a **Check key** button for Gemini.
 
-Installed versions: pdfjs-dist 6.4 (exact, a month old when added), fflate 0.8.3, turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23 (crew server and web scripts), esbuild 0.28, @types/chrome 0.3, @types/node 26.6.
+Installed versions: firebase 13.4 (added by the redesign), pdfjs-dist 6.4 (exact, a month old when added), fflate 0.8.3, turbo 2.11, typescript 7.0, vitest 5.0, vite 8.3, @vitejs/plugin-react 6.1, react 19.3, tailwindcss + @tailwindcss/vite 4.3, zustand 5.0, ws 8.22, tsx 4.23 (crew server and web scripts), esbuild 0.28, @types/chrome 0.3, @types/node 26.6.
 
 ## Next steps (from the 2026-10-28 spec)
+
+**Ask the user before picking these up.** The redesign went another way: it drew new characters and scenes in code, where the spec says a graphics AI supplies all art as sprites and Claude draws none. Nothing records which plan the user now wants (see "Open questions" under "The kawaii redesign").
 
 Do these in order.
 
@@ -219,6 +236,8 @@ Mythic (names from the brief, all generic or public-domain):
 
 ## Web app design
 
+This is the original design. It still describes the **Full Color (Storybook)** style exactly. The default style is now **Ink & Paper**, which hides or replaces several of these parts (see "The kawaii redesign").
+
 - **Rendering**: Canvas 2D, a side-on cartoon "2.5D" view. The deck is drawn as a thin top-down band so avatars can stand on it.
   - **Ships, sailors and scenery are composed from the graphics AI's sprite layers.** Until those exist, the procedural art from session 3 fills in (see "Next steps").
   - Ship local units: length 1000, deck at y=0, keel at about +140, mast tops at about −560. Scale to fit the viewport.
@@ -241,12 +260,12 @@ Mythic (names from the brief, all generic or public-domain):
 
 ## Lookout design (apps/extension)
 
-- **Bridge content script** on the Ship web app (`http://localhost/*` and `http://127.0.0.1/*`; only active if `<meta name="ship-app">` is present). It relays the voyage state and a few due flashcards to the extension, and sends reward events back. The messages are the `WebToLookout` / `LookoutToWeb` types in `shared-types/lookout.ts`. The web app pays each reward event once (by id), then acks it.
+- **Bridge content script** on the Ship web app (`http://localhost/*`, `http://127.0.0.1/*` and, since the redesign, `https://silverninja71.github.io/*`, `https://ship-pwedo-pomo.web.app/*` and `https://ship-pwedo-pomo.firebaseapp.com/*`; only active if `<meta name="ship-app">` is present). It relays the voyage state and a few due flashcards to the extension, and sends reward events back. The messages are the `WebToLookout` / `LookoutToWeb` types in `shared-types/lookout.ts`. The web app pays each reward event once (by id), then acks it.
 - **Guarding** happens only while a focus block runs:
   - YouTube home, Shorts and feeds are always blocked.
   - A YouTube watch page is first sorted by the Lookout's **video groups** (session 5): subjects, lessons, study audio and distractions, written ahead of time, with no AI and no network.
   - Only when the groups aren't sure, and a key is set, does **Gemini Flash** judge it: from its title, channel, description, YouTube category, an optional transcript excerpt and the thumbnail, checked against the active assignment. Gemini verdicts are cached per video.
-  - **The answer's shape:** the spec writes it as `{ "verdict": "PROCEED" | "BLOCKED", "confidence": number, "reason": string }`. The code asks Gemini for `decision` instead, to match `LookoutVerdict.decision` in shared-types, and accepts either name.
+  - **The answer's shape:** the spec writes it as `{ "verdict": "PROCEED" | "BLOCKED", "confidence": number, "reason": string }`. The code asks Gemini for `decision` instead, to match `LookoutVerdict.decision` in shared-types, and accepts either name. (Since the redesign's schema check, only `decision` gets that far; see "Gemini" under "Integrations".)
   - With no API key, the video groups decide everything, and their verdicts are labeled as such ("Sorted by the Lookout's video groups, not Gemini").
 - **Gemini setup**: the user types their own key on the options page. The model name is a setting, because Gemini model IDs change. Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with header `x-goog-api-key`, using `responseMimeType: application/json`. The call itself goes through the shared client in `@ship/integrations` (`generateGeminiJson`); the Lookout's prompt and verdict parsing stay in `apps/extension/src/core/gemini.ts`.
 - **Siren Friction Gate**: a Shadow-DOM overlay with a cartoon pirate. It offers two choices:
@@ -283,6 +302,8 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
 - **Paper** (the user's art app, ~/Downloads/ForgePaper): undecided. Probably imports exported text or images only.
 - **CSV/TSV** flashcard import.
 - **Gemini** (`gemini.ts`): the shared client for every Gemini call: URLs, model-id cleanup, timeouts, refusals and loose JSON parsing. Any failure becomes a `GeminiError`. `geminiBlurt.ts` grades Captain's Log blurts (see session 4).
+  - Since the redesign, `generateGeminiJson` also checks the answer's shape with `validateJsonSchema`, against the request's own `responseSchema` (or a schema passed in). A wrong type, a missing required field or a value outside an `enum` becomes a `GeminiError`, so callers fall back as they do for any failure. The check is lenient in two places: enum values match in any letter case, and a number written as a string passes.
+  - **It runs before each caller's own forgiving parser, so two older leniencies no longer apply.** A Lookout answer that says `verdict` (or `ALLOW`, `BLOCK`) fails the check, and the video groups decide. One blurt idea with a bad status or a missing field fails the whole answer, and the offline grade is used for everything; ideas Gemini simply leaves out are still fine. Gemini normally follows a `responseSchema`, so this should be rare. It hasn't been seen with a real key.
 
 ## Decisions made in session 2
 
@@ -377,7 +398,7 @@ Every adapter takes a `FetchLike` (see `shared-types/integrations.ts`) instead o
 - **The citrus tree** ripens one fruit per 10 planned minutes of a completed voyage, and each fruit pays `ZEST_COIN_VALUE`. Abandoning a voyage wilts it until the next voyage starts.
 - **Streaks** count consecutive local days with a completed voyage. Yesterday's streak stays alive until today ends.
 - **Saved data:** every store persists under a `ship:` key in localStorage. Settings has backup, restore and "start over".
-- **Sound:** WebAudio synthesizes a sea ambience and bell chimes, with no audio files. The `AudioContext` is only created after the user turns sound on; it's off by default.
+- **Sound:** WebAudio synthesizes a sea ambience and bell chimes, with no audio files. The `AudioContext` is only created after the user turns sound on; it's off by default. (The redesign added more synthesized soundscapes; see "Sound" under "The kawaii redesign".)
 - **Crew calls:** mic and camera are off until the user toggles them, and friends' voices stay muted until "Hear crew" is clicked.
   - Every pair of crewmates connects directly ("mesh"), using perfect negotiation and Google's public STUN server.
   - Ghosts are recorded from crewmates' state timelines when they leave (at least 60 s), and replay at galley tables while they're away.
@@ -410,7 +431,7 @@ This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI'
   - Break activities rotate every 6.5 s (sip, stretch, spyglass) in a per-sailor order.
   - `GALLEY_SEAT_X` is 40.
 - **Ghost cost:** ghosts fade as one layer through a cached offscreen canvas. On this machine's CPU-only headless Chromium, a station costs about 2.6 ms at deck size, and the ghost layer adds almost nothing there; at 2.5× it adds about 3.7 ms. If a full deck is slow on real machines, cache each sailor's head as a bitmap.
-- **Load time:** the production bundle is about 630 kB (207 kB gzipped). If it matters, code-split the panels with `React.lazy`.
+- **Load time:** the production bundle was about 630 kB (207 kB gzipped). After the redesign it is about 940 kB (298 kB gzipped, built 2026-11-20); the Firebase sign-in code loads for every visitor, signed in or not. If it matters, code-split the panels with `React.lazy` and load Firebase only when someone opens Log in.
 
 ### Lookout extension
 - **Internals:**
@@ -418,7 +439,7 @@ This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI'
   - State lives in `chrome.storage.local`, and every change runs under a lock. A one-minute alarm handles staleness, the midnight reset, passes and the toolbar badge.
 - **Permissions:**
   - `storage`, `alarms` and `scripting`.
-  - Hosts: YouTube, `i.ytimg.com`, Gemini, and `http://localhost/*` / `http://127.0.0.1/*` (every port).
+  - Hosts: YouTube, `i.ytimg.com`, Gemini, and `http://localhost/*` / `http://127.0.0.1/*` (every port). Later additions: `silverninja71.github.io` (the public website) and the two Firebase addresses (the redesign).
   - User-added sites use optional host permissions, requested from the options page.
 - **Bridge rules the web app follows:**
   - Treat any Lookout `hello` as connected, and re-send `voyage` and `cards`.
@@ -641,9 +662,10 @@ Ship is published at https://silverninja71.github.io/Ship/.
 **The Lookout**
 - `DEFAULT_SHIP_URL` is now the website. Anyone running locally sets `http://localhost:5173` on the options page, or steering back opens the website.
 - The manifest has a host permission for `silverninja71.github.io`. The bridge for that site is registered at run time (`customShipBridgePattern`) and only covers `/Ship/*`.
+  - **Changed by the redesign:** the manifest now also lists the bridge for all of `silverninja71.github.io/*` and for both Firebase addresses, so the bridge script is injected on every page of those hosts. It still does nothing unless the page has `<meta name="ship-app">`, so other sites on the shared host are unaffected in practice.
 - `isShipTabUrl` checks the path too, so a game tab on the same host doesn't count as Ship.
 
-**One shared address:** every GitHub Pages site of this account lives on `silverninja71.github.io`, so they all share one localStorage. Ship's keys all start with `ship:`, and "Start over" only removes those. No game under `~/Downloads/mace-split` called `localStorage.clear()` when checked on 2026-11-02. But any page on that address can read Ship's saved Gemini, Todoist and Drive tokens. A custom domain would separate them.
+**One shared address:** every GitHub Pages site of this account lives on `silverninja71.github.io`, so they all share one localStorage. Ship's keys all start with `ship:`, and "Start over" only removes those. No game under `~/Downloads/mace-split` called `localStorage.clear()` when checked on 2026-11-02. But any page on that address can read Ship's saved Gemini, Todoist and Drive tokens. A custom domain would separate them. So does the Firebase address added by the redesign, which has a storage area of its own (see "Two web addresses" under "The kawaii redesign").
 
 **Verified:** all tests; the published build at `ship.localhost` and, on 2026-11-02, on the live site: file loading from `/Ship/`, the scene (screenshot), the crew, Fleet Log, Lookout and Settings panels, the zip link, starting a voyage and surviving a reload, with no console errors; and one real run of the workflow.
 
@@ -694,6 +716,217 @@ The Fleet Log's Import files tab takes PDF, Word (`.docx`) and PowerPoint (`.ppt
 **Links and images verified:** tests with Gemini faked, and in the built-in pane at `ship.localhost/Ship/` with Gemini's replies faked inside the page: pasting several links, a real YouTube title lookup, the key in a header and never a URL, a page Gemini couldn't open being refused even with notes attached, an image upload, no-key messages, notes surviving a reload, blurting on them, and Start over. A real request reached Gemini from the browser (403 with no key sent).
 
 **Not verified:** **anything with a real Gemini key, including whether real video, link and image requests work**; real Google Docs links through Drive; uploads on the live site (not published yet); iPad or iPhone Safari, including HEIC photos; a real Word or PowerPoint file in the browser rather than in Node; real Gemini grading of uploads; and restoring a backup with notes through the Settings panel.
+
+## The kawaii redesign (2026-11-16 to 2026-11-18)
+
+Thirteen commits pushed straight to `main` restyled the whole app and added a planner, sign-in and a second web address. Nothing here was planned in this file; it was written afterwards from the code (see "Status").
+
+The redesign left three documents of its own in `docs/`:
+- `ARCHITECTURE.md` and `THIRD_PARTY_NOTICES.md`: its short summaries. Where they disagree with this section, check the code.
+- `FUTURE_DRAFTS.md`: a wish list of more characters, costumes and themes. **None of it is built.**
+
+### New names
+
+| On screen | In the code | What it is |
+|---|---|---|
+| Pwedo Pomo | `voyageStore`, `VoyageDock.tsx` | the focus timer (a "voyage") |
+| Banana Planna | `plannerStore`, `PlannerPanel.tsx`, panel id `planner` | the planner (new) |
+| Study Sheets | `CaptainsLogPanel.tsx`, panel id `log` | the Captain's Log |
+| Ink & Paper | `visualStyle: "tiny-ink"` | the default look (new) |
+| Full Color (Storybook) | `visualStyle: "storybook"` | the look from sessions 3–5 |
+
+**The characters** stand on the deck in both looks. The code calls them "minions" (`ship-engine/minions.ts`, `components/PastelMinionBadge.tsx`):
+- **Captain Banan**: at the helm, in a captain's cap.
+- **Pip**: a yellow helper with one eye, a banana stem and blue overalls.
+- **Mochi**: in a teddy costume.
+- **Lumi**: in a bunny costume.
+- **Pwedo**: a small white pigeon. The timer is named after it.
+
+A frog costume also exists, for badges only.
+
+### The two looks
+
+Settings → Appearance → Visual style switches between them (`settingsStore.visualStyle`). `App.tsx` copies the choice onto `<html data-visual-style>`, and `index.css` sets the page colors for each.
+
+**Ink & Paper** (`ship-engine/tinyInk.ts`) is the default:
+- The ship, sea and sky are recolored to cream, tan and grey (`toTinyInkShip`, `toTinyInkEnv`). Outlines turn soft grey and slightly wobbly (`setHandDrawnMode` in `draw.ts`), and a paper grain covers the canvas. Only the characters carry color.
+- **Not drawn on the deck:** the citrus trees, the bell and your own sailor. So:
+  - ripe fruit can't be picked in this look (it still ripens, and it's still saved);
+  - nothing you choose in the Wardrobe shows anywhere.
+- The helm, the desk, the flag and the figurehead are still clickable, and crew tables still appear.
+- In the quarters, Captain Banan sits at a cream desk where your sailor was, and the ship's decor item is gone.
+- Clicking a character shows its one-line bio.
+
+**Full Color** keeps everything from sessions 3–5, with the characters added to the deck and quarters. Its page background is navy.
+
+**Which scene the canvas shows** (`ShipCanvas.tsx`, deck view), first match wins:
+1. Docked with the Pwedo Pomo options open: Pwedo hopping about (`renderPwedoPlayScene`), in both looks.
+2. Ink & Paper while focusing: a study desk with no ship (`renderStudyDeskScene`).
+3. Ink & Paper on a break: a picnic, a swim and a sing-along (`renderBreakScene`).
+4. Anything else: the deck. During the one-minute prep the characters sweep and mop. A paused timer shows the deck too.
+
+Scenes 1–3 are in `StudySceneRenderer.ts` and have nothing to click.
+
+**Sprites:** the compositor wasn't touched, and no art has arrived. Sprites are images, so Ink & Paper's recoloring wouldn't change them; nobody has looked at the two together.
+
+**The Shipwright** previews each ship in a pastel palette of its own in Ink & Paper (`ships/tinyInkShip.ts`). Those palettes are used only for the previews; the deck uses the cream-and-grey one.
+
+**Colors and fonts:** `index.css` now writes Ship's palette in OKLCH (a way of writing colors that keeps brightness even between hues) and uses the device's own serif fonts, so no font is downloaded. Many new components hard-code hex colors instead of using those tokens.
+
+### Pwedo Pomo (the timer)
+
+The pill at the bottom of the scene is `VoyageDock.tsx`. Opening it offers:
+- 25/5, 50/10, Custom (1–240 minutes of focus, 0–60 of break), and "50/40/30 Tiny Method", which sets 50 minutes of focus, a 10-minute break and 3 cycles, whatever its label suggests;
+- the number of cycles (`settingsStore.pomodoroCycles`, default 2; the store keeps it between 1 and 8);
+- an objective, and a sound picker.
+
+What changed in `voyageStore`:
+- **Cycles:** a cycle is one focus block and its break. When a break ends, the next focus block starts by itself, until `cyclesCompleted` reaches `cyclesTotal`; then the ship docks. Each finished focus block is its own `VoyageRecord`, pays the +25 bonus and ripens fruit.
+- **Prep:** starting from the pill sets `prepEndsAt` one minute ahead ("Preparing in 0:59", with Start now and Cancel). Nothing is paid and the Lookout doesn't guard until the focus block begins.
+- **The Space bar skips both:** it starts one cycle with no prep (`toggleVoyage` in `useKeyboard.ts`).
+- **Break reflection:** when a focus block ends and a break begins, `BreakReflectModal` asks how the session went, what worked and what to change. Answers go to `breakReflections` (the latest 100). It can be dismissed.
+- **Session tasks:** a small to-do list inside the running pill (`sessionTasks`). Tasks stay until removed.
+- All of these are saved under `ship:voyage`.
+
+The pay rules, the timestamp-based timing and the idle pause are unchanged.
+
+### The page below the scene
+
+Ship used to be one screen. Now the scene fills the first screen and the page scrolls on (`App.tsx`). The scene's height is `100dvh`, which keeps the pill in view when a phone's address bar appears.
+
+`StudyMaterialsSection.tsx` holds, in order:
+1. **Pomodoro Tracker:** two session cards, each with 5 tasks, 4 focus boxes, 4 break boxes and a "how can I improve next session" note. The boxes tick themselves as Pwedo Pomo cycles finish.
+2. **Active Recall Study Sheets:** an upload button and a drop area (the Fleet Log's importer, `fleetStore.importFiles`), shortcuts to Study Sheets and Flashcards, and a list of up to 6 notes.
+3. **Weekly Plan and Habit Tracker** (`BananaPlannaSection.tsx`): 4 lines per day and 6 habits.
+
+A footer with the legal links comes last.
+
+**The top bar** (`Hud.tsx`) has Banana Planna, Study Sheets, Flashcards (with the number due), the Lookout's status, the Desk/Ship switch, Log in, `?` (the tutorial) and Settings. The doubloon count is no longer there; the Shipwright and the Wardrobe show it.
+
+**The other panels have no button:**
+
+| Panel | Key | By clicking |
+|---|---|---|
+| Helm | `H` | the helm |
+| Shipwright | `S` | the flag or the figurehead |
+| Fleet Log | `G` | a button inside the Helm panel |
+| Wardrobe | `W` | your sailor, who is only drawn in Full Color |
+| Crew | `C` | a crewmate, so only once you're already in a room |
+| Banana Planna | `P` (new) | its top-bar button |
+
+So without a keyboard (a phone or tablet), nobody can open Crew to join a first room, in either look, and the Wardrobe can't be opened in Ink & Paper.
+
+**First visit:** a four-step tutorial (`OnboardingModal.tsx`, reopened with `?`) and a storage notice (`ConsentBanner.tsx`).
+
+### Banana Planna (the planner)
+
+`stores/plannerStore.ts`, saved under `ship:planner`. The panel (`PlannerPanel.tsx`) has five tabs:
+- **Weekly Plan:** a title, a goal and a grid of 10 rows by 7 days.
+  - It empties itself when a new week starts, at Sunday 12:00 am local time. `checkAndResetWeek` runs when the saved data loads and every minute while the page is open.
+  - Only the title, the goal and the grid are emptied. **Habit ticks never reset**, though the tracker is laid out as one week.
+- **Habit Tracker:** 8 habits, each with 7 daily ticks. Four come with names.
+- **Pwedo Pomo:** the Pomodoro Tracker cards described above.
+- **Banana Planna:** a month title, 35 day boxes and notes. The boxes aren't tied to real dates.
+- **Obsidian & Report** (`lib/plannerExport.ts`):
+  - writes the planner as `Ship-Planner.md` into a folder you pick (the browser asks first; Chrome and Edge only), or downloads it;
+  - builds a plain-text monthly report to download, or to open in your mail app through a `mailto:` link. Ship itself sends no email.
+
+**Daily check-in:** a button in the panel pays 5 doubloons and 20 XP once a day. The day is counted in UTC (`todayDateKey`), so it rolls over at a different hour than local midnight.
+
+**Monthly stats** (`MonthlyStatsModal.tsx`): four slides (focus time, sessions and cycles, top hashtags, habit streaks).
+- It opens by itself on the last day of a month, and on the first visit after a month ends. The Monthly Stats button opens it any time.
+- Its hashtags are counted from voyage objectives, the Weekly Plan and Pomodoro tasks. They are **not** the tags from Study Sheets.
+
+### Study Sheets (the Captain's Log)
+
+- **Hashtags:** a blurt can carry tags such as `#bio101` (`BlurtSession.hashtags`, optional). `lib/captainsLogService.ts` cleans them up and suggests ones used before. Nothing filters or searches by tag yet.
+- Files can be dropped straight into the panel.
+- `captainsLogService.ts` also holds the page-range constants and `buildNoteSources`, moved out of the panel.
+
+### Sound
+
+- Still fully synthesized with WebAudio, with no audio files, and **still off by default** (`settingsStore.soundOn` starts `false`). The rule under "The user" holds.
+- `lib/audio.ts` now has six synth profiles: ocean, rain, ASMR, lo-fi, piano and starlight. `CURATED_FOCUS_TRACKS` lists 11 named tracks, and each plays one of those six. So "Matcha Morning Study" and "Lo-fi" sound the same.
+- Picking a track in the pill or in `AudioBrowserModal.tsx` turns sound on. That counts as the user's click.
+- `settingsStore.soundTrack` remembers ocean, lo-fi, ASMR or rain (default rain). A piano or starlight choice lasts until the page reloads.
+- **It pauses for other audio** (`hooks/useAmbiance.ts`): when the system's media keys say pause, when the browser interrupts the audio, when an `<audio>` or `<video>` starts on the page, and when the page is closed. Pausing switches `soundOn` off, so it doesn't restart by itself.
+
+### Accounts and privacy
+
+**Google sign-in** (`lib/firebase.ts`) uses Firebase Authentication, Google's sign-in service, with the project `ship-pwedo-pomo`.
+- **Signing in syncs nothing.** No database is connected. It only shows your first name in the top bar and saves your name and email in this browser. The button's tooltip and the login window say "sync", which isn't true yet.
+- The Sign in button stays off until a box is ticked: 13 or older (or with permission), and agreeing to the Privacy Policy and Terms.
+- The same window still has the Google Drive client ID box. Drive is a separate connection, as before.
+- The values in `firebaseConfig` are not secrets. Every Firebase web app publishes them; what protects the project is its list of authorized domains in the Firebase console. Don't "fix" this by hiding them.
+- After someone's first edit to the planner, cards or notes, a small prompt suggests signing in. It appears until dismissed.
+
+**The storage notice** (`ConsentBanner.tsx`) offers "Essential only" and "Accept", and saves the answer as `ship:storage-consent`. **Nothing reads that answer**: Ship has no analytics or ads to switch off, so both choices behave the same.
+
+**The legal window** (`LegalModal.tsx`) has four tabs: Privacy Policy, Terms of Service, Cookies & Storage, and Free Tier & Contact. Its text names the project's operator and makes promises about data, so read it before changing how data is handled.
+
+**Delete everything** (`deleteAllUserData` in `lib/accountData.ts`): deletes the Firebase account, removes every `ship:` key and empties the notes. If Firebase refuses because the sign-in is too old, it signs out instead and still clears this browser. Settings → Start over is the older version, without the account step.
+
+**New saved keys** (`lib/accountData.ts`): `ship:profile-name`, `ship:profile-email`, `ship:tutorial-seen`, `ship:signin-prompt-dismissed` and `ship:storage-consent`. These hold plain text, where every older `ship:` key holds JSON.
+
+**Backups** (`lib/backup.ts`) pick up every `ship:` key, so they now carry the planner. But they read each key as JSON, so the three plain-text ones (name, email, consent) are saved as empty, and a restore writes the word `null` into them. After a restore the login window shows "null" as the name and email. Checked with a throwaway test on 2026-11-20; not fixed.
+
+### Two web addresses
+
+Ship is now published twice, from the same build:
+
+| | GitHub Pages | Firebase Hosting |
+|---|---|---|
+| Address | https://silverninja71.github.io/Ship/ | https://ship-pwedo-pomo.web.app (also `ship-pwedo-pomo.firebaseapp.com`) |
+| Published by | the workflow, on every push to `main` | by hand, with the Firebase command-line tool (no workflow does it) |
+| Settings | `.github/workflows/deploy-pages.yml` | `firebase.json`, `.firebaserc` |
+
+- On 2026-11-20 both served the same bundle as a fresh build of `main`.
+- **Firebase can fall behind.** Nothing publishes it automatically, so a merge updates GitHub Pages only. The usual way is `npm run build:site`, then `firebase deploy --only hosting`; that wasn't run in this session.
+- **Each address keeps its own saved data.** Browsers store data per address, so progress on one doesn't appear on the other.
+- `isHostedSite` is true on both, so crew rooms and Canvas behave as "The public website" describes.
+- **The Lookout:** the bridge is listed for both addresses, but `DEFAULT_SHIP_URL` is still the GitHub Pages one. Steering back opens that address unless the options page is changed.
+- `.firebase/hosting.*.cache` is committed. It's a scratch file the Firebase tool rewrites on every deploy, and it belongs in `.gitignore`.
+
+### Auto-sync
+
+`hooks/useAutoSync.ts` calls `fleetStore.syncAll()` when the app opens, every 15 minutes, and when the tab is shown again, at most once every 2 minutes. It does nothing unless a calendar feed, Todoist, Canvas or Drive is set up. The older rules still apply: Canvas is skipped on the website.
+
+The redesign also made `useLookoutBridge` say `hello` again before each voyage update and reward claim, whenever the Lookout isn't marked connected. That gives an extension that wasn't answering at page load another chance to connect.
+
+### The Lookout's gate
+
+The Siren Gate's art and wording changed to match (`apps/extension/src/gate/`): "Lookout Minion spotted a distraction" and "Hey! Stay focused!". Its rules didn't change.
+
+### Open questions for the user
+
+1. **Pip.** A yellow, one-eyed character with a goggle and blue overalls, dressed as a banana and called a "minion" in the code and in `FUTURE_DRAFTS.md`, is very close to the Minions from the *Despicable Me* films (Illumination/Universal). This file's rule for ships is "original, same vibe, safe to share" (see "Ships"). Pip may need the same treatment before Ship is shared widely.
+2. **"Mr. Tiny Studio".** The code comments and one Settings label ("Ink & Paper (Mr. Tiny)") name the studio whose style the look follows. Taking a style as inspiration is one thing; showing another studio's name in the app is another. Consider dropping the name from the label.
+3. **Sprites or drawn-in-code?** See the note at the top of "Next steps".
+4. **Should sign-in sync?** The app says it does. Either build it (it needs a database and rules for who can read what) or change the wording.
+5. **Which address is the real one?** That decides the Lookout's default and whether GitHub Pages stays.
+
+### Gaps found while reading the code
+
+Not fixed; listed so nobody rediscovers them:
+- **A 0-minute break stops the cycles.** With Custom and a break of 0, the ship docks after the first focus block and the remaining cycles never start.
+- **Scrolling on a touchscreen.** The canvas still has `touch-action: none` from when the app was one screen. A swipe that starts on the scene may not scroll the page; the pill's "Scroll for study sheets" link does. Not checked on a real phone.
+- **The phone top bar** wraps onto two rows at 390 px wide, and Flashcards and Desk lose their text labels.
+- **The planner export** writes each habit as "n/31 days", though a habit has 7 ticks.
+- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, habit ticks never reset, the daily check-in counts days in UTC, a restored backup turns the profile's name and email into "null", and signing in syncs nothing.
+
+### Verified, and not
+
+**Verified on 2026-11-20** in a cloud session: typecheck, all 857 tests and `npm run build:site`; the built site opened in headless Chromium at desktop and phone sizes (the tutorial and the storage notice appear, with no console errors); and both public addresses answer with the current bundle.
+
+**Not verified:**
+- Real Google sign-in on either address, including whether GitHub Pages is among the Firebase project's authorized domains.
+- Deleting an account for real.
+- A full multi-cycle run with breaks and reflections, in a browser.
+- The Sunday reset and the month-end popup, at the real times.
+- Whether sound really pauses when another app plays, on any device.
+- The Obsidian folder write.
+- The Lookout against the Firebase address.
+- A phone or tablet.
 
 ## Conventions
 
