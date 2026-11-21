@@ -24,7 +24,7 @@ export function ConsentBanner() {
         >
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--surface-1)] px-3 py-2 font-serif text-xs text-[var(--page-ink)]">
             <p className="min-w-0 flex-1 leading-relaxed">
-              Ship saves study sheets, focus logs, and optional Google sign-in locally in your browser. Zero ads or tracking cookies.{" "}
+              Ship saves your study sheets and focus logs in your browser, and in your Google account if you log in. Zero ads or tracking cookies.{" "}
               <button
                 type="button"
                 onClick={() => setLegalTab("cookies")}

@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// Ship's cloud sync (apps/web/src/lib/cloudSync.ts). Each signed-in person
+// reads and writes only their own folder, users/{their uid}, and only the
+// three kinds of document Ship writes there. Everything else is refused.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{kind}/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && kind in ['state', 'notes', 'meta'];
+    }
+  }
+}

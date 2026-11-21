@@ -61,18 +61,18 @@ const STEPS: TutorialStep[] = [
     title: "Plan your week with Banana Planna",
     subtitle: "Weekly Plan, Habits & Pomodoro Tracker",
     body: "Scroll down below the ship, or click Banana Planna in the top bar, to fill in your numbered Weekly Plan, check off daily habits, and log tasks inside your Pomodoro sessions.",
-    tip: "Tip: Sign in with Google Drive anytime to keep your plans, notes, and progress synced across devices.",
+    tip: "Tip: Log in with Google anytime to keep your plans, notes and progress in your account and pick them up on any device.",
   },
 ];
 
 export function OnboardingModal({
   onClose,
   onOpenLogin,
-  driveConnected,
+  signedIn,
 }: {
   onClose: () => void;
   onOpenLogin: () => void;
-  driveConnected: boolean;
+  signedIn: boolean;
 }) {
   const [stepIdx, setStepIdx] = useState(0);
   const step = STEPS[stepIdx];
@@ -155,7 +155,7 @@ export function OnboardingModal({
               </button>
             )}
 
-            {isLast && !driveConnected && (
+            {isLast && !signedIn && (
               <button
                 type="button"
                 onClick={() => {
@@ -213,7 +213,7 @@ export function SignInPromptToast({
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold text-[#5D564E]">Keep your study work safe!</p>
           <p className="mt-1 text-[11px] leading-relaxed text-[#8E887F]">
-            You&apos;ve saved tasks or notes locally. Sign in with Google Drive to sync across devices on Google&apos;s servers.
+            Your tasks and notes are saved in this browser only. Log in with Google to keep a copy in your account and pick up on any device.
           </p>
           <div className="mt-2.5 flex items-center gap-2">
             <button

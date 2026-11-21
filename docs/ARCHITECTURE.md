@@ -1,7 +1,7 @@
 // Ship Architecture, User Flows, Schemas & Deployment Reference.
 
 ## 1. System Overview & User Flow
-Ship (`ship-pwedo-pomo.web.app`) is a local-first student study workspace built with React 19, Zustand, HTML5 Canvas 2D, and Firebase Auth/Hosting:
+Ship (`ship-pwedo-pomo.web.app`) is a local-first student study workspace built with React 19, Zustand, HTML5 Canvas 2D, and Firebase Auth/Firestore/Hosting:
 
 1. **First Visit & Consent (`OnboardingModal.tsx`, `ConsentBanner.tsx`)**:
    - First-time visitors see the 4-step interactive tutorial and a browser-storage consent bar (`ship:storage-consent`).
@@ -21,7 +21,8 @@ Ship (`ship-pwedo-pomo.web.app`) is a local-first student study workspace built 
 | `localStorage` | `ship:planner`, `ship:voyage`, `ship:recall`, `ship:economy`, `ship:settings`, `ship:fleet` | Zustand persisted state (planner grid, session history, flashcards, doubloons/unlocks, settings, calendar feed metadata). |
 | `localStorage` (`accountData.ts`) | `ship:profile-name`, `ship:profile-email`, `ship:tutorial-seen`, `ship:signin-prompt-dismissed`, `ship:storage-consent` | Profile metadata, tutorial dismissal, and privacy consent state. |
 | `IndexedDB` (`noteVault.ts`) | `ship-notes` (`notes` object store) | Full imported `NoteDocument` text/pages (kept out of `localStorage` to avoid the 5 MB quota). |
-| Firebase Auth (`firebase.ts`) | Project `ship-pwedo-pomo` | Optional Google Sign-In (`GoogleAuthProvider`), gated by explicit 13+ and Privacy/Terms consent in `LoginModal`. Deleting account/data invokes `deleteUser()` + clears all `ship:*` keys + `clearNotes()`. |
+| Firebase Auth (`firebase.ts`) | Project `ship-pwedo-pomo` | Optional Google Sign-In (`GoogleAuthProvider`), gated by explicit 13+ and Privacy/Terms consent in `LoginModal`. Deleting account/data deletes the Firestore copy, then invokes `deleteUser()` + clears all `ship:*` keys + `clearNotes()`. |
+| Firestore (`cloudSync.ts`, `syncPlan.ts`) | `users/{uid}/state/{store}`, `users/{uid}/notes/{id}`, `users/{uid}/meta/notes` | Cloud sync for signed-in users: allowlisted store fields (no secrets, device settings or live timer) and gzip-compressed notes. Access limited to the owner by `firestore.rules`. `ship:sync-meta` in `localStorage` records the last sync per device. See CLAUDE.md, "Cloud sync". |
 
 ## 3. Integrations & Schema Validation Boundaries
 - **Pure Adapters (`packages/integrations/src/`)**: All network/document adapters (`canvas.ts`, `todoist.ts`, `lodestar.ts`, `googleDrive.ts`, `gemini.ts`, `geminiBlurt.ts`) accept an injected `FetchLike` parameter and never call global `fetch` directly inside UI components.

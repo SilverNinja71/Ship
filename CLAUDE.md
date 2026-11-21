@@ -101,7 +101,7 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-11-20)
+## Status (2026-11-21)
 
 Everything below is on `main`:
 - pull request #1: sessions 1–3;
@@ -109,7 +109,10 @@ Everything below is on `main`:
 - pull request #3: the Lookout's video groups;
 - pull request #4: the public website (see "The public website");
 - pull request #5: uploading coursework, links and images, and matching Parchment's schedule (see "Uploading coursework");
-- 13 commits pushed straight to `main` on 2026-11-16 to 2026-11-18, with no pull request: the kawaii redesign (see "The kawaii redesign"). This file wasn't updated then. That section was written on 2026-11-20 by reading the code, so it records what the code does, not why each choice was made.
+- 13 commits pushed straight to `main` on 2026-11-16 to 2026-11-18, with no pull request: the kawaii redesign (see "The kawaii redesign"). This file wasn't updated then. That section was written on 2026-11-20 by reading the code, so it records what the code does, not why each choice was made;
+- pull request #6: this file's notes on the redesign.
+
+Cloud sync and the backup fix (see "Cloud sync") are on branch `claude/cloud-sync`.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -127,7 +130,7 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 857 tests, and all pass (run on 2026-11-20):
+`npm test` runs 876 tests, and all pass (run on 2026-11-21):
 
 | Package | Tests |
 |---|---|
@@ -136,7 +139,7 @@ Every build step now has working code:
 | crew server | 100 |
 | integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34) | 185 |
 | extension (incl. video groups 25) | 187 |
-| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 11, Ink & Paper palette 4) | 284 |
+| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16) | 303 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds.
 
@@ -431,7 +434,7 @@ This art is drawn in code. The 2026-10-28 spec replaces it with the graphics AI'
   - Break activities rotate every 6.5 s (sip, stretch, spyglass) in a per-sailor order.
   - `GALLEY_SEAT_X` is 40.
 - **Ghost cost:** ghosts fade as one layer through a cached offscreen canvas. On this machine's CPU-only headless Chromium, a station costs about 2.6 ms at deck size, and the ghost layer adds almost nothing there; at 2.5× it adds about 3.7 ms. If a full deck is slow on real machines, cache each sailor's head as a bitmap.
-- **Load time:** the production bundle was about 630 kB (207 kB gzipped). After the redesign it is about 940 kB (298 kB gzipped, built 2026-11-20); the Firebase sign-in code loads for every visitor, signed in or not. If it matters, code-split the panels with `React.lazy` and load Firebase only when someone opens Log in.
+- **Load time:** the production bundle was about 630 kB (207 kB gzipped). After the redesign it is about 940 kB (298 kB gzipped, built 2026-11-20); the Firebase sign-in code loads for every visitor, signed in or not. If it matters, code-split the panels with `React.lazy` and load Firebase only when someone opens Log in. Cloud sync is already split off: its code and Firestore (about 144 kB gzipped) load only for signed-in sailors.
 
 ### Lookout extension
 - **Internals:**
@@ -854,21 +857,21 @@ So without a keyboard (a phone or tablet), nobody can open Crew to join a first 
 ### Accounts and privacy
 
 **Google sign-in** (`lib/firebase.ts`) uses Firebase Authentication, Google's sign-in service, with the project `ship-pwedo-pomo`.
-- **Signing in syncs nothing.** No database is connected. It only shows your first name in the top bar and saves your name and email in this browser. The button's tooltip and the login window say "sync", which isn't true yet.
+- **Signing in turns on cloud sync** (since 2026-11-21; see "Cloud sync"). It also shows your first name in the top bar, with the sync mark, and saves your name and email in this browser.
 - The Sign in button stays off until a box is ticked: 13 or older (or with permission), and agreeing to the Privacy Policy and Terms.
-- The same window still has the Google Drive client ID box. Drive is a separate connection, as before.
+- The same window still has the Google Drive client ID box. Drive is a separate connection, for importing Google Docs; it doesn't sync progress.
 - The values in `firebaseConfig` are not secrets. Every Firebase web app publishes them; what protects the project is its list of authorized domains in the Firebase console. Don't "fix" this by hiding them.
-- After someone's first edit to the planner, cards or notes, a small prompt suggests signing in. It appears until dismissed.
+- After someone's first edit to the planner, cards or notes, a small prompt suggests logging in to keep a copy in their account. It appears until dismissed, and never once they're signed in.
 
 **The storage notice** (`ConsentBanner.tsx`) offers "Essential only" and "Accept", and saves the answer as `ship:storage-consent`. **Nothing reads that answer**: Ship has no analytics or ads to switch off, so both choices behave the same.
 
 **The legal window** (`LegalModal.tsx`) has four tabs: Privacy Policy, Terms of Service, Cookies & Storage, and Free Tier & Contact. Its text names the project's operator and makes promises about data, so read it before changing how data is handled.
 
-**Delete everything** (`deleteAllUserData` in `lib/accountData.ts`): deletes the Firebase account, removes every `ship:` key and empties the notes. If Firebase refuses because the sign-in is too old, it signs out instead and still clears this browser. Settings → Start over is the older version, without the account step.
+**Delete everything** (`deleteAllUserData` in `lib/accountData.ts`): deletes the account's cloud copy, then the Firebase account, removes every `ship:` key and empties the notes. If the cloud copy can't be deleted, nothing is deleted and the window says why. If Firebase refuses to delete the account because the sign-in is too old, it signs out instead and still clears the cloud copy and this browser. Settings → Start over is the local-only version: signed in, it signs out first, because the cloud copy would otherwise come straight back.
 
 **New saved keys** (`lib/accountData.ts`): `ship:profile-name`, `ship:profile-email`, `ship:tutorial-seen`, `ship:signin-prompt-dismissed` and `ship:storage-consent`. These hold plain text, where every older `ship:` key holds JSON.
 
-**Backups** (`lib/backup.ts`) pick up every `ship:` key, so they now carry the planner. But they read each key as JSON, so the three plain-text ones (name, email, consent) are saved as empty, and a restore writes the word `null` into them. After a restore the login window shows "null" as the name and email. Checked with a throwaway test on 2026-11-20; not fixed.
+**Backups** (`lib/backup.ts`) pick up every `ship:` key, so they carry the planner too. Plain-text keys (name, email, consent) go into a separate `text` section and come back word for word. Until 2026-11-21 they were read as JSON, saved as `null` and restored as the word "null"; restores now skip those `null`s in older backups. `ship:sync-meta` is never backed up.
 
 ### Two web addresses
 
@@ -902,8 +905,7 @@ The Siren Gate's art and wording changed to match (`apps/extension/src/gate/`): 
 1. **Pip.** A yellow, one-eyed character with a goggle and blue overalls, dressed as a banana and called a "minion" in the code and in `FUTURE_DRAFTS.md`, is very close to the Minions from the *Despicable Me* films (Illumination/Universal). This file's rule for ships is "original, same vibe, safe to share" (see "Ships"). Pip may need the same treatment before Ship is shared widely.
 2. **"Mr. Tiny Studio".** The code comments and one Settings label ("Ink & Paper (Mr. Tiny)") name the studio whose style the look follows. Taking a style as inspiration is one thing; showing another studio's name in the app is another. Consider dropping the name from the label.
 3. **Sprites or drawn-in-code?** See the note at the top of "Next steps".
-4. **Should sign-in sync?** The app says it does. Either build it (it needs a database and rules for who can read what) or change the wording.
-5. **Which address is the real one?** That decides the Lookout's default and whether GitHub Pages stays.
+4. **Which address is the real one?** That decides the Lookout's default and whether GitHub Pages stays.
 
 ### Gaps found while reading the code
 
@@ -912,7 +914,7 @@ Not fixed; listed so nobody rediscovers them:
 - **Scrolling on a touchscreen.** The canvas still has `touch-action: none` from when the app was one screen. A swipe that starts on the scene may not scroll the page; the pill's "Scroll for study sheets" link does. Not checked on a real phone.
 - **The phone top bar** wraps onto two rows at 390 px wide, and Flashcards and Desk lose their text labels.
 - **The planner export** writes each habit as "n/31 days", though a habit has 7 ticks.
-- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, habit ticks never reset, the daily check-in counts days in UTC, a restored backup turns the profile's name and email into "null", and signing in syncs nothing.
+- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, habit ticks never reset, and the daily check-in counts days in UTC.
 
 ### Verified, and not
 
@@ -927,6 +929,86 @@ Not fixed; listed so nobody rediscovers them:
 - The Obsidian folder write.
 - The Lookout against the Firebase address.
 - A phone or tablet.
+
+## Cloud sync (2026-11-21)
+
+Logging in with Google keeps a copy of the sailor's progress in their Google account, in Firestore (Firebase's database), and keeps every device they log in on in step. The user chose this over only fixing the "sync" wording.
+
+**It needs a Firestore database and these rules in the real project before it works** (see "Switching it on"). Until then, signed-in sailors see "The cloud refused to save your progress…", and everything keeps working in their browser.
+
+**What syncs** is an allowlist, `SYNCED_FIELDS` in `lib/syncPlan.ts`. A new field stays on the device until someone adds it there on purpose.
+- The planner (all of it).
+- From the voyage store: records, the citrus tree, break reflections and session tasks.
+- The economy (coins, XP, unlocks, ledger), recall (decks, cards, review log, blurts) and the customizer.
+- From the fleet store: assignments, library and done ticks.
+- A few settings: scheduler, look, port theme, timer presets and cycles, sound track.
+- Uploaded notes (IndexedDB), compressed.
+
+**What never leaves the device:**
+- the Gemini key and model, and all of `fleet.settings` (Canvas, Todoist, Lodestar and Drive tokens);
+- the calendar feed link, which often carries a private token, and connection statuses;
+- sound on/off and volumes, camera view, motion, idle minutes and the crew server;
+- the live timer (phase, clock, objective, cycles, prep), so a voyage running on one device never ticks on another;
+- crew ghosts, the profile's name and email, and the tutorial and consent flags.
+
+**Where it lives.** `firestore.rules` lets each account touch only `users/{its uid}`, and only these three kinds of document:
+- `users/{uid}/state/{store}`: `{ json, version, rev, updatedAt }`. `json` holds the store's synced fields as text; `rev` is a random id per save.
+- `users/{uid}/notes/{encodeURIComponent(id)}`: `{ data, title, updatedAt }`, where `data` is the note gzip-compressed. Notes over about 1 MB compressed (Firestore's document limit) stay on the device, and the Log in window lists them.
+- `users/{uid}/meta/notes`: `{ ids }`, changed with `arrayUnion`/`arrayRemove` so two devices can't overwrite each other's list.
+
+**How it decides.** The rules are pure code in `syncPlan.ts` (16 tests); the Firestore side is `lib/cloudSync.ts`.
+- Each store syncs as one unit. `ship:sync-meta` (this browser only; left out of backups and of sync) remembers, per store, its fingerprint and `rev` at the last sync, and when this browser last changed it.
+- **On start:** if only one side changed, it wins. If both changed, the later change wins; a local change with no recorded time, such as a restored backup, counts as the later.
+- **While running:** local saves are noticed through `shipStorage` (`onShipStorageWrite`) and sent 2.5 s after the last change, or at once when the tab is hidden or closed. Changes from other devices arrive through Firestore listeners, are written into localStorage, and the store re-reads them (`persist.rehydrate()`). An incoming change beats an unsent local one when it's newer.
+- **Notes** are matched by id (ids come from their contents). A note on one side only is new, unless the last sync saw it on both; then the other side deleted it.
+- **A browser's first sync:**
+  - account empty: this browser's progress goes up;
+  - browser empty (`localHasProgress`): the account's comes down;
+  - both have progress: `SyncChoiceDialog` asks which to keep. It offers "download this browser's progress first" and "Decide later", which pauses sync.
+
+  Notes from both sides are always kept.
+- **Known limit:** if two devices change the same store while one is offline, the later save wins and the other's changes to that store are lost (coins earned offline on both, for example). With both online, changes cross within seconds.
+
+**Where it shows:**
+- The top bar's name gets ✓ (synced), … (saving or connecting) or ! (paused or a problem), with a tooltip.
+- The Log in window says what syncs, when it last synced and which notes are too big, and offers Try again or Choose what to keep.
+
+**Loading:** `hooks/useCloudSync.ts` imports `lib/cloudSync.ts` (and Firestore with it, about 144 kB gzipped) only once someone is signed in.
+
+**Related changes:**
+- Delete account & data deletes the cloud copy first, then the account. If the cloud copy can't be deleted, nothing is deleted and the window says why.
+- Start over, when signed in, signs out first (otherwise the cloud copy would come straight back), and says so.
+- The sign-in reminder, tutorial tip, privacy text, storage notice and Log in window describe sync as it really works. Google Drive is described as an importer, not as sync.
+
+**Switching it on** (the user, once, in the Firebase console for `ship-pwedo-pomo`):
+1. Build → Firestore Database → Create database → Production mode. The location can't be changed later.
+2. Its Rules tab: paste `firestore.rules` and Publish. (Or `firebase deploy --only firestore:rules`.)
+3. Authentication → Settings → Authorized domains: make sure `silverninja71.github.io` is listed, or sign-in fails on the GitHub Pages address.
+4. Publish the Firebase address again (`npm run build:site`, then `firebase deploy --only hosting`), since only GitHub Pages updates on a merge.
+
+**Free tier:** Firestore's free (Spark) quota is shared by everyone using the site: 50,000 reads, 20,000 writes and 20,000 deletes a day, and 1 GiB stored. A sailor studying writes about once a minute (coins), plus once after each pause in typing. Over the quota, sync says so and catches up the next day.
+
+**Testing it locally:**
+- Start the emulators with `npx firebase-tools@15.35.0 emulators:start --only auth,firestore --project demo-ship` (it needs Java), then run `VITE_FIREBASE_EMULATORS=1 npx vite` in `apps/web`.
+- That build uses a made-up `demo-ship` project and adds `window.__shipEmulatorSignIn(email)` for signing in without Google's popup. Real builds have neither (checked in the built bundle).
+
+**Verified (2026-11-21)** against the emulators with Ship's real rules, in muted headless Chromium (26 checks):
+- First sign-in uploads; a fresh browser downloads with no question asked.
+- An edit on one browser appears on another within seconds, and a browser that was closed catches up when it opens.
+- The Gemini key never reaches the cloud or another browser, while a synced setting does.
+- A note uploaded on one browser appears on another and in its IndexedDB.
+- A browser with its own progress is asked which to keep, and "Use my account's progress" replaces it.
+- Another account can't read or change the data, an account can't write other kinds of document in its own folder, and nobody can read without signing in.
+- Delete account & data removes the cloud copy and the account.
+- No page errors.
+- With every request refused, the top bar shows "!", the Log in window explains why, and local edits stay.
+
+**Not verified:**
+- The real Firebase project, which has no database yet (a request on 2026-11-21 got "Permission denied on the service").
+- Real Google sign-in.
+- Safari and phones.
+- The free-tier limits under real use.
+- Two devices offline at once.
 
 ## Conventions
 

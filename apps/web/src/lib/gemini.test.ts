@@ -55,6 +55,40 @@ describe("backups", () => {
     expect(storage.getItem("evil")).toBeNull();
   });
 
+  it("keep plain-text keys word for word, so a restore doesn't turn the profile into \"null\"", () => {
+    const storage = memoryStorage({ "ship:economy": { state: { doubloons: 3 }, version: 1 } });
+    storage.setItem("ship:profile-name", "Sam Lee");
+    storage.setItem("ship:profile-email", "sam@example.com");
+    storage.setItem("ship:storage-consent", "accepted");
+    storage.setItem("ship:tutorial-seen", "1");
+    const file = JSON.parse(JSON.stringify(makeBackup(storage)));
+    expect(file.text).toEqual({ "ship:profile-name": "Sam Lee", "ship:profile-email": "sam@example.com", "ship:storage-consent": "accepted" });
+
+    const fresh = memoryStorage();
+    expect(restoreBackup(fresh, file)).toBe(5);
+    for (const key of ["ship:profile-name", "ship:profile-email", "ship:storage-consent", "ship:tutorial-seen"]) {
+      expect(fresh.getItem(key)).toBe(storage.getItem(key));
+    }
+    expect(JSON.parse(fresh.getItem("ship:economy")!)).toEqual({ state: { doubloons: 3 }, version: 1 });
+  });
+
+  it("skip the nulls older backups saved for plain-text keys", () => {
+    const storage = memoryStorage();
+    storage.setItem("ship:profile-name", "Sam Lee");
+    const older = { app: "ship", data: { "ship:profile-name": null, "ship:storage-consent": null, "ship:recall": { state: { cards: [] }, version: 1 } } };
+    expect(restoreBackup(storage, older)).toBe(1);
+    expect(storage.getItem("ship:profile-name")).toBe("Sam Lee");
+    expect(storage.getItem("ship:storage-consent")).toBeNull();
+  });
+
+  it("leave cloud sync's bookkeeping for this browser out", () => {
+    const storage = memoryStorage({ "ship:sync-meta": { uid: "a" }, "ship:economy": { state: {}, version: 1 } });
+    expect(Object.keys(makeBackup(storage).data)).toEqual(["ship:economy"]);
+    const target = memoryStorage();
+    restoreBackup(target, { app: "ship", data: { "ship:sync-meta": { uid: "b" } }, text: { "ship:sync-meta": "x" } });
+    expect(target.getItem("ship:sync-meta")).toBeNull();
+  });
+
   it("refuse files that aren't Ship backups", () => {
     expect(() => restoreBackup(memoryStorage(), { app: "other", data: {} })).toThrow("not a Ship backup");
     expect(() => restoreBackup(memoryStorage(), null)).toThrow("not a Ship backup");

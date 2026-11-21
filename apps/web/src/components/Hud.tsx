@@ -10,12 +10,15 @@ import {
   isSignInPromptDismissed,
   saveLocalProfile,
 } from "../lib/accountData.js";
+import { retryCloudSync } from "../hooks/useCloudSync.js";
 import { signInWithGoogle, signOutGoogle, subscribeAuthUser } from "../lib/firebase.js";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
 import { usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useSettings } from "../stores/settingsStore.js";
+import { useSync } from "../stores/syncStore.js";
+import type { SyncState } from "../stores/syncStore.js";
 import { useUi } from "../stores/uiStore.js";
 import type { PanelId } from "../stores/uiStore.js";
 import { LegalModal, type LegalTab } from "./LegalModal.js";
@@ -67,19 +70,16 @@ export function Hud() {
   const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial());
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
-  const driveConnected = useFleet((s) => Boolean(s.statuses["google-drive"]?.connected));
 
   useEffect(() => subscribeAuthUser(setAuthUser), []);
 
   useEffect(() => {
-    if (driveConnected || authUser) {
+    if (authUser) {
       setShowSignInPrompt(false);
       return;
     }
     const triggerPrompt = () => {
-      if (!useFleet.getState().statuses["google-drive"]?.connected && !isSignInPromptDismissed()) {
-        setShowSignInPrompt(true);
-      }
+      if (!isSignInPromptDismissed()) setShowSignInPrompt(true);
     };
 
     const unsubPlanner = usePlanner.subscribe((state, prev) => {
@@ -115,7 +115,7 @@ export function Hud() {
       unsubRecall();
       unsubFleet();
     };
-  }, [driveConnected]);
+  }, [authUser]);
 
   const dismissSignInPrompt = () => {
     setShowSignInPrompt(false);
@@ -129,7 +129,7 @@ export function Hud() {
         <VoyageDock />
       </div>
       <Toasts />
-      {showSignInPrompt && !driveConnected && !authUser && !loginOpen && !tutorialOpen && (
+      {showSignInPrompt && !authUser && !loginOpen && !tutorialOpen && (
         <SignInPromptToast
           onSignIn={() => {
             setShowSignInPrompt(false);
@@ -142,7 +142,7 @@ export function Hud() {
         <OnboardingModal
           onClose={() => setTutorialOpen(false)}
           onOpenLogin={() => setLoginOpen(true)}
-          driveConnected={driveConnected || Boolean(authUser)}
+          signedIn={Boolean(authUser)}
         />
       )}
       {loginOpen && <LoginModal authUser={authUser} onClose={() => setLoginOpen(false)} />}
@@ -166,7 +166,7 @@ function TopBar({
   const setSettings = useSettings((s) => s.set);
   const openPanel = useUi((s) => s.openPanel);
   const cards = useRecall((s) => s.cards);
-  const driveStatus = useFleet((s) => s.statuses["google-drive"]);
+  const sync = useSync();
   const now = useNow(30_000);
   const due = dueNow(cards, now).length;
 
@@ -228,13 +228,9 @@ function TopBar({
           type="button"
           onClick={onOpenLogin}
           className={cx("py-1 text-sm", SOFT_PILL)}
-          title="Sign in with Google & sync across devices"
+          title={authUser ? syncSentence(sync) : "Log in with Google to keep your progress in your account and pick it up on any device"}
         >
-          {authUser
-            ? `${authUser.displayName?.split(" ")[0] ?? "Signed in"} ✓`
-            : driveStatus?.connected
-              ? "Synced ✓"
-              : "Log in"}
+          {authUser ? `${authUser.displayName?.split(" ")[0] ?? "Signed in"} ${syncMark(sync.status)}` : "Log in"}
         </button>
 
         <button
@@ -298,7 +294,7 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
     setAuthBusy(true);
     try {
       await signOutGoogle();
-      toast("Signed out of Google.", "info");
+      toast("Signed out. This browser keeps its copy; your account keeps its own.", "info");
     } finally {
       setAuthBusy(false);
     }
@@ -344,6 +340,9 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
             </div>
           ) : (
             <>
+              <p className="text-xs leading-snug text-[#5C544B]">
+                Logging in keeps a copy of your progress in your Google account, so it follows you to any device you log in on.
+              </p>
               <label className="flex cursor-pointer items-start gap-2 text-xs leading-snug text-[#5C544B]">
                 <input
                   type="checkbox"
@@ -383,6 +382,8 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
           )}
         </div>
 
+        {authUser && <SyncStatusCard />}
+
         <div className="space-y-3 text-sm">
           <label className="block">
             <span className="mb-1 block text-xs tracking-wider text-[#6B635B]">Name</span>
@@ -404,7 +405,7 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs tracking-wider text-[#6B635B]">Google Drive OAuth Client ID (optional)</span>
+            <span className="mb-1 block text-xs tracking-wider text-[#6B635B]">Google Drive client ID (optional, for importing Google Docs)</span>
             <input
               value={driveClientId}
               onChange={(e) => setDriveClientId(e.target.value)}
@@ -420,7 +421,7 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
             onClick={() => void connectDrive()}
             className="text-[#4D453E] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5C544B]"
           >
-            {driveStatus?.connected ? "Google Drive Connected ✓" : "Sign in with Google Drive"}
+            {driveStatus?.connected ? "Google Drive connected ✓" : "Connect Google Drive"}
           </button>
           <button type="button" onClick={saveProfile} className="rounded-full border border-[rgb(0_0_0_/_0.12)] bg-[#FFF3A8] px-4 py-1 text-[#4D453E] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5C544B]">
             Save
@@ -479,6 +480,52 @@ function Toasts() {
           {t.text}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** The mark after a signed-in name in the top bar. */
+function syncMark(status: SyncState["status"]): string {
+  if (status === "synced") return "✓";
+  if (status === "error" || status === "paused" || status === "needs-choice") return "!";
+  return "…";
+}
+
+/** One sentence on where cloud sync stands, for the top bar's tooltip and the Log in window. */
+function syncSentence({ status, message, lastSyncedAt }: Pick<SyncState, "status" | "message" | "lastSyncedAt">): string {
+  switch (status) {
+    case "synced":
+      return lastSyncedAt
+        ? `Synced with your Google account at ${new Date(lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
+        : "Synced with your Google account.";
+    case "saving":
+      return "Saving to your Google account…";
+    case "needs-choice":
+      return "Choose which progress to keep before syncing starts.";
+    case "paused":
+    case "error":
+      return message ?? "Sync isn't running.";
+    default:
+      return "Connecting to your Google account…";
+  }
+}
+
+function SyncStatusCard() {
+  const sync = useSync();
+  const canRetry = sync.status === "error" || sync.status === "paused";
+  return (
+    <div role="status" className="mb-4 space-y-1.5 rounded-[14px] border border-[rgb(0_0_0_/_0.08)] bg-[#FAF6E8] p-3 text-xs leading-snug">
+      <p className={cx("font-semibold", sync.status === "error" ? "text-[#8A3B31]" : "text-[#4D453E]")}>{syncSentence(sync)}</p>
+      <p className="text-[#6B635B]">
+        Syncs your planner, timer history, flashcards, Study Sheets, coins, unlocks and timer settings. API keys, Canvas and Todoist logins, calendar links and sound
+        settings stay on this device.
+      </p>
+      {sync.tooBig.length > 0 && <p className="text-[#8A3B31]">Too big to sync, so kept on this device only: {sync.tooBig.join(", ")}.</p>}
+      {canRetry && (
+        <button type="button" onClick={retryCloudSync} className="font-semibold text-[#4D453E] underline underline-offset-4">
+          {sync.status === "paused" ? "Choose what to keep" : "Try again"}
+        </button>
+      )}
     </div>
   );
 }

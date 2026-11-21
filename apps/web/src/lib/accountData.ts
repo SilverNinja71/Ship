@@ -65,13 +65,17 @@ export function setConsentState(choice: "accepted" | "essential-only"): void {
 }
 
 /**
- * Removes all local Ship data (`ship:*` localStorage keys and the IndexedDB
- * `ship-notes` store) and deletes or signs out the current Firebase Auth user.
+ * Removes all Ship data: the account's cloud copy, the local `ship:*` keys and
+ * the IndexedDB `ship-notes` store, then deletes or signs out the Firebase user.
+ * Throws, having deleted nothing, when the cloud copy couldn't be removed.
  */
-export async function deleteAllUserData(): Promise<{ deletedFirebaseAccount: boolean }> {
+export async function deleteAllUserData(): Promise<{ wasSignedIn: boolean; deletedFirebaseAccount: boolean }> {
   let deletedFirebaseAccount = false;
   const user = auth.currentUser;
   if (user) {
+    // The cloud copy goes first: once the account is deleted, nobody could reach that data to delete it.
+    const { deleteCloudData } = await import("./cloudSync.js");
+    await deleteCloudData(user.uid);
     try {
       await deleteUser(user);
       deletedFirebaseAccount = true;
@@ -95,5 +99,5 @@ export async function deleteAllUserData(): Promise<{ deletedFirebaseAccount: boo
   }
 
   await clearNotes().catch(() => undefined);
-  return { deletedFirebaseAccount };
+  return { wasSignedIn: user !== null, deletedFirebaseAccount };
 }
