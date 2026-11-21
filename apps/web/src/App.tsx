@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAmbiance } from "./hooks/useAmbiance.js";
 import { useAutoSync } from "./hooks/useAutoSync.js";
+import { useCloudSync } from "./hooks/useCloudSync.js";
 import { useCrewSync } from "./hooks/useCrewSync.js";
 import { useIdleDetection } from "./hooks/useIdleDetection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
@@ -13,6 +14,7 @@ import { Hud } from "./components/Hud.js";
 import { MonthlyStatsModal } from "./components/MonthlyStatsModal.js";
 import { PanelHost } from "./components/PanelHost.js";
 import { StudyMaterialsSection } from "./components/StudyMaterialsSection.js";
+import { SyncChoiceDialog } from "./components/SyncChoiceDialog.js";
 import { ShipCanvas } from "./ship-engine/ShipCanvas.js";
 import { useSettings } from "./stores/settingsStore.js";
 
@@ -27,6 +29,7 @@ export function App() {
   useAmbiance();
   useLookoutBridge();
   useAutoSync();
+  useCloudSync();
   useCrewSync();
   useWebRTC();
   return (
@@ -40,6 +43,7 @@ export function App() {
       <PanelHost />
       <BreakReflectModal />
       <MonthlyStatsModal />
+      <SyncChoiceDialog />
       <ConsentBanner />
     </div>
   );

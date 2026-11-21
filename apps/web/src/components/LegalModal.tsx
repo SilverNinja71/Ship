@@ -24,14 +24,18 @@ export function LegalModal({
   const handleDeleteAll = async () => {
     setDeleting(true);
     try {
-      const { deletedFirebaseAccount } = await deleteAllUserData();
+      const { wasSignedIn, deletedFirebaseAccount } = await deleteAllUserData();
       toast(
         deletedFirebaseAccount
-          ? "Deleted your Google account link and all local study data. Reloading..."
-          : "Cleared all local study data and signed out. Reloading...",
+          ? "Deleted your account, its cloud copy and this browser's study data. Reloading..."
+          : wasSignedIn
+            ? "Deleted your cloud copy and this browser's study data, and signed you out. Google wants a fresh log-in before deleting the account itself: log in again and repeat this. Reloading..."
+            : "Cleared this browser's study data. Reloading...",
         "info",
       );
       setTimeout(() => window.location.reload(), 900);
+    } catch (e) {
+      toast(`Nothing was deleted: ${e instanceof Error ? e.message : "the cloud copy couldn't be removed"}`, "warning");
     } finally {
       setDeleting(false);
     }
@@ -92,8 +96,9 @@ export function LegalModal({
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 text-sm leading-relaxed text-[var(--page-ink)]">
             {tab === "privacy" && (
               <>
-                <p><strong>Minimal Data Collection:</strong> Ship stores your flashcards, study sheets, Pomodoro logs, and Banana Planna schedules locally in your browser (`localStorage` and `IndexedDB`). We do not sell, rent, or run third-party advertising trackers on your study data.</p>
-                <p><strong>Optional Google Sign-In & Drive Sync:</strong> If you choose to sign in with Google (via Firebase Authentication) or connect your own Google Drive OAuth Client ID, Google shares only the basic profile information (name and email) or Drive files you explicitly authorize. If you use your own Gemini API key, prompts go directly from your browser to Google&apos;s Gemini API.</p>
+                <p><strong>Minimal Data Collection:</strong> Ship stores your flashcards, study sheets, Pomodoro logs, and Banana Planna schedules in your browser (`localStorage` and `IndexedDB`). We do not sell, rent, or run third-party advertising trackers on your study data.</p>
+                <p><strong>Cloud Sync When You Log In:</strong> If you log in with Google, Ship also keeps a copy of your planner, timer history, flashcards, study sheets and uploaded notes, coins, unlocks and timer settings in Google Cloud Firestore (part of Firebase), stored under your account so that only you can read or change it. Your Gemini key, Canvas and Todoist logins, calendar feed links and sound settings are never uploaded. Signing out stops syncing. Delete account &amp; data (below) erases the cloud copy too.</p>
+                <p><strong>Google Sign-In & Drive:</strong> Logging in with Google (Firebase Authentication) shares your basic profile (name and email) with Ship. If you connect your own Google Drive client ID, Ship reads only the Drive files you authorize, to import them. If you use your own Gemini API key, prompts go directly from your browser to Google&apos;s Gemini API.</p>
                 <p><strong>Age Gate:</strong> By creating an account or signing in with Google, you confirm that you are 13 years or older (or using Ship with parent/school consent).</p>
               </>
             )}
@@ -101,14 +106,14 @@ export function LegalModal({
             {tab === "terms" && (
               <>
                 <p><strong>Acceptable Use:</strong> Ship Pwedo Pomo is provided as a calm student productivity and active-recall study workspace. Please upload only study materials you own or have permission to study from.</p>
-                <p><strong>Service Availability:</strong> Because local-first browser storage depends on your device, keep occasional backups using the Export options or Google Drive sync before clearing browser data.</p>
+                <p><strong>Service Availability:</strong> Your progress lives in your browser, and in your Google account if you log in. Keep occasional backups (Settings → Download a backup) before clearing browser data.</p>
                 <p><strong>No Unverified Medical or Academic Guarantees:</strong> Study recommendations and spaced-repetition intervals are educational helpers and carry no academic grade warranty.</p>
               </>
             )}
 
             {tab === "cookies" && (
               <>
-                <p><strong>Essential Browser Storage Only:</strong> Ship uses browser `localStorage` (under `ship:*` keys) and `IndexedDB` (`ship-notes`) strictly to remember your Pomodoro preferences, uploaded notes, tutorial progress, and Firebase Authentication session.</p>
+                <p><strong>Essential Browser Storage Only:</strong> Ship uses browser `localStorage` (under `ship:*` keys) and `IndexedDB` (`ship-notes`) strictly to remember your Pomodoro preferences, uploaded notes, tutorial progress, your Firebase Authentication session and, when you&apos;re logged in, what cloud sync last saved.</p>
                 <p><strong>Consent Choice:</strong> Choosing &ldquo;Essential Only&rdquo; or &ldquo;Accept Storage&rdquo; lets you keep core session state without third-party analytics cookies.</p>
               </>
             )}

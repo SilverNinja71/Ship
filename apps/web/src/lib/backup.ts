@@ -104,3 +104,13 @@ export function restoreBackup(storage: Storage, parsed: unknown): number {
   }
   return restored;
 }
+
+/** Saves a backup of this browser's progress through the browser's normal download. */
+export function downloadBackup(notes: readonly NoteDocument[]): void {
+  const blob = new Blob([JSON.stringify(makeBackup(localStorage, new Date(), notes), null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `ship-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}

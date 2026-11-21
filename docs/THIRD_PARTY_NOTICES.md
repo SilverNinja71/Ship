@@ -7,7 +7,7 @@ This document records third-party dependencies, external APIs, fonts, icons, and
 | :--- | :--- | :--- | :--- |
 | `react`, `react-dom` | MIT | Client UI rendering | Local only; sends no telemetry. |
 | `zustand` | MIT | Client state management & local persistence | Persists only under `ship:*` `localStorage` keys. |
-| `firebase` (`firebase/app`, `firebase/auth`) | Apache-2.0 | Hosting and optional Google Sign-In (`GoogleAuthProvider`) | Activated only on explicit user sign-in after age/consent confirmation; no Google Analytics / tracking SDK enabled. |
+| `firebase` (`firebase/app`, `firebase/auth`, `firebase/firestore`) | Apache-2.0 | Hosting, optional Google Sign-In (`GoogleAuthProvider`) and cloud sync for signed-in users (Cloud Firestore) | Activated only on explicit user sign-in after age/consent confirmation; Firestore loads only for signed-in users and stores their study data under their own account; no Google Analytics / tracking SDK enabled. |
 | `pdfjs-dist` | Apache-2.0 | Local client-side PDF text extraction for Study Sheets | Runs 100% locally in a browser Web Worker; PDFs never leave the user's device unless the user explicitly sends study text to their own Gemini key. |
 | `tailwindcss`, `@tailwindcss/vite` | MIT | Styling & OKLCH CSS variables | Build-time CSS generation only. |
 

@@ -293,7 +293,8 @@ async function loadSavedNotes(): Promise<void> {
   const saved = await loadNotes();
   useFleet.setState({ notes: mergeNotes(saved, useFleet.getState().notes) });
 }
-void loadSavedNotes().catch((e: unknown) => console.warn("Ship couldn't load its saved notes.", e));
+/** Settles once saved notes are loaded, so cloud sync never mistakes "not loaded yet" for "deleted". */
+export const notesLoaded: Promise<void> = loadSavedNotes().catch((e: unknown) => console.warn("Ship couldn't load its saved notes.", e));
 
 export function isDone(a: Assignment, done: Record<string, boolean>): boolean {
   return done[a.id] ?? a.completed;

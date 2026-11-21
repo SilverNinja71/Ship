@@ -3,9 +3,11 @@
 
 import { useRef, useState } from "react";
 import { DEFAULT_GEMINI_MODEL, GEMINI_KEY_URL, checkGeminiModel, normalizeGeminiModel } from "@ship/integrations";
+import { useAuthUser } from "../../hooks/useAuthUser.js";
 import { PANEL_KEYS } from "../../hooks/useKeyboard.js";
-import { makeBackup, notesInBackup, restoreBackup } from "../../lib/backup.js";
+import { downloadBackup, notesInBackup, restoreBackup } from "../../lib/backup.js";
 import { isHostedSite } from "../../lib/hosting.js";
+import { signOutGoogle } from "../../lib/firebase.js";
 import { browserFetch } from "../../lib/network.js";
 import { clearNotes, saveNotes } from "../../lib/noteVault.js";
 import { useFleet } from "../../stores/fleetStore.js";
@@ -21,16 +23,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const toast = useUi((u) => u.toast);
   const [server, setServer] = useState(s.crewServer);
   const [confirmReset, setConfirmReset] = useState(false);
+  const signedIn = useAuthUser() !== null;
   const file = useRef<HTMLInputElement>(null);
 
-  const exportData = () => {
-    const blob = new Blob([JSON.stringify(makeBackup(localStorage, new Date(), useFleet.getState().notes), null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `ship-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
+  const exportData = () => downloadBackup(useFleet.getState().notes);
 
   const importData = async (f: File | undefined) => {
     if (!f) return;
@@ -45,6 +41,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   };
 
   const reset = async () => {
+    // Signed in, the cloud copy would come straight back after the reload. Signing out first makes this browser start fresh; the account keeps its copy.
+    if (signedIn) await signOutGoogle().catch((e: unknown) => console.warn("Ship couldn't sign out.", e));
     for (const key of Object.keys(localStorage)) if (key.startsWith("ship:")) localStorage.removeItem(key);
     await clearNotes().catch((e: unknown) => console.warn("Ship couldn't erase its saved notes.", e));
     location.reload();
@@ -129,15 +127,22 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <Card>
           <h3 className="mb-2 font-display font-extrabold">Your data</h3>
-          <p className="mb-2 text-sm text-ink/70">Everything Ship knows lives in this browser. Save a backup to move it or keep it safe. Backups leave out your Gemini key.</p>
+          <p className="mb-2 text-sm text-ink/70">
+            {signedIn
+              ? "Your progress lives in this browser and in your Google account, which keeps your devices in step. A backup file is a copy you keep yourself. Backups leave out your Gemini key."
+              : "Everything Ship knows lives in this browser. Log in to keep a copy in your Google account, or save a backup to move it or keep it safe. Backups leave out your Gemini key."}
+          </p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={exportData}>Download a backup</Button>
             <Button onClick={() => file.current?.click()}>Restore a backup</Button>
             <input ref={file} type="file" accept=".json" className="hidden" onChange={(e) => void importData(e.target.files?.[0])} />
             <Button variant={confirmReset ? "danger" : "secondary"} onClick={() => (confirmReset ? reset() : setConfirmReset(true))}>
-              {confirmReset ? "Really erase everything?" : "Start over"}
+              {confirmReset ? (signedIn ? "Sign out and erase this browser?" : "Really erase everything?") : "Start over"}
             </Button>
           </div>
+          {signedIn && confirmReset && (
+            <p className="mt-2 text-xs text-ink/70">This signs you out and erases this browser's copy. Your Google account keeps its copy, and logging in again brings it back. To erase that too, use Delete account &amp; data in the Log in window.</p>
+          )}
         </Card>
 
         <Card>
