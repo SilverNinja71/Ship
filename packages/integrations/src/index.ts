@@ -96,6 +96,8 @@ export {
 export type { GeminiCallOptions, JsonSchema, SchemaValidationResult } from "./gemini.js";
 export { BLURT_GEMINI_TIMEOUT_MS, BLURT_SYSTEM_PROMPT, buildBlurtRequest, gradeBlurtWithGemini, readBlurtGrades } from "./geminiBlurt.js";
 export type { GeminiBlurtOptions } from "./geminiBlurt.js";
+export { CARDS_GEMINI_TIMEOUT_MS, CARDS_SYSTEM_PROMPT, buildCardsRequest, makeCardsWithGemini, readGeminiCards } from "./geminiCards.js";
+export type { CardDraft, GeminiCardsOptions } from "./geminiCards.js";
 
 export { guessKind } from "./kind.js";
 export { APPLE_REFERENCE_EPOCH_MS, appleSecondsToEpochMs, endOfLocalDay, parseDateString, toEpochMs } from "./time.js";

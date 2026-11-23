@@ -1,5 +1,6 @@
-// Flashcards: typed-answer reviews with spaced repetition, deck management,
-// and adding or importing cards.
+// Flashcards: typed-answer reviews with spaced repetition, practice modes
+// (Learn, Test, Match), review stats, deck management, and adding cards by
+// hand, from a file or from your notes.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RECALL_RATINGS } from "@ship/shared-types";
@@ -11,11 +12,14 @@ import { useFleet } from "../../stores/fleetStore.js";
 import { dueNow, useRecall } from "../../stores/recallStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
+import { FromNotes } from "../flashcards/FromNotes.js";
+import { Practice } from "../flashcards/Practice.js";
+import { Stats } from "../flashcards/Stats.js";
 import { useNow } from "../Hud.js";
 import { IconCards, IconUpload } from "../icons.js";
 import { Badge, Button, Card, EmptyState, Field, Panel, Select, Tabs, TextArea, TextInput, cx, readFile } from "../ui.js";
 
-type Tab = "review" | "decks" | "add";
+type Tab = "review" | "practice" | "stats" | "decks" | "add";
 
 export function FlashcardsPanel({ onClose }: { onClose: () => void }) {
   const cards = useRecall((s) => s.cards);
@@ -29,11 +33,15 @@ export function FlashcardsPanel({ onClose }: { onClose: () => void }) {
         onChange={setTab}
         tabs={[
           { id: "review", label: "Review", badge: due || undefined },
+          { id: "practice", label: "Practice" },
+          { id: "stats", label: "Stats" },
           { id: "decks", label: "Decks" },
           { id: "add", label: "Add cards" },
         ]}
       />
       {tab === "review" && <Review onAdd={() => setTab("add")} />}
+      {tab === "practice" && <Practice />}
+      {tab === "stats" && <Stats />}
       {tab === "decks" && <Decks />}
       {tab === "add" && <AddCards />}
     </Panel>
@@ -289,6 +297,7 @@ function AddCards() {
   const [newDeck, setNewDeck] = useState("");
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
+  const [reversed, setReversed] = useState(false);
   const frontRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -296,6 +305,7 @@ function AddCards() {
     let target = deckId;
     if (!target || target === "__new") target = addDeck(newDeck || "My deck").id;
     if (addCard(target, front, back)) {
+      if (reversed) addCard(target, back, front);
       setDeckId(target);
       setFront("");
       setBack("");
@@ -341,6 +351,10 @@ function AddCards() {
           />
         </Field>
       </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={reversed} onChange={(e) => setReversed(e.target.checked)} />
+        Also add it the other way round (answer → question), like Anki&apos;s reversed cards
+      </label>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Button onClick={() => fileRef.current?.click()}>
           <IconUpload size={18} /> Import a deck file
@@ -350,7 +364,8 @@ function AddCards() {
           Add card
         </Button>
       </div>
-      <p className="text-sm text-ink/60">Imports: Parchment study.json and .parchment notebooks, CSV/TSV (front, back, optional deck).</p>
+      <p className="text-sm text-ink/60">Imports: Parchment study.json and .parchment notebooks, CSV/TSV (front, back, optional deck). From Anki, use File → Export → “Notes in Plain Text”.</p>
+      <FromNotes />
     </div>
   );
 }

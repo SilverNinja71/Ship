@@ -4,3 +4,5 @@ export * from "./fsrs.js";
 export * from "./scheduler.js";
 export * from "./grading.js";
 export * from "./blurt.js";
+export * from "./practice.js";
+export * from "./stats.js";

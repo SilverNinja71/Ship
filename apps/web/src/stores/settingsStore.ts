@@ -23,6 +23,8 @@ export interface SettingsState {
   /** The crew server's http origin; the WebSocket and the relay live there. */
   crewServer: string;
   scheduler: SchedulerKind;
+  /** New flashcards introduced per day, as in Anki. 0 means no cap. */
+  newCardsPerDay: number;
   motion: MotionPreference;
   visualStyle: VisualStyle;
   portTheme: PortThemeId;
@@ -56,6 +58,7 @@ export const useSettings = create<SettingsState>()(
       idleMinutes: 10,
       crewServer: `http://localhost:${SIGNALING_DEFAULT_PORT}`,
       scheduler: "sm2",
+      newCardsPerDay: 20,
       motion: "system",
       visualStyle: "tiny-ink",
       portTheme: "classic",

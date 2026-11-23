@@ -101,7 +101,7 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-11-21)
+## Status (2026-11-23)
 
 Everything below is on `main`:
 - pull request #1: sessions 1–3;
@@ -110,9 +110,11 @@ Everything below is on `main`:
 - pull request #4: the public website (see "The public website");
 - pull request #5: uploading coursework, links and images, and matching Parchment's schedule (see "Uploading coursework");
 - 13 commits pushed straight to `main` on 2026-11-16 to 2026-11-18, with no pull request: the kawaii redesign (see "The kawaii redesign"). This file wasn't updated then. That section was written on 2026-11-20 by reading the code, so it records what the code does, not why each choice was made;
-- pull request #6: this file's notes on the redesign.
+- pull request #6: this file's notes on the redesign;
+- pull request #7: cloud sync and the backup fix (see "Cloud sync");
+- a commit pushed straight to `main` on 2026-11-23: kawaii themes, die-cut stickers and a stationery grid. This file doesn't describe it yet.
 
-Cloud sync and the backup fix (see "Cloud sync") are on branch `claude/cloud-sync`.
+Stage 1 of the study-app features (see "Features from other study apps") is on branch `claude/flashcards-stage1`.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -130,14 +132,14 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 876 tests, and all pass (run on 2026-11-21):
+`npm test` runs 900 tests, and all pass (run on 2026-11-23):
 
 | Package | Tests |
 |---|---|
 | ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
-| active-recall-engine (incl. Parchment's schedule 24) | 65 |
+| active-recall-engine (incl. Parchment's schedule 24, practice modes and review stats 17) | 82 |
 | crew server | 100 |
-| integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34) | 185 |
+| integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34, Gemini flashcards 4, Anki exports 3) | 192 |
 | extension (incl. video groups 25) | 187 |
 | web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16) | 303 |
 
@@ -1009,6 +1011,44 @@ Logging in with Google keeps a copy of the sailor's progress in their Google acc
 - Safari and phones.
 - The free-tier limits under real use.
 - Two devices offline at once.
+
+## Features from other study apps (2026-11-23)
+
+The user asked for the best features of Goodnotes, Quizlet, FocusPomo (the iPhone/Mac Pomodoro app), Medly AI, Anki, Notion and Brilliant. They're grouped into four stages, each its own pull request:
+
+1. **Flashcards (Quizlet + Anki).** Built; see below.
+2. **AI practice (Medly + Brilliant):** exam-style questions from notes marked by Gemini with feedback; short step-by-step lessons with hints; a daily study goal and streak.
+3. **Focus (FocusPomo):** long breaks, subject tags, a tomato per finished session, a stopwatch mode, focus charts and a calendar timeline.
+4. **Notes (Notion + Goodnotes):** writing and linking notes with search and templates; then handwriting notebooks and PDF markup.
+
+### Stage 1: flashcards (Quizlet + Anki)
+
+The Flashcards panel's tabs are now Review, Practice, Stats, Decks and Add cards.
+
+**Practice** (`components/flashcards/Practice.tsx`; rules in `active-recall-engine/src/practice.ts`). Practice never changes when a card is next due.
+- **Learn:** rounds of 7 cards. Each card is asked as multiple choice, then typed (graded by `gradeTypedAnswer`, so close answers count), and a missed card comes back in the next pass until every card is mastered. Keys 1–4 pick a choice, Enter continues.
+- **Test:** a chosen number of cards as a mix of written, multiple-choice, true/false and matching questions (matching groups of 3–6 cards), scored at the end, weighted by cards, with the right answers shown. A kind a deck can't support falls back to written.
+- **Match:** up to 6 cards split into 12 tiles; pair them against the clock, with 1 s added per wrong pair. The best time per deck (`""` for all decks) is `recallStore.matchBest`, which syncs.
+- Wrong options come from other cards' answers, never one that means the same (`distractors`).
+
+**Cards from notes** (Add cards → "Make cards from your notes", `components/flashcards/FromNotes.tsx`), like Quizlet's Magic Notes:
+- With a Gemini key: `makeCardsWithGemini` (`integrations/src/geminiCards.ts`) asks for short typed answers, treats the notes as data, and drops empty, overlong, repeated and ungrounded cards (an answer whose words aren't in the notes).
+- Without a key, or when Gemini fails: `cardsFromNotes` makes "Term: definition" cards (asking for the term) and fill-in-the-blank cards from the blurt check's key ideas. `clozeFront` moved into the engine for this; `lib/blurtGrading.ts` re-exports it.
+- The sailor reviews and edits the drafts before anything is added, to a new deck named after the note or an existing one.
+
+**From Anki:**
+- **New cards per day** (Settings → Flashcards, default 20, 0 = no cap; `settingsStore.newCardsPerDay`, synced). `dueNow` now uses `studyQueue`: every due review, plus new cards up to what's left of today's allowance. A card counts as started today when its first review-log entry is today. The top bar's count, the Review tab and the Lookout's gate cards all follow it.
+- **Reversed cards:** "Also add it the other way round" on Add cards and on cards from notes.
+- **Stats** (`components/flashcards/Stats.tsx`, `reviewStats` in `active-recall-engine/src/stats.ts`): reviewed today, new cards today against the cap, a day streak, the share of the last 30 days' reviews rated Hard or better, a 16-week calendar of study days, reviews due over the next 7 days, and new / learning / young / mature counts (mature = an interval of 21 days or more, as in Anki).
+- **Anki's plain-text export** (File → Export → "Notes in Plain Text") imports as cards: `csv.ts` reads its `#separator:` / `#html:` / `#… column:` header lines, skips Anki's own columns (guid, note type, deck, tags), keeps the deck column, and turns field HTML back into text. Before, such a file became a note.
+
+**Contract change:** `ReviewLogEntry` moved into `shared-types/recall.ts` (the web store re-exports it).
+
+**Verified (2026-11-23)** in muted headless Chromium against the dev server, 11 checks: the top bar counts 20 of 38 new cards; Learn asks every card as a choice then typed and ends with all 38 mastered; a test of every question kind scores 100% when answered right; Match records a best time including the penalty; Stats renders; a reversed card is added; cards are made from an uploaded note offline and added to a new deck; nothing in the panel sticks out at 390 px; no page errors.
+
+**Not verified:** Gemini card making with a real key, and phones.
+
+**Found while testing, not fixed:** at 390 px the page itself is 590 px wide on `main`, because of the Weekly Plan card added on 2026-11-23, so phones scroll sideways.
 
 ## Conventions
 

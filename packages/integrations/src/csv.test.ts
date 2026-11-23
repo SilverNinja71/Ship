@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { newReviewSchedule } from "@ship/shared-types";
-import { detectDelimiter, detectHeader, importCsvCards, parseDelimited } from "./csv.js";
+import { ankiHtmlToText, detectDelimiter, detectHeader, importCsvCards, parseDelimited, readAnkiHeader } from "./csv.js";
+import { importFile } from "./importFile.js";
 
 const ids = () => {
   let n = 0;
@@ -123,5 +124,40 @@ describe("importCsvCards", () => {
     const open = importCsvCards('q,"a never ends', { now, newId: ids() });
     expect(open.cards).toHaveLength(1);
     expect(open.warnings[0]).toMatch(/never closed/);
+  });
+});
+
+describe("Anki's plain-text export", () => {
+  const exported = [
+    "#separator:tab",
+    "#html:true",
+    "#guid column:1",
+    "#notetype column:2",
+    "#deck column:3",
+    "#tags column:6",
+    "a1b2\tBasic\tBiology::Cells\tWhat makes most of a cell&#39;s ATP?\t<b>Mitochondria</b>\tbio",
+    "c3d4\tBasic\tBiology::Cells\tSite of photosynthesis\tChloroplast<br>(in plants)\t",
+  ].join("\n");
+
+  it("reads the header, skips Anki's own columns, and turns HTML back into text", () => {
+    const result = importCsvCards(exported);
+    expect(result.warnings).toEqual([]);
+    expect(result.cards.map((c) => [c.front, c.back])).toEqual([
+      ["What makes most of a cell's ATP?", "Mitochondria"],
+      ["Site of photosynthesis", "Chloroplast\n(in plants)"],
+    ]);
+    expect(result.decks.map((d) => d.name)).toEqual(["Biology::Cells"]);
+  });
+
+  it("is taken for cards, not a note, when dropped in as a .txt file", () => {
+    const simple = "#separator:tab\n#html:false\nWhat makes ATP?\tMitochondria\nSite of photosynthesis\tChloroplast\n";
+    const result = importFile("Biology.txt", new TextEncoder().encode(simple));
+    expect(result.notes).toHaveLength(0);
+    expect(result.cards.map((c) => c.back)).toEqual(["Mitochondria", "Chloroplast"]);
+  });
+
+  it("decodes the entities Anki writes", () => {
+    expect(ankiHtmlToText("a &amp; b &lt;3&gt; &nbsp;x&#x2192;y<div>z</div>")).toBe("a & b <3>  x→y\nz");
+    expect(readAnkiHeader("no header here")).toBeNull();
   });
 });

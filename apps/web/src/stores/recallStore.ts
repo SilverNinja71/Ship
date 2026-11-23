@@ -3,17 +3,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { newReviewSchedule } from "@ship/shared-types";
-import type { BlurtGrader, Deck, Flashcard, ImportResult, RecallRating } from "@ship/shared-types";
-import { dueCards, nextSchedule } from "@ship/active-recall-engine";
+import type { BlurtGrader, Deck, Flashcard, ImportResult, RecallRating, ReviewLogEntry } from "@ship/shared-types";
+
+export type { ReviewLogEntry };
+import { nextSchedule, studyQueue } from "@ship/active-recall-engine";
 import { newId } from "../lib/ids.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 import { useSettings } from "./settingsStore.js";
-
-export interface ReviewLogEntry {
-  cardId: string;
-  at: number;
-  rating: RecallRating;
-}
 
 export interface BlurtSession {
   id: string;
@@ -31,6 +27,8 @@ export interface RecallState {
   decks: Deck[];
   cards: Flashcard[];
   reviewLog: ReviewLogEntry[];
+  /** Fastest Match game per deck id ("" for all decks), in ms. */
+  matchBest: Record<string, number>;
   blurts: BlurtSession[];
   addDeck(name: string, subject?: string | null): Deck;
   renameDeck(id: string, name: string): void;
@@ -42,6 +40,8 @@ export interface RecallState {
   /** Merges imported decks and cards; ones with a known id replace the old copy. Returns how many cards were new. */
   importCards(result: Pick<ImportResult, "decks" | "cards">): { decks: number; cards: number };
   saveBlurt(session: Omit<BlurtSession, "id" | "at">): void;
+  /** Records a finished Match game; true when it beat the deck's best time. */
+  recordMatch(deckKey: string, ms: number): boolean;
 }
 
 const MAX_LOG = 5000;
@@ -53,6 +53,7 @@ export const useRecall = create<RecallState>()(
       decks: [],
       cards: [],
       reviewLog: [],
+      matchBest: {},
       blurts: [],
 
       addDeck: (name, subject = null) => {
@@ -75,6 +76,13 @@ export const useRecall = create<RecallState>()(
       updateCard: (id, patch) => set({ cards: get().cards.map((c) => (c.id === id ? { ...c, ...patch } : c)) }),
 
       deleteCard: (id) => set({ cards: get().cards.filter((c) => c.id !== id) }),
+
+      recordMatch: (deckKey, ms) => {
+        const best = get().matchBest[deckKey];
+        if (best !== undefined && best <= ms) return false;
+        set({ matchBest: { ...get().matchBest, [deckKey]: ms } });
+        return true;
+      },
 
       review: (cardId, rating, now = Date.now()) => {
         const kind = useSettings.getState().scheduler;
@@ -104,6 +112,7 @@ export const useRecall = create<RecallState>()(
   ),
 );
 
+/** Cards to review now: every due review, and new cards up to what's left of today's cap (Settings → New cards per day). */
 export function dueNow(cards: readonly Flashcard[], now = Date.now(), limit?: number): Flashcard[] {
-  return dueCards(cards, now, limit);
+  return studyQueue(cards, useRecall.getState().reviewLog, now, useSettings.getState().newCardsPerDay, limit);
 }

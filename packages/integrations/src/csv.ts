@@ -1,6 +1,8 @@
 // CSV / TSV flashcard import (Quizlet, Anki, spreadsheets). RFC 4180 quoting,
 // delimiter auto-detection, an optional header row and an optional deck
-// column. Cards start with a fresh schedule.
+// column. Anki's "Notes in Plain Text" export is read too: its "#separator:"
+// style header lines say how the file is laid out, and its HTML is turned
+// back into plain text. Cards start with a fresh schedule.
 
 import { newReviewSchedule } from "@ship/shared-types";
 import type { Deck, Flashcard, ImportResult } from "@ship/shared-types";
@@ -122,6 +124,60 @@ export function detectHeader(row: readonly string[]): Columns | null {
   return { front, back, deck: deck >= 0 ? deck : null };
 }
 
+/** What the "#key:value" lines at the top of an Anki plain-text export say. */
+export interface AnkiHeader {
+  delimiter?: CsvDelimiter;
+  html: boolean;
+  /** 0-based columns that hold Anki's own data (guid, note type, tags, deck) rather than card fields. */
+  special: Set<number>;
+  deck: number | null;
+  /** How many lines the header takes. */
+  lines: number;
+}
+
+const ANKI_SEPARATORS: Record<string, CsvDelimiter> = { tab: "\t", comma: ",", semicolon: ";", "\t": "\t", ",": ",", ";": ";" };
+
+/** Reads an Anki export's header lines; null when the text doesn't start with one. */
+export function readAnkiHeader(text: string): AnkiHeader | null {
+  const lines = text.split(/\r?\n/);
+  const header: AnkiHeader = { html: false, special: new Set(), deck: null, lines: 0 };
+  for (const line of lines) {
+    const m = /^#([a-z ]+):(.*)$/i.exec(line);
+    if (!m) break;
+    header.lines++;
+    const name = m[1]!.trim().toLowerCase();
+    const value = m[2]!.trim();
+    const column = Number.parseInt(value, 10) - 1;
+    if (name === "separator") header.delimiter = ANKI_SEPARATORS[value.toLowerCase()];
+    else if (name === "html") header.html = value.toLowerCase() === "true";
+    else if (/^(tags|guid|notetype) column$/.test(name) && column >= 0) header.special.add(column);
+    else if (name === "deck column" && column >= 0) {
+      header.special.add(column);
+      header.deck = column;
+    }
+  }
+  return header.lines > 0 ? header : null;
+}
+
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+
+/** Anki stores fields as HTML: line breaks become newlines, other tags go, entities are decoded. */
+export function ankiHtmlToText(html: string): string {
+  return html
+    // Anki writes a new line as "<br>" or as "<div>…</div>".
+    .replace(/<br\s*\/?>|<div[^>]*>|<\/(?:p|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code: string) => {
+      if (code[0] === "#") {
+        const n = code[1] === "x" || code[1] === "X" ? Number.parseInt(code.slice(2), 16) : Number.parseInt(code.slice(1), 10);
+        return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+      }
+      return ENTITIES[code.toLowerCase()] ?? whole;
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export interface CsvImportOptions {
   delimiter?: CsvDelimiter;
   /** Force header handling; by default a header is detected from its names. */
@@ -142,15 +198,20 @@ export interface CsvImportResult extends ImportResult {
 export function importCsvCards(input: string, options: CsvImportOptions = {}): CsvImportResult {
   const now = options.now ?? systemClock;
   const newId = options.newId ?? randomId;
-  const text = input.replace(/^﻿/, "");
-  const delimiter = options.delimiter ?? detectDelimiter(text);
+  const raw = input.replace(/^\uFEFF/, "");
+  const anki = readAnkiHeader(raw);
+  const text = anki ? raw.split(/\r?\n/).slice(anki.lines).join("\n") : raw;
+  const delimiter = options.delimiter ?? anki?.delimiter ?? detectDelimiter(text);
   const { rows: allRows, unterminatedQuote } = parseDelimited(text, delimiter);
   const rows = allRows.filter((r) => !isBlankRow(r));
   const warnings: string[] = [];
 
-  const detected = rows[0] ? detectHeader(rows[0]) : null;
-  const hasHeader = options.hasHeader ?? detected !== null;
-  const columns: Columns = (hasHeader ? detected : null) ?? { front: 0, back: 1, deck: null };
+  const detected = !anki && rows[0] ? detectHeader(rows[0]) : null;
+  const hasHeader = anki ? false : (options.hasHeader ?? detected !== null);
+  const columns: Columns = (hasHeader ? detected : null) ?? { front: 0, back: 1, deck: anki?.deck ?? null };
+  // In an Anki export the card's fields are whichever columns aren't Anki's own (guid, note type, deck, tags).
+  const fieldsOf = (row: string[]): string[] => (anki ? row.filter((_, i) => !anki.special.has(i)) : row);
+  const clean = (cell: string | undefined): string => (anki?.html ? ankiHtmlToText(cell ?? "") : (cell ?? "").trim());
   const body = hasHeader ? rows.slice(1) : rows;
 
   const defaultDeckName = options.deckName?.trim() || "Imported cards";
@@ -167,8 +228,9 @@ export function importCsvCards(input: string, options: CsvImportOptions = {}): C
   const cards: Flashcard[] = [];
   let skippedRows = 0;
   for (const row of body) {
-    const front = row[columns.front]?.trim() ?? "";
-    const back = row[columns.back]?.trim() ?? "";
+    const fields = fieldsOf(row);
+    const front = clean(anki ? fields[0] : row[columns.front]);
+    const back = clean(anki ? fields[1] : row[columns.back]);
     if (!front || !back) {
       skippedRows++;
       continue;
