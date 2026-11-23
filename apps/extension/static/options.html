@@ -66,6 +66,26 @@
         </form>
       </section>
 
+      <section aria-labelledby="obsidian-h">
+        <h2 id="obsidian-h">Web Clipper and Obsidian</h2>
+        <p class="lede">Where "Send to Obsidian" puts a clip. "Save to Ship" ignores these: Ship files clips in its Note Nook, and in your vault's Clippings folder once you open your vault there.</p>
+        <form id="obsidian-form">
+          <div class="field">
+            <label for="obsidian-vault">Vault name</label>
+            <input id="obsidian-vault" type="text" autocomplete="off" spellcheck="false" placeholder="The vault Obsidian last had open" />
+            <p class="hint">As Obsidian shows it in its vault switcher. Leave it empty to use whichever vault is open.</p>
+          </div>
+          <div class="field">
+            <label for="clip-folder">Folder</label>
+            <div class="inline">
+              <input id="clip-folder" type="text" autocomplete="off" spellcheck="false" placeholder="Clippings" />
+              <button class="btn" type="submit">Save</button>
+            </div>
+          </div>
+          <p id="obsidian-status" class="status" role="status"></p>
+        </form>
+      </section>
+
       <section aria-labelledby="sites-h">
         <h2 id="sites-h">Blocked sites</h2>
         <p class="lede">These are blocked only while a focus block is running. Subdomains count too, so reddit.com covers old.reddit.com.</p>

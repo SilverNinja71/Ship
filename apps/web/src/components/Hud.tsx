@@ -35,6 +35,7 @@ import {
   IconHammer,
   IconHelm,
   IconLog,
+  IconNotebook,
   IconScroll,
   IconShirt,
   IconSpyglass,
@@ -48,6 +49,7 @@ export const PANELS: { id: PanelId; label: string; icon: (p: { size?: number }) 
   { id: "helm", label: "Helm", icon: IconHelm },
   { id: "planner", label: "Banana Planna", icon: IconCalendar },
   { id: "log", label: "Study Sheets", icon: IconLog },
+  { id: "notes", label: "Note Nook", icon: IconNotebook },
   { id: "flashcards", label: "Flashcards", icon: IconCards },
   { id: "shipwright", label: "Shipwright", icon: IconHammer },
   { id: "wardrobe", label: "Wardrobe", icon: IconShirt },
@@ -192,6 +194,17 @@ function TopBar({
         >
           <IconLog size={15} />
           <span>Study Sheets</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openPanel("notes")}
+          className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+          title="Note Nook: your notes and Obsidian vault (N)"
+          aria-label="Note Nook"
+        >
+          <IconNotebook size={15} />
+          <span className="hidden sm:inline">Note Nook</span>
         </button>
 
         <button
@@ -528,8 +541,8 @@ function SyncStatusCard() {
     <div role="status" className="mb-4 space-y-1.5 rounded-[14px] border border-[rgb(0_0_0_/_0.08)] bg-[#FAF6E8] p-3 text-xs leading-snug">
       <p className={cx("font-semibold", sync.status === "error" ? "text-[#8A3B31]" : "text-[#4D453E]")}>{syncSentence(sync)}</p>
       <p className="text-[#6B635B]">
-        Syncs your planner, timer history, flashcards, Study Sheets, coins, unlocks and timer settings. API keys, Canvas and Todoist logins, calendar links and sound
-        settings stay on this device.
+        Syncs your planner, timer history, flashcards, Study Sheets, coins, unlocks and timer settings. API keys, Canvas and Todoist logins, calendar links, sound
+        settings and notes from an Obsidian vault stay on this device.
       </p>
       {sync.tooBig.length > 0 && <p className="text-[#8A3B31]">Too big to sync, so kept on this device only: {sync.tooBig.join(", ")}.</p>}
       {canRetry && (

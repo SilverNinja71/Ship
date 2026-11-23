@@ -2,7 +2,7 @@
 // the background worker with chrome.runtime.sendMessage. (The page <-> bridge
 // protocol is WebToLookout / LookoutToWeb in shared-types.)
 
-import type { GateCard, LookoutStats, LookoutToWeb, LookoutVerdict, LookoutVoyageState, VideoInspection, WebToLookout } from "@ship/shared-types";
+import type { GateCard, LookoutClip, LookoutStats, LookoutToWeb, LookoutVerdict, LookoutVoyageState, VideoInspection, WebToLookout } from "@ship/shared-types";
 import type { GuardStatus } from "../core/voyage.js";
 
 export type ToBackground =
@@ -18,10 +18,12 @@ export type ToBackground =
   | { t: "gate-passed"; url: string }
   | { t: "steer-back"; url: string }
   | { t: "popup-state" }
-  | { t: "open-ship" };
+  | { t: "open-ship" }
+  /** From the popup's Web Clipper: keep this clip until Ship collects it. */
+  | { t: "save-clip"; clip: LookoutClip };
 
 /** "lookout-refresh": guarding, passes or the blocklist changed, so check the page again. */
-export type ToContent = { t: "lookout-refresh" } | { t: "lookout-stats"; stats: LookoutStats };
+export type ToContent = { t: "lookout-refresh" } | { t: "lookout-stats"; stats: LookoutStats } | { t: "lookout-clips"; clips: LookoutClip[] };
 
 /** What the gate shows about the voyage it's protecting. */
 export interface GateVoyageInfo {
@@ -57,6 +59,10 @@ export interface PopupState {
   passes: { site: string; until: number }[];
   cards: number;
   shipUrl: string;
+  /** Clips Ship hasn't collected yet. */
+  clipsWaiting: number;
+  obsidianVault: string;
+  clipFolder: string;
 }
 
 export interface BackgroundReplies {
@@ -69,6 +75,7 @@ export interface BackgroundReplies {
   "steer-back": SteerBackResult | null;
   "popup-state": PopupState;
   "open-ship": null;
+  "save-clip": { waiting: number } | null;
 }
 
 export type ReplyTo<M extends ToBackground> = BackgroundReplies[M["t"]];

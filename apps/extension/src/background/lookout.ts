@@ -9,6 +9,7 @@ import {
   BRIDGE_PROTOCOL_VERSION,
   LOOKOUT_SOURCE,
   type GateCard,
+  type LookoutClip,
   type LookoutRewardEvent,
   type LookoutStats,
   type LookoutToWeb,
@@ -17,6 +18,7 @@ import {
 } from "@ship/shared-types";
 import { parseVoyageState, parseWebMessage, sanitizeCards } from "../core/bridgeProtocol.js";
 import { classifyUrl, type PageClass } from "../core/classify.js";
+import { ackClips, enqueueClip, sanitizeClip } from "../core/clips.js";
 import { THUMBNAIL_MAX_BYTES } from "../core/constants.js";
 import { askGemini, GeminiError, type InlineImage } from "../core/gemini.js";
 import { sortVideo } from "../core/videoSort.js";
@@ -54,6 +56,8 @@ export interface LookoutState {
   voyage: StoredVoyage | null;
   cards: GateCard[];
   rewards: LookoutRewardEvent[];
+  /** Web Clipper clips waiting for Ship. */
+  clips: LookoutClip[];
   stats: DailyStats;
   verdicts: VerdictCache;
   passes: Passes;
@@ -69,6 +73,7 @@ export const STATE_KEYS: (keyof LookoutState)[] = [
   "voyage",
   "cards",
   "rewards",
+  "clips",
   "stats",
   "verdicts",
   "passes",
@@ -92,6 +97,7 @@ export function parseState(raw: Record<string, unknown>, now: number): LookoutSt
     voyage: voyageState && receivedAt !== null ? { state: voyageState, receivedAt } : null,
     cards: Array.isArray(raw.cards) ? sanitizeCards(raw.cards) : [],
     rewards: Array.isArray(raw.rewards) ? raw.rewards.filter(isRewardEvent) : [],
+    clips: Array.isArray(raw.clips) ? raw.clips.map(sanitizeClip).filter((c): c is LookoutClip => c !== null) : [],
     stats: normalizeStats(raw.stats, now),
     verdicts: normalizeVerdictCache(raw.verdicts),
     passes: normalizePasses(raw.passes),
@@ -364,6 +370,11 @@ export function createLookout(deps: LookoutDeps) {
       case "ack-rewards":
         if (msg.ids.length) await mutate((st) => ({ rewards: ackRewards(st.rewards, msg.ids) }));
         return null;
+      case "claim-clips":
+        return { source: LOOKOUT_SOURCE, t: "clips", clips: (await read()).clips };
+      case "ack-clips":
+        if (msg.ids.length) await mutate((st) => ({ clips: ackClips(st.clips, msg.ids) }));
+        return null;
     }
   }
 
@@ -384,6 +395,9 @@ export function createLookout(deps: LookoutDeps) {
       passes: Object.entries(prunePasses(s.passes, now)).map(([site, until]) => ({ site, until })),
       cards: s.cards.length,
       shipUrl: s.settings.shipUrl,
+      clipsWaiting: s.clips.length,
+      obsidianVault: s.settings.obsidianVault,
+      clipFolder: s.settings.clipFolder,
     };
   }
 
@@ -407,6 +421,14 @@ export function createLookout(deps: LookoutDeps) {
         return steerBack(url, sender);
       case "popup-state":
         return popupState();
+      case "save-clip": {
+        const clip = sanitizeClip(message.clip);
+        if (!clip) return null;
+        const s = await mutate((st) => ({ clips: enqueueClip(st.clips, clip) }));
+        // An open Ship tab collects it straight away.
+        await deps.broadcast({ t: "lookout-clips", clips: s.clips }, "bridges");
+        return { waiting: s.clips.length };
+      }
       case "open-ship": {
         const { shipUrl } = (await read()).settings;
         if (!(await deps.focusShipTab(shipUrl).catch(() => false))) await deps.openShip(null, shipUrl);

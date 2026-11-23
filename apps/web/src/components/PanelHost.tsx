@@ -1,5 +1,6 @@
 // Shows whichever panel is open.
 
+import { lazy, Suspense } from "react";
 import { useUi } from "../stores/uiStore.js";
 import { CaptainsLogPanel } from "./panels/CaptainsLogPanel.js";
 import { CrewPanel } from "./panels/CrewPanel.js";
@@ -12,6 +13,9 @@ import { SettingsPanel } from "./panels/SettingsPanel.js";
 import { ShipwrightPanel } from "./panels/ShipwrightPanel.js";
 import { WardrobePanel } from "./panels/WardrobePanel.js";
 
+// The Note Nook brings the Markdown reader with it, so it loads the first time it opens.
+const NoteNookPanel = lazy(() => import("./panels/NoteNookPanel.js").then((m) => ({ default: m.NoteNookPanel })));
+
 export function PanelHost() {
   const panel = useUi((s) => s.panel);
   const close = () => useUi.getState().openPanel(null);
@@ -22,6 +26,12 @@ export function PanelHost() {
       return <PlannerPanel onClose={close} />;
     case "log":
       return <CaptainsLogPanel onClose={close} />;
+    case "notes":
+      return (
+        <Suspense fallback={null}>
+          <NoteNookPanel onClose={close} />
+        </Suspense>
+      );
     case "flashcards":
       return <FlashcardsPanel onClose={close} />;
     case "shipwright":

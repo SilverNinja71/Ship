@@ -23,7 +23,7 @@ export function buildObsidianMarkdown(): string {
     "## Habit Tracker",
     ...p.habits.map((h) => {
       const count = h.checks.filter(Boolean).length;
-      return `- ${h.label}: ${count}/31 days`;
+      return `- ${h.label}: ${count}/${h.checks.length} days`;
     }),
     "",
     "## Monthly Notes",

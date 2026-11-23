@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAmbiance } from "./hooks/useAmbiance.js";
 import { useAutoSync } from "./hooks/useAutoSync.js";
 import { useCloudSync } from "./hooks/useCloudSync.js";
+import { useVaultSync } from "./hooks/useVaultSync.js";
 import { useCrewSync } from "./hooks/useCrewSync.js";
 import { useIdleDetection } from "./hooks/useIdleDetection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
@@ -33,6 +34,7 @@ export function App() {
   useLookoutBridge();
   useAutoSync();
   useCloudSync();
+  useVaultSync();
   useCrewSync();
   useWebRTC();
   return (

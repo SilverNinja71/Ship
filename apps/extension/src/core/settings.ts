@@ -13,6 +13,10 @@ export interface LookoutSettings {
   shipUrl: string;
   /** Hostnames such as "reddit.com"; subdomains are included. */
   blockedSites: string[];
+  /** The Obsidian vault "Send to Obsidian" opens; empty means the one Obsidian last had open. */
+  obsidianVault: string;
+  /** Where clips go in that vault, like Obsidian Web Clipper's "Note location". */
+  clipFolder: string;
 }
 
 export const DEFAULT_SHIP_URL = "https://silverninja71.github.io/Ship";
@@ -22,6 +26,8 @@ export const DEFAULT_SETTINGS: LookoutSettings = {
   geminiModel: DEFAULT_GEMINI_MODEL,
   shipUrl: DEFAULT_SHIP_URL,
   blockedSites: [],
+  obsidianVault: "",
+  clipFolder: "Clippings",
 };
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -60,6 +66,8 @@ export function normalizeSettings(raw: unknown): LookoutSettings {
     geminiModel: normalizeModel(r.geminiModel),
     shipUrl: (typeof r.shipUrl === "string" && normalizeShipUrl(r.shipUrl)) || DEFAULT_SHIP_URL,
     blockedSites,
+    obsidianVault: typeof r.obsidianVault === "string" ? r.obsidianVault.trim().slice(0, 200) : "",
+    clipFolder: typeof r.clipFolder === "string" ? r.clipFolder.trim().replace(/^\/+|\/+$/g, "").slice(0, 200) : DEFAULT_SETTINGS.clipFolder,
   };
 }
 

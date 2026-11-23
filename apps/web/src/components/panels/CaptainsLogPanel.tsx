@@ -3,7 +3,7 @@
 // grades it when the sailor has added their own key in Settings; otherwise,
 // or when Gemini can't answer, the offline engine does.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BLURT_STATUS_COLORS } from "@ship/shared-types";
 import type { BlurtConceptResult, BlurtResult } from "@ship/shared-types";
 import { annotateBlurt, annotateNotes } from "@ship/active-recall-engine";
@@ -154,6 +154,17 @@ function NotesStep({
     onTitle(from === 0 && to === pages.length - 1 ? source.title : `${source.title} (${range})`);
     onNotes(pages.slice(from, to + 1).map((p) => p.text).join("\n\n"));
   };
+
+  // Opened from the Note Nook's "Blurt this": start on that note.
+  useEffect(() => {
+    const id = useUi.getState().blurtNoteId;
+    if (!id) return;
+    useUi.setState({ blurtNoteId: null });
+    const source = sources.find((s) => s.id === id);
+    if (source) choose(source, 0, source.pages.length > LONG_FILE_PAGES ? FIRST_STRETCH - 1 : source.pages.length - 1);
+    // Only once, when the panel opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUpload = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;

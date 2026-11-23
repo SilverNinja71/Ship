@@ -67,7 +67,8 @@ export function makeBackup(storage: Storage, now = new Date(), notes: readonly N
     exportedAt: now.toISOString(),
     data,
     ...(Object.keys(text).length > 0 ? { text } : {}),
-    ...(notes.length > 0 ? { notes: [...notes] } : {}),
+    // Notes read from an Obsidian vault are left out: the vault already holds them.
+    ...(notes.some((n) => n.source !== "obsidian") ? { notes: notes.filter((n) => n.source !== "obsidian") } : {}),
   };
 }
 

@@ -64,17 +64,19 @@ ship/
 │   │       │                StudyMaterialsSection + BananaPlannaSection (the page below the scene),
 │   │       │                OnboardingModal, ConsentBanner, LegalModal, BreakReflectModal, MonthlyStatsModal,
 │   │       │                AudioBrowserModal, PastelMinionBadge,
-│   │       │                panels/ (Helm, Planner, Captain's Log, Flashcards, Shipwright, Wardrobe, Crew,
-│   │       │                Fleet Log, Lookout, Settings)
+│   │       │                panels/ (Helm, Planner, Captain's Log, Note Nook, Flashcards, Shipwright, Wardrobe,
+│   │       │                Crew, Fleet Log, Lookout, Settings)
 │   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore,
-│   │       │                settingsStore, uiStore, activityStore, lookoutStore, plannerStore
+│   │       │                settingsStore, uiStore, activityStore, lookoutStore, plannerStore, vaultStore
 │   │       ├── hooks/       useVoyageTicker, useIdleDetection, useKeyboard, useAmbiance, useLookoutBridge,
-│   │       │                useCrewSync, useWebRTC, useAutoSync
+│   │       │                useCrewSync, useWebRTC, useAutoSync, useCloudSync, useVaultSync
 │   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage,
 │   │                        hosting, backup, noteVault, blurtGrading, firebase (Google sign-in), accountData
-│   │                        (profile, consent, delete everything), captainsLogService (hashtags), plannerExport
+│   │                        (profile, consent, delete everything), captainsLogService (hashtags), plannerExport,
+│   │                        markdown (Obsidian-style reading), obsidianVault (vault sync), clipNotes
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
-│   │   └── src/ background/ content/ popup/ options/; core/videoGroups.ts + videoSort.ts sort watch pages
+│   │   └── src/ background/ content/ popup/ options/; core/videoGroups.ts + videoSort.ts sort watch pages;
+│   │                        content/clipper.ts + popup/clipper.ts + core/clips.ts: the Web Clipper
 │   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
 ├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor),
 │                            ARCHITECTURE.md, FUTURE_DRAFTS.md and THIRD_PARTY_NOTICES.md (from the redesign)
@@ -101,7 +103,7 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-11-21)
+## Status (2026-11-23)
 
 Everything below is on `main`:
 - pull request #1: sessions 1–3;
@@ -110,9 +112,13 @@ Everything below is on `main`:
 - pull request #4: the public website (see "The public website");
 - pull request #5: uploading coursework, links and images, and matching Parchment's schedule (see "Uploading coursework");
 - 13 commits pushed straight to `main` on 2026-11-16 to 2026-11-18, with no pull request: the kawaii redesign (see "The kawaii redesign"). This file wasn't updated then. That section was written on 2026-11-20 by reading the code, so it records what the code does, not why each choice was made;
-- pull request #6: this file's notes on the redesign.
+- pull request #6: this file's notes on the redesign;
+- pull request #7: cloud sync and the backup fix (see "Cloud sync");
+- one commit pushed straight to `main` on 2026-11-22 (`93194b1`): 10 themes, stickers and a stationery grid. This file doesn't describe it yet.
 
-Cloud sync and the backup fix (see "Cloud sync") are on branch `claude/cloud-sync`.
+Open, as draft pull requests:
+- `claude/flashcards-stage1` (pull request #8): Learn, Test and Match modes, cards from notes, Anki import;
+- `claude/obsidian`: Obsidian vaults, the Note Nook and the Lookout's Web Clipper (see "Obsidian"). It branched from `main`, not from #8; whichever merges second needs a rebase.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -130,16 +136,16 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 876 tests, and all pass (run on 2026-11-21):
+`npm test` runs 910 tests on `claude/obsidian`, and all pass (run on 2026-11-23):
 
 | Package | Tests |
 |---|---|
 | ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
 | active-recall-engine (incl. Parchment's schedule 24) | 65 |
 | crew server | 100 |
-| integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34) | 185 |
-| extension (incl. video groups 25) | 187 |
-| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16) | 303 |
+| integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34, Obsidian 12) | 197 |
+| extension (incl. video groups 25, clips 5) | 192 |
+| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16, Markdown 7, vault sync 8, clips 2) | 320 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds.
 
@@ -913,7 +919,7 @@ Not fixed; listed so nobody rediscovers them:
 - **A 0-minute break stops the cycles.** With Custom and a break of 0, the ship docks after the first focus block and the remaining cycles never start.
 - **Scrolling on a touchscreen.** The canvas still has `touch-action: none` from when the app was one screen. A swipe that starts on the scene may not scroll the page; the pill's "Scroll for study sheets" link does. Not checked on a real phone.
 - **The phone top bar** wraps onto two rows at 390 px wide, and Flashcards and Desk lose their text labels.
-- **The planner export** writes each habit as "n/31 days", though a habit has 7 ticks.
+- ~~The planner export wrote each habit as "n/31 days"~~: fixed on `claude/obsidian`; it now counts the habit's own ticks.
 - The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, habit ticks never reset, and the daily check-in counts days in UTC.
 
 ### Verified, and not
@@ -1009,6 +1015,67 @@ Logging in with Google keeps a copy of the sailor's progress in their Google acc
 - Safari and phones.
 - The free-tier limits under real use.
 - Two devices offline at once.
+
+## Obsidian (2026-11-23)
+
+The user asked for Obsidian: open a vault, read Markdown the way Obsidian shows it, sync with it, and a web clipper in the Lookout like Obsidian Web Clipper, keeping the app kawaii. Branch `claude/obsidian`.
+
+### The Note Nook (`components/panels/NoteNookPanel.tsx`)
+
+A new panel (top bar, key `N`, and a button on the page below the scene) for every note in Ship: uploads, clips and vault notes.
+- **Reading** (`lib/markdown.ts`, markdown-it plus Ship's own rules): `[[links]]` (with `#heading` and `|alias`), `![[embeds]]` (shown as a link or a placeholder; images in a vault aren't loaded), callouts (`> [!tip]`, with Obsidian's type names folded onto 9 pastel looks), `- [ ]` tasks, `==highlights==`, `#tags`, tables, and `%%comments%%` hidden. Properties (the `---` block) show as a small table.
+- **Safety:** HTML in a note is shown as text, never run (`html: false`). Web links open in a new tab with no referrer; images load lazily with no referrer.
+- **Following links:** a `[[link]]` opens that note (a full path wins, then a file name, then a title, as in Obsidian) and scrolls to the heading. A link to a note that doesn't exist says so. Clicking a `#tag` filters the list. "Linked from" lists backlinks.
+- **Buttons:** Blurt this (opens Study Sheets on that note, via `uiStore.blurtNote`), N flashcards, Open in Obsidian (`obsidian://open`, vault notes only), Original page, Copy Markdown.
+- The panel loads on first open (`React.lazy`), so markdown-it isn't in the first download.
+
+### Vaults (`lib/obsidianVault.ts`, `stores/vaultStore.ts`, `hooks/useVaultSync.ts`)
+
+**Opening one** uses the browser's File System Access API (`showDirectoryPicker`, read and write). Only Chrome, Edge and Opera on a computer have it. The folder handle is kept in IndexedDB (`ship-vault`), so Ship finds the vault again next visit; after a browser restart the browser asks once more, so the card shows Reconnect. Elsewhere (Safari, Firefox, phones) "Read a vault folder" copies the notes in once, read-only, with `<input webkitdirectory>`.
+
+**One owner per thing**, so two apps never edit the same file:
+- The sailor's notes belong to the vault. Ship reads every `.md` file (skipping dot folders, `node_modules`, files over 2 MB and its own `Ship/` folder) and never writes to them.
+- Ship's things are written into the vault, each switchable under "What Ship writes":
+  - clips go to `Clippings/` (on by default). Once written, a clipping is the sailor's: Ship never overwrites one, and a second clip with the same title gets " 2". The clip note in Ship is then replaced by the vault copy;
+  - Banana Planna to `Ship/Planner.md` (on);
+  - each flashcard deck to `Ship/Flashcards/<deck>.md` as `question::answer` lines (on). Decks read from the vault aren't written back. A deck deleted in Ship has its file removed, unless the sailor edited the file;
+  - uploaded notes to `Ship/Notes/` (off).
+
+  `Ship/` is Ship's: edits made there are written over. That's said in the panel.
+
+**Flashcards from notes:** `question::answer` and `question:::answer` (both ways) lines, as the Obsidian Spaced Repetition plugin writes them, become a deck per note (`obsidian:<path>`). Card ids come from the question, so editing a note keeps each unchanged card's review progress (`recallStore.syncVaultCards`). Lines in code blocks, `<!--SR:...-->` schedule comments, and lines starting with a web address are skipped.
+
+**When it syncs:** on load, when Ship's tab comes back into view (the sailor was probably just in Obsidian), every 2 minutes while visible, and 5 s after the planner, the decks or a clip change. Only files whose modified time changed are read again (`ship:vault` keeps a manifest). Writes are skipped when the file already says the same thing.
+
+**What stays where:**
+- `ship:vault` (folder name, options, manifest) is device-only: not in `SYNCED_FIELDS`.
+- **Vault notes don't go to the cloud** (`syncsToCloud` in `cloudSync.ts`): the vault is their home, Obsidian has its own sync, and a big vault would eat the shared Firestore quota. They're left out of backups for the same reason.
+- **Vault flashcards do sync**, with their progress, because they're ordinary decks in the recall store. So cards from the vault can be reviewed on an iPad that can't open the vault.
+- A clip moved into the vault leaves Ship's cloud copy too. A device with no vault open loses sight of it; Obsidian's own sync carries it from there.
+- Start over and Delete everything forget the vault folder too.
+
+**Contracts:** `IntegrationId` gains `obsidian` and `clip`; `DeckSource` gains `obsidian`; `NoteDocument` gains optional `properties`. The pure parts (properties, cards, links, tags, the clip template, file names) are in `@ship/integrations` (`obsidian.ts`).
+
+### The Lookout's Web Clipper
+
+**In the popup** (`popup/clipper.ts`), above the voyage card: Clip this page reads the open tab (or only the selected text), then shows the title, site, author, word count and the Markdown, which can all be edited, plus a tags box. Then:
+- **Save to Ship**: queued in the Lookout (`chrome.storage`, at most 30, `core/clips.ts`) and handed to an open Ship tab at once (`lookout-clips` to the bridge), or when Ship next opens (`claim-clips`, then `ack-clips` once saved). Ship files it as a `clip:` note in the Note Nook with a toast, and into `Clippings/` if a vault is open.
+- **Send to Obsidian**: copies the Markdown, then opens `obsidian://new?vault=…&file=<folder>/<title>&clipboard`, as Obsidian's own clipper does (a whole article doesn't fit in a link). The vault name and folder are on the options page.
+- Copy, and Download `.md`.
+
+**Reading the page** (`content/clipper.ts`, 118 kB, injected only on that click): Mozilla's Readability (Firefox's Reader View engine) finds the article and drops menus, sidebars and footers; Turndown with its GitHub-flavored plugin turns it into Markdown (tables, code blocks, task lists). Links and images are made absolute. The title loses a trailing " | Site name" when that's the page's main heading.
+
+**Format:** `clipToMarkdown` writes Obsidian Web Clipper's default template: title, source, author, published, created, description and tags (always `clippings`). Clips from either tool look the same in a vault.
+
+**Permission:** `activeTab` (new). It lets the Lookout read only the tab the sailor is on, only when they open the popup. No new host permissions.
+
+### Verified (2026-11-23)
+
+- All 910 tests, typecheck and `npm run build:site`.
+- In muted headless Chromium, with the browser's private storage folder (OPFS) as a stand-in vault: opening it, reading two notes (one in a subfolder), callouts, tasks, a table, highlights, tags, a hidden `%%comment%%` and a `<script>` shown as text; following a `[[link|alias]]` to a heading, backlinks, 3 cards from `::` and `:::`, `Ship/Planner.md` written; phone width.
+- The built extension in full headless Chromium, with Ship and a local test article: Clip this page through the real popup (the popup's "active tab" pointed at the article, since the popup ran as a tab), Readability dropping the menu, sidebar and footer, Save to Ship, the toast, the vault sync moving the clip to `Clippings/` with the Web Clipper properties, and the Lookout's queue emptying.
+
+**Not verified:** a real Obsidian vault on disk (the folder picker can't be driven headless), the browser asking again after a restart, Send to Obsidian (needs Obsidian installed), the popup opened from the toolbar (so `activeTab` itself), real websites, the folder-copy fallback in Safari or Firefox, and two devices with the same vault.
 
 ## Conventions
 

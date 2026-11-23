@@ -65,6 +65,9 @@ import type { RemoteState, SyncMeta } from "./syncPlan.js";
 /** How long a store waits after its last change before saving it to the cloud. */
 const SAVE_DELAY_MS = 2500;
 
+/** Notes read from an Obsidian vault stay on the device: the vault is their home, and Obsidian syncs it its own way. */
+const syncsToCloud = (note: NoteDocument) => note.source !== "obsidian";
+
 /** After the cloud copy replaces a store's saved value, the store reads it back in. */
 const REHYDRATE: Record<string, () => unknown> = {
   [storageKey("planner")]: () => usePlanner.persist.rehydrate(),
@@ -175,7 +178,7 @@ class SyncSession {
       await this.reconcile(remote, remoteNotes);
     } else {
       const remoteEmpty = remote.size === 0 && remoteNotes.length === 0;
-      const localEmpty = !localHasProgress((k) => localStorage.getItem(k), useFleet.getState().notes.length);
+      const localEmpty = !localHasProgress((k) => localStorage.getItem(k), useFleet.getState().notes.filter(syncsToCloud).length);
       const choice: SyncChoice | null = remoteEmpty ? "local" : localEmpty ? "cloud" : await this.ask();
       if (this.stopped) return;
       if (!choice) {
@@ -349,7 +352,7 @@ class SyncSession {
         if (s.notes === prev.notes || this.stopped) return;
         const now = new Set(s.notes.map((n) => n.id));
         const before = new Set(prev.notes.map((n) => n.id));
-        for (const note of s.notes) if (!before.has(note.id) && !this.meta.notes.includes(note.id)) this.uploadNote(note).catch((e: unknown) => this.fail(e));
+        for (const note of s.notes) if (syncsToCloud(note) && !before.has(note.id) && !this.meta.notes.includes(note.id)) this.uploadNote(note).catch((e: unknown) => this.fail(e));
         for (const id of before) if (!now.has(id) && this.meta.notes.includes(id)) this.deleteRemoteNote(id).catch((e: unknown) => this.fail(e));
       }),
     );
@@ -369,7 +372,7 @@ class SyncSession {
   // ---- Notes ----------------------------------------------------------------
 
   private async syncNotes(remoteIds: string[], lastSynced: string[] | null): Promise<void> {
-    const localIds = useFleet.getState().notes.map((n) => n.id);
+    const localIds = useFleet.getState().notes.filter(syncsToCloud).map((n) => n.id);
     const plan = planNotes(localIds, remoteIds, lastSynced);
     const byId = new Map(useFleet.getState().notes.map((n) => [n.id, n]));
     for (const id of plan.upload) {

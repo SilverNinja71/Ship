@@ -71,6 +71,11 @@ export function parseWebMessage(data: unknown): WebToLookout | null {
       return Array.isArray(data.cards) ? { source, t: "cards", cards: sanitizeCards(data.cards) } : null;
     case "claim-rewards":
       return { source, t: "claim-rewards" };
+    case "claim-clips":
+      return { source, t: "claim-clips" };
+    case "ack-clips":
+      if (!Array.isArray(data.ids)) return null;
+      return { source, t: "ack-clips", ids: data.ids.filter((id): id is string => typeof id === "string" && id.length <= 100).slice(0, MAX_ACK_IDS) };
     case "ack-rewards":
       if (!Array.isArray(data.ids)) return null;
       return {

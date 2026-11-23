@@ -4,6 +4,7 @@
 import { formatClock, formatTimeLeft, GUARD_STATUS_LABELS, PHASE_LABELS, plural, verdictSourceShort } from "../core/labels.js";
 import type { PopupState } from "../shared/messages.js";
 import { sendToBackground } from "../shared/runtime.js";
+import { startClipper } from "./clipper.js";
 
 const REFETCH_MS = 5000;
 
@@ -70,6 +71,7 @@ function render(doc: Document, root: HTMLElement, state: PopupState, clockNow: n
     ),
     el(doc, "p", "small muted", `${plural(state.cards, "flashcard")} aboard for the Siren Gate`),
   );
+  if (state.clipsWaiting) info.append(el(doc, "p", "small", `${plural(state.clipsWaiting, "clip")} waiting for Ship's Note Nook`));
 
   const actions = el(doc, "div", "actions");
   const open = el(doc, "button", "btn", "Open Ship");
@@ -109,6 +111,9 @@ export async function startPopup(doc: Document = document): Promise<void> {
     fetchedAt = Date.now();
     draw();
   };
+
+  const clipper = doc.getElementById("clipper");
+  if (clipper) startClipper(doc, clipper, () => state);
 
   await refetch();
   setInterval(draw, 1000);

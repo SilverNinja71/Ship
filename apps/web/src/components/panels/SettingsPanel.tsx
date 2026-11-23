@@ -10,6 +10,7 @@ import { isHostedSite } from "../../lib/hosting.js";
 import { signOutGoogle } from "../../lib/firebase.js";
 import { browserFetch } from "../../lib/network.js";
 import { clearNotes, saveNotes } from "../../lib/noteVault.js";
+import { forgetVaultHandle } from "../../lib/obsidianVault.js";
 import { useFleet } from "../../stores/fleetStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import type { MotionPreference, VisualStyle } from "../../stores/settingsStore.js";
@@ -45,6 +46,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     if (signedIn) await signOutGoogle().catch((e: unknown) => console.warn("Ship couldn't sign out.", e));
     for (const key of Object.keys(localStorage)) if (key.startsWith("ship:")) localStorage.removeItem(key);
     await clearNotes().catch((e: unknown) => console.warn("Ship couldn't erase its saved notes.", e));
+    await forgetVaultHandle().catch(() => undefined);
     location.reload();
   };
 
