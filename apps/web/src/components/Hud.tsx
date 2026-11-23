@@ -1,8 +1,9 @@
-// Minimal Mr. Tiny Studio HUD over the scene: a clean top bar with essential
+// Minimal Pwedo Pomo Studio HUD over the scene: a clean top bar with essential
 // controls, toasts, and the compact Pwedo Pomo timer pill at the bottom.
 
 import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
+import { useModalBehavior } from "../hooks/useModalBehavior.js";
 import {
   dismissSignInPromptStorage,
   getSavedProfile,
@@ -207,6 +208,15 @@ function TopBar({
             </span>
           )}
         </button>
+
+        <button
+          type="button"
+          onClick={() => openPanel("wardrobe")}
+          className={cx("py-1 text-sm", SOFT_PILL)}
+          title="Kawaii Themes & Crew Wardrobe"
+        >
+          <span>Themes</span>
+        </button>
       </nav>
 
       <div className="pointer-events-auto flex items-center gap-4">
@@ -258,6 +268,7 @@ function TopBar({
 }
 
 function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () => void }) {
+  const modalRef = useModalBehavior(onClose);
   const driveClientId = useFleet((s) => s.settings.googleDrive?.clientId ?? "");
   const setDriveClientId = useFleet((s) => s.setDriveClientId);
   const connectDrive = useFleet((s) => s.connectDrive);
@@ -308,7 +319,7 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Log in" className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[rgb(0_0_0_/_0.22)] p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-sm rounded-3xl border border-[rgb(0_0_0_/_0.12)] bg-[#FFFDF7] p-6 font-serif text-[#5C544B] shadow-sm">
+      <div ref={modalRef} tabIndex={-1} className="modal-enter w-full max-w-sm rounded-3xl border border-[rgb(0_0_0_/_0.12)] bg-[#FFFDF7] p-6 font-serif text-[#5C544B] shadow-sm outline-none">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <PastelMinionBadge costume="banana" size={44} />

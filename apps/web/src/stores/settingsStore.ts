@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 import { SIGNALING_DEFAULT_PORT } from "@ship/shared-types";
 import { DEFAULT_GEMINI_MODEL } from "@ship/integrations";
 import type { SchedulerKind, VoyagePresetId } from "@ship/shared-types";
+import type { KawaiiThemeId } from "../ship-engine/kawaiiThemes.js";
 import type { PortThemeId } from "../ship-engine/tinyInk.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 
@@ -25,6 +26,8 @@ export interface SettingsState {
   motion: MotionPreference;
   visualStyle: VisualStyle;
   portTheme: PortThemeId;
+  activeThemeId: KawaiiThemeId;
+  showAffirmations: boolean;
   pomodoroCycles: number;
   soundTrack: SoundTrackId;
   view: CameraView;
@@ -56,6 +59,8 @@ export const useSettings = create<SettingsState>()(
       motion: "system",
       visualStyle: "tiny-ink",
       portTheme: "classic",
+      activeThemeId: "matcha-cafe",
+      showAffirmations: true,
       pomodoroCycles: 2,
       soundTrack: "rain",
       view: "deck",

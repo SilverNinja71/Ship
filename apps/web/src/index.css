@@ -45,6 +45,11 @@
   --hud-muted: rgb(88 80 71 / 0.78);
   --hud-track: rgb(0 0 0 / 0.12);
   --hud-dot-off: rgb(0 0 0 / 0.24);
+  --grid-line: rgb(110 102 92 / 0.09);
+  --theme-accent: oklch(0.885 0.075 128);
+  --theme-accent-ink: oklch(0.32 0.045 128);
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
 }
 
 [data-visual-style="storybook"] {
@@ -75,9 +80,60 @@ body {
   font-family: var(--font-body);
   background: var(--page-bg);
   color: var(--page-ink);
+  transition-property: background-color, color;
+  transition-duration: 280ms;
+  transition-timing-function: var(--ease-out-quart);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.notebook-grid {
+  background-color: var(--page-bg);
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.modal-enter {
+  transition-property: transform, opacity;
+  transition-duration: 220ms;
+  transition-timing-function: var(--ease-out-quart);
+  transition-behavior: allow-discrete;
+}
+
+.popover-enter {
+  transition-property: transform, opacity;
+  transition-duration: 210ms;
+  transition-timing-function: var(--ease-spring);
+  transition-behavior: allow-discrete;
+}
+
+@starting-style {
+  .modal-enter {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  .popover-enter {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}
+
+@keyframes sticker-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.65) rotate(-8deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.sticker-pop {
+  animation: sticker-pop 280ms var(--ease-spring) both;
 }
 
 .carousel-mask {

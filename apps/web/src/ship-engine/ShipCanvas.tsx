@@ -20,7 +20,9 @@ import { setHandDrawnMode } from "./draw.js";
 import { ParticleField } from "./ParticleFX.js";
 import { renderQuarters } from "./QuartersRenderer.js";
 import { renderDeck } from "./ShipRenderer.js";
-import { isPwedoPomoOpen, renderBreakScene, renderPwedoPlayScene, renderStudyDeskScene } from "./StudySceneRenderer.js";
+import { renderBreakScene, renderPwedoPlayScene, renderStudyDeskScene } from "./StudySceneRenderer.js";
+import { getKawaiiTheme } from "./kawaiiThemes.js";
+import { isPwedoPomoOpen } from "./StudySceneRenderer.js";
 import { sprites } from "./sprites/store.js";
 import { drawPaperTexture } from "./tinyInk.js";
 import type { CrewOnDeck, Viewport } from "./ShipRenderer.js";
@@ -125,6 +127,7 @@ export function ShipCanvas() {
       const frame: FrameInfo = { t: s.t, dt, reducedMotion: reduced, wind: s.wind };
       const me = { avatar, state: myAvatarState(voyage.phase, idle, hidden) };
       const tinyInk = settings.visualStyle === "tiny-ink";
+      const kawaiiTheme = getKawaiiTheme(settings.activeThemeId);
       setHandDrawnMode(tinyInk);
 
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
@@ -134,15 +137,22 @@ export function ShipCanvas() {
         if (voyage.phase === "docked" && voyage.prepEndsAt === null && isPwedoPomoOpen()) {
           renderPwedoPlayScene(ctx, view, frame, {
             portTheme: settings.portTheme,
+            theme: kawaiiTheme,
+            showAffirmations: settings.showAffirmations,
           });
         } else if (tinyInk && voyage.phase === "sailing") {
           renderStudyDeskScene(ctx, view, frame, {
             portTheme: settings.portTheme,
+            theme: kawaiiTheme,
             objective: voyage.objective,
+            focusProgress: focusProgress(voyage, nowMs),
+            showAffirmations: settings.showAffirmations,
           });
         } else if (tinyInk && voyage.phase === "shore-leave") {
           renderBreakScene(ctx, view, frame, {
             portTheme: settings.portTheme,
+            theme: kawaiiTheme,
+            showAffirmations: settings.showAffirmations,
           });
         } else {
           const others = crew.members.filter((m) => m.peerId !== crew.peerId).sort((a, b) => a.seat - b.seat);
@@ -165,6 +175,8 @@ export function ShipCanvas() {
               bellSwing,
               tinyInk,
               preparing: voyage.prepEndsAt !== null,
+              kawaiiTheme: tinyInk ? kawaiiTheme : undefined,
+              showAffirmations: settings.showAffirmations,
             },
             shipLayout(ship),
           );
@@ -179,7 +191,14 @@ export function ShipCanvas() {
       if (s.view > 0) {
         ctx.save();
         ctx.globalAlpha = s.view;
-        const quarterRegions = renderQuarters(ctx, view, frame, { ship, loadout, env, me, tinyInk });
+        const quarterRegions = renderQuarters(ctx, view, frame, {
+          ship,
+          loadout,
+          env,
+          me,
+          tinyInk,
+          kawaiiTheme: tinyInk ? kawaiiTheme : undefined,
+        });
         ctx.restore();
         if (s.view >= 0.5) regions = quarterRegions;
       }

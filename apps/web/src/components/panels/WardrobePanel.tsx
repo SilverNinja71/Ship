@@ -7,11 +7,13 @@ import type { AvatarItemKind, AvatarLoadout, AvatarState } from "@ship/shared-ty
 import { ACCESSORIES, COATS, COAT_COLORS, HAIR_COLORS, HAIR_STYLES, HATS, MAX_SAILOR_NAME, SKIN_TONES, STUDY_TOOLS, checkAvatarPurchase, ownsAvatarItem } from "@ship/ship-theme-kit";
 import type { CatalogItem } from "@ship/ship-theme-kit";
 import { useEconomy } from "../../stores/economyStore.js";
+import { useSettings } from "../../stores/settingsStore.js";
 import { resolveAvatar, useCustomizer } from "../../stores/shipCustomizer.js";
 import { useUi } from "../../stores/uiStore.js";
 import { AvatarPreview } from "../AvatarPreview.js";
 import { Doubloon, IconShirt } from "../icons.js";
-import { Field, Panel, TextInput, cx } from "../ui.js";
+import { Field, Panel, Tabs, TextInput, cx } from "../ui.js";
+import { ThemeStudioTab } from "./ThemeStudioTab.js";
 
 const STATES: { id: AvatarState; label: string }[] = [
   { id: "SAILING_FOCUS", label: "Focus" },
@@ -20,6 +22,8 @@ const STATES: { id: AvatarState; label: string }[] = [
 ];
 
 export function WardrobePanel({ onClose }: { onClose: () => void }) {
+  const visualStyle = useSettings((s) => s.visualStyle);
+  const [tab, setTab] = useState<"themes" | "sailor">(visualStyle === "tiny-ink" ? "themes" : "sailor");
   const avatar = useCustomizer((s) => s.avatar);
   const setAvatar = useCustomizer((s) => s.setAvatar);
   const inventory = useEconomy((s) => s.inventory);
@@ -95,8 +99,19 @@ export function WardrobePanel({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <Panel title="Wardrobe" subtitle="Dress your sailor" icon={<IconShirt />} onClose={onClose} wide>
-      <div className="grid gap-5 md:grid-cols-[240px_1fr]">
+    <Panel title="Themes & Crew Wardrobe" subtitle="Unlock kawaii study worlds with doubloons & customize your look" icon={<IconShirt />} onClose={onClose} wide>
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: "themes", label: "Kawaii Themes" },
+          { id: "sailor", label: "Sailor Outfit" },
+        ]}
+      />
+      {tab === "themes" ? (
+        <ThemeStudioTab />
+      ) : (
+        <div className="grid gap-5 md:grid-cols-[240px_1fr]">
         <div className="md:sticky md:top-0 md:self-start">
           <div className="grid place-items-center rounded-3xl border-2 border-ink/15 bg-gradient-to-b from-[#CDEFFB] to-cream-50">
             <AvatarPreview avatar={shown} state={previewState} size={220} />
@@ -145,6 +160,7 @@ export function WardrobePanel({ onClose }: { onClose: () => void }) {
           {items("tool", STUDY_TOOLS, "Study tool")}
         </div>
       </div>
+      )}
     </Panel>
   );
 }

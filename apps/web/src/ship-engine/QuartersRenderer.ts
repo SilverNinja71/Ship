@@ -17,6 +17,7 @@ import type { Viewport } from "./ShipRenderer.js";
 import { drawSprite } from "./sprites/paint.js";
 import { sprites } from "./sprites/store.js";
 import { drawPastelMinion } from "./minions.js";
+import type { KawaiiTheme } from "./kawaiiThemes.js";
 import { toTinyInkAvatar, toTinyInkEnv, toTinyInkShip } from "./tinyInk.js";
 import type { Ctx, FrameInfo } from "./types.js";
 
@@ -26,6 +27,7 @@ export interface QuartersScene {
   env: EnvironmentTheme;
   me: { avatar: AvatarLoadout; state: AvatarState };
   tinyInk?: boolean;
+  kawaiiTheme?: KawaiiTheme;
 }
 
 const ROOM_W = 1000;
@@ -81,8 +83,9 @@ export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, rawSc
   }
 
   const desk = { x: 500, y: FLOOR + 6 };
+  const acc = scene.kawaiiTheme?.accessory ?? "none";
   if (tiny) {
-    // Cozy 3D Mr. Tiny cream desk & pastel minion crew in Quarters
+    // Cozy 3D cream desk & pastel crew in Quarters
     // Soft floor shadow under 3D desk
     paint(ctx, (c) => {
       c.ellipse(desk.x + 8, desk.y + 4, 178, 13, 0, 0, Math.PI * 2);
@@ -94,7 +97,12 @@ export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, rawSc
     paint(ctx, (c) => roundRectPath(c, desk.x + 148, desk.y - 44, 14, 34, 5), "#DFD5C2", { width: 2.4, stroke: "#8D8D8D" });
 
     // Captain minion seated behind the 3D desk
-    drawPastelMinion(ctx, { x: desk.x, y: desk.y - 98 }, "captain", frame, { scale: 1.85, seed: 3, shadow: false });
+    drawPastelMinion(ctx, { x: desk.x, y: desk.y - 98 }, "captain", frame, {
+      scale: 1.85,
+      seed: 3,
+      shadow: false,
+      accessory: acc,
+    });
 
     // 3D Desk right side depth face
     paint(ctx, (c) => {
@@ -129,8 +137,8 @@ export function renderQuarters(ctx: Ctx, view: Viewport, frame: FrameInfo, rawSc
     drawStudyStation(ctx, { avatar: scene.me.avatar, state: scene.me.state, desk: scene.loadout.desk, at: desk, scale: STATION_SCALE, seed: 1 }, frame);
     regions.push(rectRegion(ctx, view.dpr, "avatar", "You: open the Wardrobe", desk.x - 110, desk.y - STATION_HEIGHT * STATION_SCALE, 220, STATION_HEIGHT * STATION_SCALE - 150));
   }
-  drawPastelMinion(ctx, { x: desk.x - 185, y: FLOOR + 4 }, "teddy", frame, { scale: 1.75, seed: 4, shadow: !tiny });
-  drawPastelMinion(ctx, { x: desk.x + 195, y: FLOOR + 4 }, "banana", frame, { scale: 1.7, seed: 5, shadow: !tiny });
+  drawPastelMinion(ctx, { x: desk.x - 185, y: FLOOR + 4 }, "teddy", frame, { scale: 1.75, seed: 4, shadow: !tiny, accessory: tiny ? acc : "none" });
+  drawPastelMinion(ctx, { x: desk.x + 195, y: FLOOR + 4 }, "banana", frame, { scale: 1.7, seed: 5, shadow: !tiny, accessory: tiny ? acc : "none" });
   regions.push(rectRegion(ctx, view.dpr, "desk", "Desk: review flashcards", desk.x - 160, desk.y - 150, 320, 150));
   ctx.restore();
 

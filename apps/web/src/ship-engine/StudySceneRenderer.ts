@@ -1,9 +1,12 @@
-// Mr. Tiny Studio-inspired Focus / Study Desk, Break, and Pwedo Play scenes:
-// soft pastel & kawaii hand-drawn stationery aesthetic with NO black outlines.
+// Ship · Pwedo Pomo Studio Focus / Study Desk, Break, and Pwedo Play scenes:
+// 100% original kawaii hand-drawn stationery aesthetic with NO black outlines.
 
 import { alpha, circlePath, ellipsePath, line, paint, roundRectPath, smoothClosedPath, withTransform } from "./draw.js";
+import { getKawaiiTheme } from "./kawaiiThemes.js";
+import type { KawaiiTheme } from "./kawaiiThemes.js";
 import { drawPastelMinion } from "./minions.js";
 import type { MinionCostume } from "./minions.js";
+import { drawThemeBackdrop } from "./themeBackdrop.js";
 import { PORT_THEMES, SKETCH_INK, drawPaperTexture } from "./tinyInk.js";
 import type { PortThemeId } from "./tinyInk.js";
 import type { Viewport } from "./ShipRenderer.js";
@@ -143,20 +146,19 @@ function drawSparkle(ctx: Ctx, x: number, y: number, r: number, color: string): 
 
 /**
  * Playful pastel scene shown when the user opens "Pwedo Pomo":
- * Pwedo (the cute bird) hops and flutters joyfully on a pastel stationery backdrop.
+ * Pwedo (the cute bird) hops and flutters joyfully on the active stationery backdrop.
  */
 export function renderPwedoPlayScene(
   ctx: Ctx,
   view: Viewport,
   frame: FrameInfo,
-  opts: { portTheme: PortThemeId },
+  opts: { portTheme?: PortThemeId; theme?: KawaiiTheme; showAffirmations?: boolean },
 ): void {
   const { width: w, height: h } = view;
-  const theme = PORT_THEMES[opts.portTheme] ?? PORT_THEMES.classic;
+  const activeTheme = opts.theme ?? getKawaiiTheme(null);
+  const pastel = activeTheme.canvas.pastel;
 
-  // Soft pastel cream background
-  ctx.fillStyle = "#FAF6E8";
-  ctx.fillRect(0, 0, w, h);
+  drawThemeBackdrop(ctx, w, h, activeTheme, frame, { showAffirmation: opts.showAffirmations ?? true });
 
   const unit = Math.min(w / 900, h / 620);
   const cx = w / 2;
@@ -164,10 +166,8 @@ export function renderPwedoPlayScene(
   const m = frame.reducedMotion ? 0 : 1;
 
   withTransform(ctx, { x: cx, y: cy, scale: unit }, () => {
-    // Soft pastel backdrop hill & clouds
-    paint(ctx, (c) => c.ellipse(0, 145, 360, 78, 0, 0, Math.PI * 2), alpha(theme.pastel, 0.45), { stroke: false });
-    paint(ctx, (c) => c.ellipse(-210, -110, 72, 28, 0, 0, Math.PI * 2), alpha("#FFFFFF", 0.9), { stroke: false });
-    paint(ctx, (c) => c.ellipse(225, -95, 84, 32, 0, 0, Math.PI * 2), alpha("#FFFFFF", 0.9), { stroke: false });
+    // Soft pastel backdrop mound
+    paint(ctx, (c) => c.ellipse(0, 145, 360, 78, 0, 0, Math.PI * 2), alpha(pastel, 0.45), { stroke: false });
 
     // Playful hopping trajectory for Pwedo
     const hopCycle = frame.t * 2.2;
@@ -180,12 +180,12 @@ export function renderPwedoPlayScene(
 
     // Ground shadow that shrinks as Pwedo jumps higher
     const shadowScale = 1 - (hopArc / 90) * 0.45;
-    paint(ctx, (c) => ellipsePath(c, travelX, 108, 34 * shadowScale, 8 * shadowScale), alpha(SHADOW_GREY, 0.9), { stroke: false });
+    paint(ctx, (c) => ellipsePath(c, travelX, 108, 34 * shadowScale, 8 * shadowScale), alpha(SHADOW_GREY, 0.72), { stroke: false });
 
     // Pwedo jumping around!
     drawPwedoBird(ctx, travelX, 72 - hopArc, frame, {
       scale: 2.35,
-      pastelWing: theme.pastel,
+      pastelWing: pastel,
       flipX: facingRight,
       flap,
       showFeet: true,
@@ -197,19 +197,17 @@ export function renderPwedoPlayScene(
     const sp2 = Math.cos(frame.t * 2.1) * 6 * m;
     drawSparkle(ctx, travelX - 68, 22 - hopArc + sp1, 9, "#FFF3A8");
     drawSparkle(ctx, travelX + 74, 14 - hopArc + sp2, 7, "#F9A48B");
-    drawSparkle(ctx, -180, -35 + sp2, 8, "#DCEAF9");
-    drawSparkle(ctx, 185, -45 + sp1, 8, "#ECE4FA");
 
     ctx.save();
-    ctx.fillStyle = OUTLINE_GREY;
+    ctx.fillStyle = activeTheme.canvas.textInk;
     ctx.font = '700 15px ui-rounded, "SF Pro Rounded", "Nunito", sans-serif';
     ctx.textAlign = "center";
-    ctx.globalAlpha = 0.78;
+    ctx.globalAlpha = 0.85;
     ctx.fillText("chirp! ♪", travelX + (facingRight ? 54 : -54), 24 - hopArc);
     ctx.restore();
 
     // Subtle header
-    ctx.fillStyle = SKETCH_INK;
+    ctx.fillStyle = activeTheme.canvas.textInk;
     ctx.font = '400 16px Georgia, "Playfair Display", serif';
     ctx.textAlign = "center";
     ctx.fillText("Pwedo is cheering you on · Pick your focus rhythm below", 0, -175);
@@ -222,14 +220,20 @@ export function renderStudyDeskScene(
   ctx: Ctx,
   view: Viewport,
   frame: FrameInfo,
-  opts: { portTheme: PortThemeId; objective: string | null },
+  opts: {
+    portTheme?: PortThemeId;
+    theme?: KawaiiTheme;
+    objective: string | null;
+    focusProgress?: number;
+    showAffirmations?: boolean;
+  },
 ): void {
   const { width: w, height: h } = view;
-  const theme = PORT_THEMES[opts.portTheme] ?? PORT_THEMES.classic;
+  const activeTheme = opts.theme ?? getKawaiiTheme(null);
+  const legacyTheme = (opts.portTheme ? PORT_THEMES[opts.portTheme] : null) ?? PORT_THEMES.classic;
+  const pastel = activeTheme.canvas.pastel || legacyTheme.pastel;
 
-  // Warm cream Mr. Tiny Studio stationery paper background
-  ctx.fillStyle = "#FAF6E8";
-  ctx.fillRect(0, 0, w, h);
+  drawThemeBackdrop(ctx, w, h, activeTheme, frame, { showAffirmation: opts.showAffirmations ?? true });
 
   const unit = Math.min(w / 900, h / 620);
   const cx = w / 2;
@@ -237,31 +241,43 @@ export function renderStudyDeskScene(
   const m = frame.reducedMotion ? 0 : 1;
 
   withTransform(ctx, { x: cx, y: cy, scale: unit }, () => {
-    // 1. Cute pastel minions sitting BEHIND the slanted desk!
+    // 1. Cute pastel crew sitting BEHIND the slanted desk!
     const writeBob = Math.sin(frame.t * 3.4) * 1.5 * m;
 
-    // Companion costume minion on the left
     const buddyCostume: MinionCostume =
-      opts.portTheme === "grapes" || opts.portTheme === "lavender"
+      activeTheme.id === "periwinkle-cosmos" || activeTheme.id === "midnight-moon"
         ? "bunny"
-        : opts.portTheme === "matcha"
-          ? "frog"
-          : "teddy";
-    drawPastelMinion(ctx, { x: -115, y: 28 }, buddyCostume, frame, { scale: 1.95, seed: 2 });
+        : activeTheme.id === "matcha-cafe" || activeTheme.id === "mossy-woodland"
+          ? "teddy"
+          : "frog";
+    drawPastelMinion(ctx, { x: -115, y: 28 }, buddyCostume, frame, {
+      scale: 1.95,
+      seed: 2,
+      chore: "boba",
+      accessory: activeTheme.accessory,
+      shadow: false,
+    });
 
-    // Main banana-wrapped minion studying with Pwedo perched on its head
-    drawPastelMinion(ctx, { x: 65, y: 36 + writeBob }, "banana", frame, { scale: 2.25, seed: 1 });
-    drawPwedoBird(ctx, 65, -79 + writeBob, frame, { scale: 1.0, pastelWing: theme.pastel });
+    // Main Pip minion locked into study mode with Pwedo perched on top!
+    const lockedIn = (opts.focusProgress ?? 0) >= 0.35;
+    drawPastelMinion(ctx, { x: 65, y: 36 + writeBob }, "banana", frame, {
+      scale: 2.25,
+      seed: 1,
+      chore: lockedIn ? "fire-focus" : "none",
+      accessory: activeTheme.accessory,
+      shadow: false,
+    });
+    drawPwedoBird(ctx, 65, -79 + writeBob, frame, { scale: 1.0, pastelWing: pastel });
 
     // Soft floating study sparkles
     const sp = Math.sin(frame.t * 2.2) * 5 * m;
     drawSparkle(ctx, -220, -105 + sp, 7, "#FFF3A8");
     drawSparkle(ctx, 210, -95 - sp, 6, "#F9A48B");
 
-    // 2. 3D Slanted cream desk OVER the minions' lower bodies so they are tucked behind it
+    // 2. 3D Slanted cream desk OVER the crew's lower bodies so they are tucked behind it
     ctx.save();
     ctx.rotate(0.11);
-    paint(ctx, (c) => roundRectPath(c, -384, 172, 774, 22, 11), alpha(SHADOW_GREY, 0.9), { stroke: false });
+    paint(ctx, (c) => roundRectPath(c, -384, 172, 774, 22, 11), alpha(SHADOW_GREY, 0.72), { stroke: false });
     paint(ctx, (c) => roundRectPath(c, -390, 58, 780, 126, 48), "#F4ECE0", { width: 2.8, stroke: OUTLINE_GREY });
     paint(ctx, (c) => roundRectPath(c, -390, 22, 780, 136, 48), "#FFFDF8", { stroke: false });
     sketchLine(ctx, -340, 22, 340, 22.5, OUTLINE_GREY, 3.1, 101);
@@ -271,16 +287,16 @@ export function renderStudyDeskScene(
     // 3. Cute hand-drawn stack of notebooks on the left of the desk
     withTransform(ctx, { x: -235, y: 12 }, () => {
       sketchOpenBox(ctx, -56, -22, 108, 64, 12, "#FFFDF8", 3.1, 201);
-      sketchOpenBox(ctx, -50, -34, 108, 62, 12, theme.pastel, 3.1, 221);
+      sketchOpenBox(ctx, -50, -34, 108, 62, 12, pastel, 3.1, 221);
       sketchLine(ctx, -34, -12, 38, -12, alpha(OUTLINE_GREY, 0.45), 2.5, 241);
       sketchLine(ctx, -34, 0, 24, 0, alpha(OUTLINE_GREY, 0.32), 2.5, 251);
     });
 
-    // Cute warm tea mug with gentle rising steam on the desk
+    // Cozy warm matcha/tea mug with rising steam on the desk
     withTransform(ctx, { x: -125, y: 42 }, () => {
       paint(ctx, (c) => roundRectPath(c, -16, -16, 30, 28, 8), "#FFFDF8", { width: 2.6, stroke: OUTLINE_GREY });
-      paint(ctx, (c) => ellipsePath(c, -1, -15, 13, 4.5), "#F5E1C0", { width: 2, stroke: OUTLINE_GREY });
-      const steam = ((frame.t * 0.7) % 1);
+      paint(ctx, (c) => ellipsePath(c, -1, -15, 13, 4.5), pastel, { width: 2, stroke: OUTLINE_GREY });
+      const steam = (frame.t * 0.7) % 1;
       ctx.save();
       ctx.strokeStyle = alpha(OUTLINE_GREY, 0.45 * (1 - steam));
       ctx.lineWidth = 2;
@@ -292,7 +308,7 @@ export function renderStudyDeskScene(
       ctx.restore();
     });
 
-    // 4. Open study sheet / notebook right in front of the banana minion
+    // 4. Open study sheet / notebook right in front of Pip
     withTransform(ctx, { x: 35, y: 74, rotate: 0.14 }, () => {
       sketchOpenBox(ctx, -58, -38, 114, 78, 12, "#FFFFFF", 3.1, 301);
       sketchLine(ctx, -38, -18, 36, -18, LINE_GREY, 3.1, 321);
@@ -303,14 +319,14 @@ export function renderStudyDeskScene(
     // 5. Extra active-recall flashcards on the right of the desk
     withTransform(ctx, { x: 215, y: 102, rotate: 0.09 }, () => {
       sketchOpenBox(ctx, -50, -32, 98, 68, 12, "#FFFFFF", 3.1, 401);
-      paint(ctx, (c) => roundRectPath(c, -32, -16, 62, 14, 6), alpha(theme.pastel, 0.85), { stroke: false });
+      paint(ctx, (c) => roundRectPath(c, -32, -16, 62, 14, 6), alpha(pastel, 0.85), { stroke: false });
       sketchLine(ctx, -32, 10, 28, 10, LINE_GREY, 3.1, 421);
     });
 
     // 6. Optional subtle study goal pill at the top
     if (opts.objective) {
       sketchOpenBox(ctx, -210, -218, 420, 38, 19, "#FFFFFF", 2.4, 501);
-      ctx.fillStyle = SKETCH_INK;
+      ctx.fillStyle = "#5C544B";
       ctx.font = '700 15px ui-rounded, "SF Pro Rounded", "Nunito", sans-serif';
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -324,20 +340,19 @@ export function renderStudyDeskScene(
 
 /**
  * Cozy Break scene shown during shore-leave:
- * cute pastel minions eating snacks on a picnic mat, swimming in pastel waves,
- * and Captain & Pwedo singing with floating musical notes!
+ * pastel crew relaxing with snacks, blanket nap / slump, swimming, and singing!
  */
 export function renderBreakScene(
   ctx: Ctx,
   view: Viewport,
   frame: FrameInfo,
-  opts: { portTheme: PortThemeId },
+  opts: { portTheme?: PortThemeId; theme?: KawaiiTheme; showAffirmations?: boolean },
 ): void {
   const { width: w, height: h } = view;
-  const theme = PORT_THEMES[opts.portTheme] ?? PORT_THEMES.classic;
+  const activeTheme = opts.theme ?? getKawaiiTheme(null);
+  const pastel = activeTheme.canvas.pastel;
 
-  ctx.fillStyle = "#FAF6E8";
-  ctx.fillRect(0, 0, w, h);
+  drawThemeBackdrop(ctx, w, h, activeTheme, frame, { showAffirmation: opts.showAffirmations ?? true });
 
   const unit = Math.min(w / 900, h / 620);
   const cx = w / 2;
@@ -345,42 +360,63 @@ export function renderBreakScene(
   const m = frame.reducedMotion ? 0 : 1;
 
   withTransform(ctx, { x: cx, y: cy, scale: unit }, () => {
-    // 1. Soft pastel picnic mat on the left (eating snacks)
-    paint(ctx, (c) => roundRectPath(c, -355, 22, 340, 130, 32), alpha(theme.pastel, 0.55), { width: 2.8, stroke: OUTLINE_GREY });
+    // 1. Soft pastel picnic mat on the left (eating snacks & napping)
+    paint(ctx, (c) => roundRectPath(c, -355, 22, 340, 130, 32), alpha(pastel, 0.55), { width: 2.8, stroke: OUTLINE_GREY });
     paint(ctx, (c) => roundRectPath(c, -335, 38, 300, 98, 22), "#FFFDF7", { stroke: false });
 
-    // Little snack plate with pastel treats on the mat
+    // Little snack plate with theme-matched treats on the mat
     paint(ctx, (c) => c.ellipse(-185, 86, 46, 17, 0, 0, Math.PI * 2), "#FFF5B8", { width: 2.4, stroke: OUTLINE_GREY });
     paint(ctx, (c) => circlePath(c, -198, 82, 7.5), "#F9A48B", { stroke: false });
-    paint(ctx, (c) => circlePath(c, -176, 84, 7.5), "#CDE5C4", { stroke: false });
+    paint(ctx, (c) => circlePath(c, -176, 84, 7.5), pastel, { stroke: false });
     paint(ctx, (c) => circlePath(c, -186, 76, 6.5), "#ECE4FA", { stroke: false });
 
-    drawPastelMinion(ctx, { x: -265, y: 74 }, "teddy", frame, { scale: 1.8, seed: 2, chore: "eat", shadow: false });
-    drawPastelMinion(ctx, { x: -110, y: 76 }, "banana", frame, { scale: 1.85, seed: 1, chore: "eat", shadow: false });
+    drawPastelMinion(ctx, { x: -265, y: 74 }, "teddy", frame, {
+      scale: 1.8,
+      seed: 2,
+      chore: "blanket-nap",
+      accessory: activeTheme.accessory,
+      shadow: false,
+    });
+    drawPastelMinion(ctx, { x: -110, y: 76 }, "banana", frame, {
+      scale: 1.85,
+      seed: 1,
+      chore: "eat",
+      accessory: activeTheme.accessory,
+      shadow: false,
+    });
 
     // 2. Soft pastel sea pool on the right (swimming!)
     paint(ctx, (c) => c.ellipse(215, 92, 165, 58, 0, 0, Math.PI * 2), alpha("#D8EBF8", 0.85), { width: 2.8, stroke: "#8FB6D9" });
     const swimBob = Math.sin(frame.t * 2.8) * 3.5 * m;
-    drawPastelMinion(ctx, { x: 215, y: 86 + swimBob }, "bunny", frame, { scale: 1.85, seed: 4, chore: "swim", shadow: false });
+    drawPastelMinion(ctx, { x: 215, y: 86 + swimBob }, "bunny", frame, {
+      scale: 1.85,
+      seed: 4,
+      chore: "swim",
+      accessory: activeTheme.accessory,
+      shadow: false,
+    });
 
     // Cute tiny pastel floatie ring bobbing in the pool
     paint(ctx, (c) => c.ellipse(300, 102 - swimBob * 0.6, 18, 9, 0, 0, Math.PI * 2), "#FFF3A8", { width: 2.2, stroke: OUTLINE_GREY });
     paint(ctx, (c) => c.ellipse(300, 102 - swimBob * 0.6, 7, 3.5, 0, 0, Math.PI * 2), "#D8EBF8", { width: 1.8, stroke: "#8FB6D9" });
 
     // 3. Captain & Pwedo singing together in the center
-    drawPastelMinion(ctx, { x: 14, y: -12 }, "captain", frame, { scale: 1.75, seed: 5, cheering: true, chore: "sing", shadow: false });
+    drawPastelMinion(ctx, { x: 14, y: -12 }, "captain", frame, {
+      scale: 1.75,
+      seed: 5,
+      cheering: true,
+      chore: "sing",
+      accessory: activeTheme.accessory,
+      shadow: false,
+    });
     const birdSingBob = Math.sin(frame.t * 4.5) * 3 * m;
-    drawPwedoBird(ctx, 64, -36 + birdSingBob, frame, { scale: 1.15, pastelWing: theme.pastel, flap: Math.sin(frame.t * 8) * 0.4 * m });
-
-    // Soft pastel sparkles
-    drawSparkle(ctx, -295, -80, 7, "#FFF3A8");
-    drawSparkle(ctx, 275, -75, 7, "#F9A48B");
+    drawPwedoBird(ctx, 64, -36 + birdSingBob, frame, { scale: 1.15, pastelWing: pastel, flap: Math.sin(frame.t * 8) * 0.4 * m });
 
     // Subtle header
-    ctx.fillStyle = SKETCH_INK;
+    ctx.fillStyle = activeTheme.canvas.textInk;
     ctx.font = '400 16px Georgia, "Playfair Display", serif';
     ctx.textAlign = "center";
-    ctx.fillText("Break Time · Snacks, Swim & Song", 0, -185);
+    ctx.fillText("Break Time · Snacks, Nap, Swim & Song", 0, -185);
   });
 
   drawPaperTexture(ctx, w, h);

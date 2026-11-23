@@ -1,4 +1,4 @@
-// Kawaii pastel theme overrides for ships in Tiny Ink / Mr. Tiny Studio mode.
+// Kawaii pastel theme overrides for ships in Tiny Ink / Pwedo Pomo Studio mode.
 // Keeps Woolly Wanderer as the warm cream starter ship and gives upgrade ships
 // (Golden Mane, Floating Galley, Sunfish, Crimson Corsair, etc.) soft pastel palettes.
 

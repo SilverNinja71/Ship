@@ -1,29 +1,35 @@
 // Banana Planna: Weekly Plan (1, 2, 3... per day, auto-resets Sunday 12:00 am) & Habit Tracker
-// Extracted from StudyMaterialsSection for cleaner separation.
+// Extracted from StudyMaterialsSection for cleaner separation on the stationery graph grid.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { DAYS, usePlanner } from "../stores/plannerStore.js";
 import { useUi } from "../stores/uiStore.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
+import { DieCutSticker } from "./StickerArt.js";
+import { StickerPickerPopover } from "./StickerPickerPopover.js";
 import { IconCalendar } from "./icons.js";
 import { cx } from "./ui.js";
 
-const CARD =
-  "rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-5 text-[var(--page-ink)] shadow-sm sm:p-6";
+const SHEET =
+  "rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)]/92 p-4 text-[var(--page-ink)] sm:p-5";
 
 export function BananaPlannaSection() {
   const openPanel = useUi((s) => s.openPanel);
   const weeklyTitle = usePlanner((s) => s.weeklyTitle);
   const weeklyGoal = usePlanner((s) => s.weeklyGoal);
   const weeklyCells = usePlanner((s) => s.weeklyCells);
+  const weeklyStickers = usePlanner((s) => s.weeklyStickers);
   const setWeeklyTitle = usePlanner((s) => s.setWeeklyTitle);
   const setWeeklyGoal = usePlanner((s) => s.setWeeklyGoal);
   const setWeeklyCell = usePlanner((s) => s.setWeeklyCell);
+  const toggleWeeklySticker = usePlanner((s) => s.toggleWeeklySticker);
   const checkAndResetWeek = usePlanner((s) => s.checkAndResetWeek);
 
   const habits = usePlanner((s) => s.habits);
   const setHabitLabel = usePlanner((s) => s.setHabitLabel);
   const toggleHabit = usePlanner((s) => s.toggleHabit);
+
+  const [stickerDay, setStickerDay] = useState<number | null>(null);
 
   // Auto-reset Weekly Plan when Sunday 12:00 am local time passes.
   useEffect(() => {
@@ -35,12 +41,12 @@ export function BananaPlannaSection() {
   }, [checkAndResetWeek]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+    <div className="grid gap-8 border-t border-[var(--border-subtle)] pt-8 lg:grid-cols-[1.35fr_1fr]">
       {/* Weekly Plan */}
-      <div className={CARD}>
+      <div className={SHEET}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <div className="grid size-10 place-items-center rounded-xl border border-[rgb(0_0_0_/_0.08)] bg-[#FFF8D6]/80">
+            <div className="grid size-10 place-items-center rounded-xl border border-[var(--border-subtle)] bg-[#FFF8D6]">
               <PastelMinionBadge costume="banana" size={34} />
             </div>
             <h3 className="font-serif text-lg tracking-[0.18em] text-[var(--page-ink)]">
@@ -50,7 +56,7 @@ export function BananaPlannaSection() {
           <button
             type="button"
             onClick={() => openPanel("planner")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-1 text-xs font-bold text-[var(--muted-ink)] transition hover:bg-[var(--surface-2)] hover:text-[var(--page-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-1 text-xs font-bold text-[var(--page-ink)] transition-[background-color] duration-150 hover:bg-[#FFF8D6] hover:text-[#4D453E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             <IconCalendar size={14} /> Full Banana Planna
           </button>
@@ -69,21 +75,23 @@ export function BananaPlannaSection() {
             onChange={(e) => setWeeklyGoal(e.target.value)}
             placeholder="Weekly goal..."
             aria-label="Weekly goal"
-            className="min-w-0 flex-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-1.5 text-sm text-[var(--page-ink)] placeholder:text-[var(--muted-ink)] focus:border-[var(--page-ink)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]"
+            className="min-w-0 flex-1 border-b border-[var(--border-subtle)] bg-transparent pb-1 text-sm text-[var(--page-ink)] placeholder:text-[var(--muted-ink)] focus:border-[var(--page-ink)] focus:outline-none"
           />
         </div>
 
         <div className="overflow-x-auto">
-          <div className="grid min-w-[540px] grid-cols-7 overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-            {DAYS.map((d, cIdx) => (
+          <div className="grid min-w-[540px] grid-cols-7 border border-[var(--border-subtle)]">
+            {DAYS.map((d, cIdx) => {
+              const dayStickers = weeklyStickers?.[cIdx] ?? [];
+              return (
               <div
                 key={d}
-                className="flex flex-col border-r border-[rgb(0_0_0_/_0.08)] bg-[var(--surface-1)] last:border-r-0"
+                className="flex flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-1)] last:border-r-0"
               >
-                <div className="border-b border-[rgb(0_0_0_/_0.08)] bg-[var(--surface-2)] py-1 text-center font-serif text-[11px] tracking-[0.18em] text-[var(--muted-ink)]">
+                <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-2)] py-1 text-center font-serif text-[11px] tracking-[0.18em] text-[var(--muted-ink)]">
                   {d}
                 </div>
-                <div className="flex flex-col divide-y divide-[rgb(0_0_0_/_0.06)]">
+                <div className="flex flex-col divide-y divide-[var(--border-subtle)]">
                   {[0, 1, 2, 3].map((rIdx) => (
                     <div key={rIdx} className="flex items-center gap-1 px-1.5 py-1">
                       <span className="select-none text-[10px] font-semibold text-[var(--muted-ink)]">
@@ -98,16 +106,43 @@ export function BananaPlannaSection() {
                     </div>
                   ))}
                 </div>
+                <div className="mt-auto flex min-h-8 flex-wrap items-center justify-center gap-1 border-t border-[var(--border-subtle)] bg-[var(--surface-2)]/60 px-1 py-1">
+                  {dayStickers.map((stId) => (
+                    <DieCutSticker key={stId} id={stId} size={20} />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setStickerDay((cur) => (cur === cIdx ? null : cIdx))}
+                    aria-label={`Add sticker to ${d}`}
+                    aria-expanded={stickerDay === cIdx}
+                    className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--muted-ink)] transition-[color,background-color] duration-150 hover:bg-[#FFF8D6] hover:text-[#4D453E] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]"
+                  >
+                    + Sticker
+                  </button>
+                </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
+
+        {stickerDay !== null && (
+          <div className="relative mt-2 flex items-center justify-between border-t border-[var(--border-subtle)] pt-2 text-xs text-[var(--muted-ink)]">
+            <span>
+              Stamping <strong className="uppercase text-[var(--page-ink)]">{DAYS[stickerDay]}</strong> sticker
+            </span>
+            <StickerPickerPopover
+              selected={weeklyStickers?.[stickerDay] ?? []}
+              onToggle={(id) => toggleWeeklySticker(stickerDay, id)}
+              onClose={() => setStickerDay(null)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Habit Tracker */}
-      <div className={CARD}>
+      <div className={SHEET}>
         <div className="mb-4 flex items-center gap-2.5">
-          <div className="grid size-10 place-items-center rounded-xl border border-[rgb(0_0_0_/_0.08)] bg-[#FCE8EC]/70">
+          <div className="grid size-10 place-items-center rounded-xl border border-[var(--border-subtle)] bg-[#FCE8EC]">
             <PastelMinionBadge costume="teddy" size={34} />
           </div>
           <h3 className="font-serif text-lg tracking-[0.18em] text-[var(--page-ink)]">
@@ -143,10 +178,10 @@ export function BananaPlannaSection() {
                   aria-label={`${h.label || `Habit ${rIdx + 1}`} ${DAYS[cIdx]}`}
                   aria-pressed={checked}
                   className={cx(
-                    "grid size-5 place-items-center rounded-md border border-[var(--border-subtle)] text-[10px] transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]",
+                    "grid size-5 place-items-center rounded-md border border-[var(--border-subtle)] text-[10px] transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]",
                     checked
                       ? "bg-[#E2F3EC] font-bold text-[#386657]"
-                      : "bg-[var(--surface-1)] hover:bg-[var(--surface-2)]",
+                      : "bg-[var(--surface-2)] hover:bg-[#FFF8D6]/60",
                   )}
                 >
                   {checked ? "✓" : ""}

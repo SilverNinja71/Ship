@@ -1,7 +1,7 @@
 // First-visit Cookie & Browser Storage Consent Banner and persistent Legal Footer.
 
 import { useState } from "react";
-import { getConsentState, setConsentState } from "../lib/accountData.js";
+import { getConsentState, isGpcEnabled, setConsentState } from "../lib/accountData.js";
 import { LegalModal, type LegalTab } from "./LegalModal.js";
 
 export function ConsentBanner() {
@@ -59,11 +59,19 @@ export function ConsentBanner() {
 
 export function LegalFooter() {
   const [legalTab, setLegalTab] = useState<LegalTab | null>(null);
+  const gpcActive = isGpcEnabled();
 
   return (
-    <footer className="border-t border-[rgb(0_0_0_/_0.1)] bg-[var(--surface-2)] px-4 py-6 font-serif text-xs text-[var(--muted-ink)] sm:px-8">
+    <footer className="border-t border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-6 font-serif text-xs text-[var(--muted-ink)] sm:px-8">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
-        <span>Ship Pwedo Pomo · Antonio Lin Student Study Workspace · 100% Free</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span>Ship · Pwedo Pomo Studio · 100% Free</span>
+          {gpcActive && (
+            <span className="rounded-full border border-[var(--border-subtle)] bg-[#E2F3EC] px-2 py-0.5 text-[11px] font-semibold text-[#386657]">
+              GPC Honored
+            </span>
+          )}
+        </div>
         <nav aria-label="Legal and privacy links" className="flex flex-wrap items-center gap-4">
           <button
             type="button"
@@ -84,14 +92,21 @@ export function LegalFooter() {
             onClick={() => setLegalTab("cookies")}
             className="hover:text-[var(--page-ink)] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
-            Cookies & Storage
+            Cookies &amp; Storage
+          </button>
+          <button
+            type="button"
+            onClick={() => setLegalTab("accessibility")}
+            className="hover:text-[var(--page-ink)] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+          >
+            Accessibility
           </button>
           <button
             type="button"
             onClick={() => setLegalTab("refunds")}
             className="hover:text-[var(--page-ink)] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
-            Refunds, Contact & Delete Data
+            Refunds, Contact &amp; Delete Data
           </button>
         </nav>
       </div>

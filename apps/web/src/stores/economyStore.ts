@@ -18,6 +18,8 @@ import {
 import type { PurchaseCheck } from "@ship/ship-theme-kit";
 import { newId } from "../lib/ids.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
+import { getKawaiiTheme } from "../ship-engine/kawaiiThemes.js";
+import type { KawaiiThemeId } from "../ship-engine/kawaiiThemes.js";
 
 export interface LedgerEntry {
   id: string;
@@ -33,11 +35,13 @@ export interface EconomyState {
   inventory: Inventory;
   /** Lookout reward ids already paid, so a re-sent event never pays twice. */
   paidRewardIds: string[];
+  unlockedThemes: KawaiiThemeId[];
   ledger: LedgerEntry[];
   earn(doubloons: number, xp: number, reason: string): void;
   buyShip(shipId: string): PurchaseCheck;
   buyPart(kind: PartKind, id: string): PurchaseCheck;
   buyAvatarItem(kind: AvatarItemKind, id: string): PurchaseCheck;
+  buyTheme(themeId: KawaiiThemeId): { ok: true } | { ok: false; message: string };
   /** Quest rewards: added for free. Returns false if it was already owned. */
   grantPart(kind: PartKind, id: string): boolean;
   /** Pays each new Lookout event once; returns the ids now settled (new and already paid) for acking. */
@@ -66,6 +70,7 @@ export const useEconomy = create<EconomyState>()(
         xp: 0,
         inventory: EMPTY_INVENTORY,
         paidRewardIds: [],
+        unlockedThemes: ["matcha-cafe", "mossy-woodland"],
         ledger: [],
 
         earn: (doubloons, xp, reason) => {
@@ -90,6 +95,24 @@ export const useEconomy = create<EconomyState>()(
             ...inv,
             avatarItems: [...inv.avatarItems, avatarItemKey(kind, id)],
           })),
+
+        buyTheme: (themeId) => {
+          const theme = getKawaiiTheme(themeId);
+          const unlocked = get().unlockedThemes;
+          if (unlocked.includes(themeId) || theme.price === 0) {
+            if (!unlocked.includes(themeId)) set({ unlockedThemes: [...unlocked, themeId] });
+            return { ok: true };
+          }
+          if (get().doubloons < theme.price) {
+            return { ok: false, message: `Need ${theme.price} doubloons to unlock ${theme.name}.` };
+          }
+          set({
+            doubloons: get().doubloons - theme.price,
+            unlockedThemes: [...unlocked, themeId],
+            ledger: record(-theme.price, 0, `Unlocked ${theme.name} theme`),
+          });
+          return { ok: true };
+        },
 
         grantPart: (kind, id) => {
           const key = partKey(kind, id);
@@ -123,7 +146,7 @@ export const useEconomy = create<EconomyState>()(
       name: storageKey("economy"),
       storage: shipStorage,
       version: 1,
-      partialize: ({ doubloons, xp, inventory, paidRewardIds, ledger }) => ({ doubloons, xp, inventory, paidRewardIds, ledger }),
+      partialize: ({ doubloons, xp, inventory, paidRewardIds, unlockedThemes, ledger }) => ({ doubloons, xp, inventory, paidRewardIds, unlockedThemes, ledger }),
     },
   ),
 );

@@ -1,4 +1,4 @@
-// Break reflection prompt shown after each focus round, matching Mr. Tiny Studio's Reflect card.
+// Break reflection prompt shown after each focus round, matching Pwedo Pomo Studio's Reflect card.
 
 import { useState } from "react";
 import { useVoyage } from "../stores/voyageStore.js";

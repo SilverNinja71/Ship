@@ -1,8 +1,9 @@
-// Cute pastel costume minions drawn in Mr. Tiny Studio's soft rounded
-// medium-grey marker brush (#8D8D8D) with smooth chubby blob silhouettes,
-// big coral-peach cheeks (#F9A48B), and soft pastel fills.
+// Cute pastel costume crew drawn in Ship · Pwedo Pomo Studio's soft rounded
+// marker brush (#8D8D8D) with smooth chubby silhouettes, coral-peach cheeks,
+// soft pastel fills, expressive study/break poses, and theme-reactive accessories.
 
 import { alpha, circlePath, ellipsePath, line, paint, withTransform } from "./draw.js";
+import type { CrewAccessory } from "./kawaiiThemes.js";
 import type { Ctx, FrameInfo, Point } from "./types.js";
 
 export type MinionCostume = "banana" | "teddy" | "bunny" | "frog" | "captain";
@@ -13,7 +14,7 @@ const MARKER_INK = "#8D8D8D";
 const LINE_W = 3.2;
 
 /**
- * Draws a single continuous chubby Mr. Tiny-style blob silhouette:
+ * Draws a single continuous chubby marker-drawn blob silhouette:
  * rounded dome head + tiny stubby side arms + soft curved feet.
  */
 function chubbyBlobPath(ctx: Ctx, w = 18, h = 42): void {
@@ -35,25 +36,66 @@ function chubbyBlobPath(ctx: Ctx, w = 18, h = 42): void {
   ctx.closePath();
 }
 
-export type MinionChore = "sweep" | "mop" | "spyglass" | "eat" | "swim" | "sing" | "none";
+export type MinionChore =
+  | "sweep"
+  | "mop"
+  | "spyglass"
+  | "eat"
+  | "swim"
+  | "sing"
+  | "fire-focus"
+  | "boba"
+  | "slump"
+  | "blanket-nap"
+  | "none";
 
-/** Draws a cute pastel costume minion standing at `at` (origin at feet). */
+/** Draws a cute pastel crew character standing at `at` (origin at feet). */
 export function drawPastelMinion(
   ctx: Ctx,
   at: Point,
   costume: MinionCostume,
   frame: FrameInfo,
-  opts: { scale?: number; seed?: number; cheering?: boolean; chore?: MinionChore; shadow?: boolean } = {},
+  opts: {
+    scale?: number;
+    seed?: number;
+    cheering?: boolean;
+    chore?: MinionChore;
+    shadow?: boolean;
+    accessory?: CrewAccessory;
+  } = {},
 ): void {
   const scale = opts.scale ?? 1;
   const seed = opts.seed ?? 1;
   const m = frame.reducedMotion ? 0 : 1;
-  const bob = Math.sin(frame.t * (opts.cheering ? 5.2 : 2.3) + seed * 1.7) * (opts.cheering ? 3.0 : 1.3) * m;
-  const tilt = Math.sin(frame.t * 1.4 + seed * 2.1) * 0.03 * m;
-  const blink = !frame.reducedMotion && Math.sin(frame.t * 1.1 + seed * 3.1) > 0.965;
+  const isSleepy = opts.chore === "slump" || opts.chore === "blanket-nap";
+  const bob = isSleepy
+    ? Math.sin(frame.t * 1.2 + seed) * 0.7 * m
+    : Math.sin(frame.t * (opts.cheering ? 5.2 : 2.3) + seed * 1.7) * (opts.cheering ? 3.0 : 1.3) * m;
+  const tilt = opts.chore === "slump" ? 0.16 : Math.sin(frame.t * 1.4 + seed * 2.1) * 0.03 * m;
+  const blink = isSleepy || (!frame.reducedMotion && Math.sin(frame.t * 1.1 + seed * 3.1) > 0.965);
 
   withTransform(ctx, { x: at.x, y: at.y + bob, scale, rotate: tilt }, () => {
-    // Clean Mr. Tiny flat light-grey oval shadow (omitted when perched on a desk or flat deck)
+    // Locked-in coral fire aura drawn behind character during active study sprints
+    if (opts.chore === "fire-focus") {
+      const flicker = Math.sin(frame.t * 9 + seed) * 2.5 * m;
+      paint(
+        ctx,
+        (c) => {
+          c.moveTo(-25, 0);
+          c.quadraticCurveTo(-30, -28, -16, -42 - flicker);
+          c.lineTo(-7, -54 + flicker * 0.5);
+          c.lineTo(0, -64 - flicker);
+          c.lineTo(8, -53 + flicker * 0.5);
+          c.lineTo(17, -43 - flicker);
+          c.quadraticCurveTo(30, -28, 25, 0);
+          c.closePath();
+        },
+        alpha("#F38C7B", 0.72),
+        { width: 2.2, stroke: MARKER_INK },
+      );
+    }
+
+    // Flat light-grey oval shadow (omitted when perched on a desk, swimming, or on flat deck)
     if (opts.shadow !== false && opts.chore !== "swim") {
       paint(ctx, (c) => ellipsePath(c, 0, 2, 19, 5), "#DCDCDC", { stroke: false });
     }
@@ -68,6 +110,10 @@ export function drawPastelMinion(
       drawCaptainMinion(ctx, blink);
     } else {
       drawFrogMinion(ctx, blink);
+    }
+
+    if (opts.accessory && opts.accessory !== "none") {
+      drawCrewAccessory(ctx, opts.accessory, frame);
     }
 
     if (opts.chore === "sweep") {
@@ -113,12 +159,72 @@ export function drawPastelMinion(
       ctx.fillText("♪", -15 + swayX, -46 - floatY * 0.7);
       ctx.fillText("♫", 16 - swayX, -52 - floatY * 0.5);
       ctx.restore();
+    } else if (opts.chore === "boba") {
+      // Cute pastel boba cup with straw
+      paint(ctx, (c) => c.rect(12, -19, 10, 13), "#F4E5CA", { width: 2, stroke: MARKER_INK });
+      paint(ctx, (c) => ellipsePath(c, 17, -19, 5.5, 2), "#D5E6C8", { width: 1.6, stroke: MARKER_INK });
+      line(ctx, [{ x: 17, y: -19 }, { x: 20, y: -26 }], "#8EA87D", 1.8);
+      paint(ctx, (c) => circlePath(c, 15, -9, 1.2), "#6E5A4F", { stroke: false });
+      paint(ctx, (c) => circlePath(c, 18.5, -8.5, 1.2), "#6E5A4F", { stroke: false });
+    } else if (opts.chore === "blanket-nap") {
+      // Cozy striped nap blanket & floating zZ
+      paint(ctx, (c) => ellipsePath(c, 0, -9, 21, 12), "#FFF3A8", { width: 2.4, stroke: MARKER_INK });
+      line(ctx, [{ x: -13, y: -9 }, { x: 13, y: -9 }], "#F9C5C3", 2.8);
+      ctx.save();
+      ctx.fillStyle = MARKER_INK;
+      ctx.font = "italic 700 11px Georgia, serif";
+      ctx.fillText("zZ", 14, -44 - Math.sin(frame.t * 2) * 2 * m);
+      ctx.restore();
+    } else if (opts.chore === "slump") {
+      // Tiny sigh puff after a long sprint
+      paint(ctx, (c) => circlePath(c, 16, -24, 2.2), alpha("#FFFFFF", 0.85), { width: 1.4, stroke: MARKER_INK });
     }
   });
 }
 
+function drawCrewAccessory(ctx: Ctx, accessory: CrewAccessory, frame: FrameInfo): void {
+  const m = frame.reducedMotion ? 0 : 1;
+  switch (accessory) {
+    case "astro-helmet":
+      // Bubble glass astronaut helmet over head (preserving silhouette inside)
+      paint(ctx, (c) => circlePath(c, 0, -25, 22), alpha("#DCEBFA", 0.26), { width: 2.2, stroke: "#B5C8E4" });
+      line(ctx, [{ x: 11, y: -39 }, { x: 15, y: -33 }], "#FFFFFF", 2.2);
+      break;
+    case "cafe-apron":
+      paint(ctx, (c) => ellipsePath(c, 0, -10, 12, 9), "#B7CFA0", { width: 2.0, stroke: MARKER_INK });
+      paint(ctx, (c) => circlePath(c, 0, -10, 2.4), "#FFFDF7", { stroke: false });
+      break;
+    case "woodland-sprout": {
+      const sway = Math.sin(frame.t * 2.5) * 0.12 * m;
+      withTransform(ctx, { x: 0, y: -43, rotate: sway }, () => {
+        line(ctx, [{ x: 0, y: 2 }, { x: 0, y: -7 }], "#7C935A", 2.0);
+        paint(ctx, (c) => ellipsePath(c, -4, -7, 4.5, 2.5, -0.4), "#B7D68E", { width: 1.6, stroke: MARKER_INK });
+        paint(ctx, (c) => ellipsePath(c, 4, -7, 4.5, 2.5, 0.4), "#B7D68E", { width: 1.6, stroke: MARKER_INK });
+      });
+      break;
+    }
+    case "sunflower":
+      withTransform(ctx, { x: 13, y: -38 }, () => {
+        paint(ctx, (c) => circlePath(c, 0, 0, 5.5), "#FFE066", { width: 1.8, stroke: MARKER_INK });
+        paint(ctx, (c) => circlePath(c, 0, 0, 2.4), "#B97D45", { stroke: false });
+      });
+      break;
+    case "pumpkin-cap":
+      paint(ctx, (c) => ellipsePath(c, 0, -43, 9, 5), "#F09B4B", { width: 2, stroke: MARKER_INK });
+      line(ctx, [{ x: 0, y: -48 }, { x: 2, y: -52 }], "#7C935A", 2.2);
+      break;
+    case "star-pin":
+      paint(ctx, (c) => circlePath(c, 12, -37, 4.2), "#FFE48E", { width: 1.8, stroke: MARKER_INK });
+      break;
+    case "jelly-bow":
+      paint(ctx, (c) => ellipsePath(c, -3, -43, 4.5, 2.6, 0.3), "#B5DCF9", { width: 1.8, stroke: MARKER_INK });
+      paint(ctx, (c) => ellipsePath(c, 3, -43, 4.5, 2.6, -0.3), "#B5DCF9", { width: 1.8, stroke: MARKER_INK });
+      break;
+  }
+}
+
 function drawMrTinyFace(ctx: Ctx, eyeY: number, oneEye: boolean, blink: boolean): void {
-  // Big cute coral-peach cheeks (just like Mr. Tiny!)
+  // Big cute coral-peach cheeks
   paint(ctx, (c) => circlePath(c, -10.5, eyeY + 5.5, 4.4), alpha(PASTEL_BLUSH, 0.92), { stroke: false });
   paint(ctx, (c) => circlePath(c, 10.5, eyeY + 5.5, 4.4), alpha(PASTEL_BLUSH, 0.92), { stroke: false });
 

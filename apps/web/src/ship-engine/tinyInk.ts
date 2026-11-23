@@ -1,4 +1,4 @@
-// "Tiny Ink" visual style: Mr. Tiny Studio hand-drawn stationery aesthetic.
+// "Tiny Ink" visual style: Pwedo Pomo Studio hand-drawn stationery aesthetic.
 // Strictly cream, white, tan, grey, and soft warm-grey ink (#A29C93),
 // with ONLY the cute pastel costume minions providing gentle pops of color.
 

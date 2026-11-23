@@ -1,4 +1,4 @@
-// Compact Pwedo Pomo timer pill at the bottom of the Mr. Tiny Studio scene.
+// Compact Pwedo Pomo timer pill at the bottom of the Pwedo Pomo Studio scene.
 
 import { useEffect, useState } from "react";
 import { VOYAGE_PRESETS } from "@ship/shared-types";
@@ -180,7 +180,7 @@ function DockedPill({ onOpenMusicBrowser }: { onOpenMusicBrowser: () => void }) 
   return (
     <div className="relative flex flex-col items-center">
       {showOptions && (
-        <div className="mb-3 flex w-[min(92vw,460px)] flex-col gap-3 rounded-2xl border border-[#A29C93]/40 bg-[#FFFDF7]/98 p-4 font-serif text-xs text-[#6D655C] shadow-[0_8px_24px_rgba(93,86,78,0.12)] backdrop-blur-sm">
+        <div className="popover-enter mb-3 flex w-[min(92vw,460px)] flex-col gap-3 rounded-2xl border border-[#A29C93]/40 bg-[#FFFDF7]/98 p-4 font-serif text-xs text-[#6D655C] shadow-[0_8px_24px_rgba(93,86,78,0.12)] backdrop-blur-sm">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-semibold tracking-wide text-[#5D564E]">Pwedo Pomo</span>
             <span className="text-[11px] text-[#8E887F]">
@@ -388,7 +388,7 @@ function DockedPill({ onOpenMusicBrowser }: { onOpenMusicBrowser: () => void }) 
       <button
         type="button"
         onClick={toggleOptions}
-        className="bg-transparent px-2 py-1 font-serif text-base tracking-[0.14em] text-[#5D564E] transition hover:underline underline-offset-4 focus:outline-none"
+        className="bg-transparent px-2 py-1 font-serif text-base tracking-[0.14em] text-[var(--page-ink)] transition hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
         title="Open Pwedo Pomo sessions & cycles"
       >
         Pwedo Pomo

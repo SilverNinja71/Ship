@@ -16,13 +16,16 @@ import { PanelHost } from "./components/PanelHost.js";
 import { StudyMaterialsSection } from "./components/StudyMaterialsSection.js";
 import { SyncChoiceDialog } from "./components/SyncChoiceDialog.js";
 import { ShipCanvas } from "./ship-engine/ShipCanvas.js";
+import { applyThemeVariables, getKawaiiTheme } from "./ship-engine/kawaiiThemes.js";
 import { useSettings } from "./stores/settingsStore.js";
 
 export function App() {
   const visualStyle = useSettings((s) => s.visualStyle);
+  const activeThemeId = useSettings((s) => s.activeThemeId);
   useEffect(() => {
     document.documentElement.dataset.visualStyle = visualStyle;
-  }, [visualStyle]);
+    applyThemeVariables(getKawaiiTheme(activeThemeId), visualStyle === "tiny-ink");
+  }, [visualStyle, activeThemeId]);
   useVoyageTicker();
   useIdleDetection();
   useKeyboard();

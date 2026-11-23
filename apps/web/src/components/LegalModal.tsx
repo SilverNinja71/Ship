@@ -1,13 +1,14 @@
 // Privacy Policy, Terms of Service, Cookie/Storage Policy, Free-Tier/Refund Notice,
-// Operator Contact Info, and one-click Account & Local Data Deletion flow.
+// Accessibility Statement, Operator Contact Info, and one-click Account & Local Data Deletion flow.
 
 import { useState } from "react";
-import { deleteAllUserData } from "../lib/accountData.js";
+import { useModalBehavior } from "../hooks/useModalBehavior.js";
+import { deleteAllUserData, isGpcEnabled } from "../lib/accountData.js";
 import { useUi } from "../stores/uiStore.js";
 import { IconClose } from "./icons.js";
 import { cx } from "./ui.js";
 
-export type LegalTab = "privacy" | "terms" | "cookies" | "refunds";
+export type LegalTab = "privacy" | "terms" | "cookies" | "refunds" | "accessibility";
 
 export function LegalModal({
   initialTab = "privacy",
@@ -20,6 +21,8 @@ export function LegalModal({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const toast = useUi((s) => s.toast);
+  const modalRef = useModalBehavior(onClose);
+  const gpc = isGpcEnabled();
 
   const handleDeleteAll = async () => {
     setDeleting(true);
@@ -49,12 +52,16 @@ export function LegalModal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[rgb(0_0_0_/_0.22)] p-4 backdrop-blur-[2px]"
     >
-      <div className="flex max-h-[88dvh] w-full max-w-xl flex-col rounded-3xl border border-[rgb(0_0_0_/_0.12)] bg-[var(--color-cream-50)] p-3 font-serif text-[var(--page-ink)] shadow-sm">
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="modal-enter flex max-h-[88dvh] w-full max-w-xl flex-col rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3 font-serif text-[var(--page-ink)] shadow-sm outline-none"
+      >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-[rgb(0_0_0_/_0.08)] bg-[var(--surface-1)] p-4">
           <div className="mb-3 flex items-center justify-between gap-2 border-b border-[rgb(0_0_0_/_0.1)] pb-3">
             <div>
-              <h2 className="text-lg font-bold text-[var(--page-ink)]">Privacy, Terms & Data Controls</h2>
-              <p className="text-xs text-[var(--muted-ink)]">Ship Pwedo Pomo · Antonio for Secretary Studio</p>
+              <h2 className="text-lg font-bold text-[var(--page-ink)]">Privacy, Terms &amp; Accessibility</h2>
+              <p className="text-xs text-[var(--muted-ink)]">Ship · Pwedo Pomo Studio</p>
             </div>
             <button
               type="button"
@@ -73,6 +80,7 @@ export function LegalModal({
                 { id: "terms", label: "Terms of Service" },
                 { id: "cookies", label: "Cookies & Storage" },
                 { id: "refunds", label: "Free Tier & Contact" },
+                { id: "accessibility", label: "Accessibility" },
               ] as const
             ).map((item) => (
               <button
@@ -84,7 +92,7 @@ export function LegalModal({
                 className={cx(
                   "rounded-lg px-2.5 py-1 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
                   tab === item.id
-                    ? "bg-[var(--color-cream-50)] font-bold text-[var(--page-ink)]"
+                    ? "bg-[var(--surface-1)] font-bold text-[var(--page-ink)]"
                     : "text-[var(--muted-ink)] hover:underline underline-offset-4",
                 )}
               >
@@ -96,9 +104,9 @@ export function LegalModal({
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 text-sm leading-relaxed text-[var(--page-ink)]">
             {tab === "privacy" && (
               <>
-                <p><strong>Minimal Data Collection:</strong> Ship stores your flashcards, study sheets, Pomodoro logs, and Banana Planna schedules in your browser (`localStorage` and `IndexedDB`). We do not sell, rent, or run third-party advertising trackers on your study data.</p>
+                <p><strong>Minimal Data Collection:</strong> Ship stores your flashcards, study sheets, Pomodoro logs, and Banana Planna schedules in your browser (<code>localStorage</code> and <code>IndexedDB</code>). We do not sell, rent, or run third-party advertising trackers on your study data.</p>
                 <p><strong>Cloud Sync When You Log In:</strong> If you log in with Google, Ship also keeps a copy of your planner, timer history, flashcards, study sheets and uploaded notes, coins, unlocks and timer settings in Google Cloud Firestore (part of Firebase), stored under your account so that only you can read or change it. Your Gemini key, Canvas and Todoist logins, calendar feed links and sound settings are never uploaded. Signing out stops syncing. Delete account &amp; data (below) erases the cloud copy too.</p>
-                <p><strong>Google Sign-In & Drive:</strong> Logging in with Google (Firebase Authentication) shares your basic profile (name and email) with Ship. If you connect your own Google Drive client ID, Ship reads only the Drive files you authorize, to import them. If you use your own Gemini API key, prompts go directly from your browser to Google&apos;s Gemini API.</p>
+                <p><strong>Google Sign-In &amp; Drive:</strong> Logging in with Google (Firebase Authentication) shares your basic profile (name and email) with Ship. If you connect your own Google Drive client ID, Ship reads only the Drive files you authorize, to import them. If you use your own Gemini API key, prompts go directly from your browser to Google&apos;s Gemini API.</p>
                 <p><strong>Age Gate:</strong> By creating an account or signing in with Google, you confirm that you are 13 years or older (or using Ship with parent/school consent).</p>
               </>
             )}
@@ -113,15 +121,24 @@ export function LegalModal({
 
             {tab === "cookies" && (
               <>
-                <p><strong>Essential Browser Storage Only:</strong> Ship uses browser `localStorage` (under `ship:*` keys) and `IndexedDB` (`ship-notes`) strictly to remember your Pomodoro preferences, uploaded notes, tutorial progress, your Firebase Authentication session and, when you&apos;re logged in, what cloud sync last saved.</p>
+                <p><strong>Essential Browser Storage Only:</strong> Ship uses browser <code>localStorage</code> (under <code>ship:*</code> keys) and <code>IndexedDB</code> (<code>ship-notes</code>) strictly to remember your Pomodoro preferences, uploaded notes, tutorial progress, your Firebase Authentication session and, when you&apos;re logged in, what cloud sync last saved.</p>
+                <p><strong>Global Privacy Control (GPC):</strong> Ship automatically detects browser <code>Sec-GPC</code> / <code>navigator.globalPrivacyControl</code> signals{gpc ? " (currently active in your browser)" : ""} and defaults to strictly essential local storage with zero tracking cookies.</p>
                 <p><strong>Consent Choice:</strong> Choosing &ldquo;Essential Only&rdquo; or &ldquo;Accept Storage&rdquo; lets you keep core session state without third-party analytics cookies.</p>
               </>
             )}
 
             {tab === "refunds" && (
               <>
-                <p><strong>100% Free & Open Access (Refund Policy):</strong> Ship Pwedo Pomo charges zero subscription fees, zero in-app purchases, and collects no payment card data. Any virtual doubloons shown inside the study workspace are earned through study focus only and have no monetary value, so no refunds apply.</p>
-                <p><strong>Operator & Contact Details:</strong> Ship Pwedo Pomo Student Project · Operated by Antonio Lin · Hosted on Firebase (`ship-pwedo-pomo.web.app`). For privacy or data inquiries, use your GitHub repository issues (`SilverNinja71/Ship`) or delete all local/account data directly below.</p>
+                <p><strong>100% Free &amp; Open Access (Refund Policy):</strong> Ship Pwedo Pomo charges zero subscription fees, zero in-app purchases, and collects no payment card data. Any virtual doubloons shown inside the study workspace are earned through study focus only and have no monetary value, so no refunds apply.</p>
+                <p><strong>Operator &amp; Contact Details:</strong> Ship · Pwedo Pomo Studio · Operated by Antonio Lin · Hosted on Firebase (<code>ship-pwedo-pomo.web.app</code>). For privacy or data inquiries, use your GitHub repository issues (<code>SilverNinja71/Ship</code>) or delete all local/account data directly below.</p>
+              </>
+            )}
+
+            {tab === "accessibility" && (
+              <>
+                <p><strong>WCAG 2.2 AA Commitment:</strong> Ship is built to follow WCAG 2.2 Level AA guidelines across all 10 study themes, maintaining accessible text contrast ratios, semantic HTML landmarks, descriptive alt text, and visible keyboard focus indicators (<code>:focus-visible</code>).</p>
+                <p><strong>Keyboard &amp; Motion Support:</strong> Every panel, modal, sticker picker, and study control works without a mouse (<code>Tab</code>, <code>Enter</code>, <code>Space</code>, <code>Escape</code> to close modals with automatic focus restoration, <code>Q</code> to toggle deck/desk, <code>F</code> for flashcards). All animations automatically turn off when your device enables <code>prefers-reduced-motion</code>.</p>
+                <p><strong>No Overlay Widgets &amp; Direct Support:</strong> We maintain native HTML/ARIA semantics rather than third-party accessibility overlay widgets. If you encounter any barrier or screen-reader issue, please report it via GitHub (<code>SilverNinja71/Ship</code>).</p>
               </>
             )}
           </div>

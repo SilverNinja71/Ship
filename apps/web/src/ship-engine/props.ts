@@ -224,7 +224,7 @@ function drawBellBody(ctx: Ctx, at: Point, swing: number, tinyInk = false): void
   });
 }
 
-/** Tiny cute hand-drawn Mr. Tiny white bird perched on deck. */
+/** Tiny cute hand-drawn Pwedo white bird perched on deck. */
 export function drawDeckCritters(ctx: Ctx, birdAt: Point, _crabAt: Point, frame: FrameInfo): void {
   const m = frame.reducedMotion ? 0 : 1;
   const ink = "#8D8D8D";

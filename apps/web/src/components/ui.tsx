@@ -11,9 +11,9 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "seafoam";
 
 const BUTTON: Record<ButtonVariant, string> = {
-  primary: "bg-transparent text-[#4D453E] border-0 shadow-none hover:underline underline-offset-4",
+  primary: "bg-transparent text-[var(--page-ink)] border-0 shadow-none hover:underline underline-offset-4",
   seafoam: "bg-transparent text-[#386657] border-0 shadow-none hover:underline underline-offset-4",
-  secondary: "bg-transparent text-[#5C544B] border-0 shadow-none hover:underline underline-offset-4",
+  secondary: "bg-transparent text-[var(--page-ink)] border-0 shadow-none hover:underline underline-offset-4",
   ghost: "bg-transparent text-current border-0 shadow-none hover:underline underline-offset-4",
   danger: "bg-transparent text-[#8A3B31] border-0 shadow-none hover:underline underline-offset-4",
 };
@@ -60,7 +60,7 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
         aria-labelledby={titleId}
         tabIndex={-1}
         className={cx(
-          "relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] font-serif text-[var(--page-ink)] shadow-sm outline-none sm:rounded-3xl sm:p-2",
+          "modal-enter relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] font-serif text-[var(--page-ink)] shadow-sm outline-none sm:rounded-3xl sm:p-2",
           wide ? "sm:max-w-5xl" : "sm:max-w-3xl",
         )}
       >
@@ -182,7 +182,7 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
           checked ? "bg-seafoam-500" : "bg-[rgb(0_0_0_/_0.14)]",
         )}
       >
-        <span className={cx("absolute top-0.5 size-5 rounded-full border border-[rgb(0_0_0_/_0.2)] bg-cream-50 transition-all", checked ? "left-[22px]" : "left-0.5")} />
+        <span className={cx("absolute top-0.5 size-5 rounded-full border border-[rgb(0_0_0_/_0.2)] bg-cream-50 transition-[left] duration-150", checked ? "left-[22px]" : "left-0.5")} />
       </button>
     </label>
   );

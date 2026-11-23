@@ -1,4 +1,4 @@
-// Mr. Tiny Studio-inspired interactive planner: Weekly Plan, Habit Tracker,
+// Ship · Pwedo Pomo Studio interactive planner: Weekly Plan, Habit Tracker,
 // Pomodoro Tracker, and Monthly Calendar, with pastel costume minions.
 
 import { useState } from "react";
@@ -39,7 +39,7 @@ export function PlannerPanel({ onClose }: { onClose: () => void }) {
   const isStartOfWeek = now.getDay() === 0 || now.getDay() === 1;
 
   return (
-    <Panel title="Banana Planna" subtitle="Mr. Tiny Studio pastel sheets · plan your weeks, habits, and months" icon={<IconCalendar />} onClose={onClose} wide>
+    <Panel title="Banana Planna" subtitle="Ship · Pwedo Pomo Studio pastel sheets · plan your weeks, habits, and months" icon={<IconCalendar />} onClose={onClose} wide>
       {(isStartOfMonth || isStartOfWeek) && !checkedInToday && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#FFF9DC] px-4 py-2 text-xs text-ink">
           <span>
@@ -157,7 +157,7 @@ function WeeklySheet() {
           ))}
         </div>
       </div>
-      <p className="mt-3 text-center font-serif text-[11px] tracking-[0.18em] text-ink/45">Banana Planna • Mr. Tiny Studio • Ship Edition</p>
+      <p className="mt-3 text-center font-serif text-[11px] tracking-[0.18em] text-ink/45">Banana Planna • Ship · Pwedo Pomo Studio</p>
     </div>
   );
 }
@@ -210,7 +210,7 @@ function HabitSheet() {
           </div>
         </div>
       </div>
-      <p className="mt-4 text-center font-serif text-[11px] tracking-[0.18em] text-ink/45">Mr. Tiny Studio • Ship Edition</p>
+      <p className="mt-4 text-center font-serif text-[11px] tracking-[0.18em] text-ink/45">Ship · Pwedo Pomo Studio</p>
     </div>
   );
 }
@@ -418,7 +418,7 @@ function MonthlySheet() {
           />
         </div>
       </div>
-      <p className="mt-3 text-center font-serif text-[11px] tracking-[0.18em] text-ink/45">Banana Planna • Mr. Tiny Studio • Ship Edition</p>
+      <p className="mt-3 text-center font-serif text-[11px] tracking-[0.18em] text-ink/45">Banana Planna • Ship · Pwedo Pomo Studio</p>
     </div>
   );
 }

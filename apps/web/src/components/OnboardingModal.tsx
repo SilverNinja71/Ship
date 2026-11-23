@@ -1,7 +1,8 @@
 // Warm, kawaii first-visit tutorial modal and gentle Google Drive sign-in prompt
-// in Mr. Tiny Studio stationery style.
+// in Ship · Pwedo Pomo Studio stationery style.
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { useModalBehavior } from "../hooks/useModalBehavior.js";
 import { markTutorialSeen } from "../lib/accountData.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { cx } from "./ui.js";
@@ -78,10 +79,12 @@ export function OnboardingModal({
   const step = STEPS[stepIdx];
   const isLast = stepIdx === STEPS.length - 1;
 
-  const finish = () => {
+  const finish = useCallback(() => {
     markTutorialSeen();
     onClose();
-  };
+  }, [onClose]);
+
+  const modalRef = useModalBehavior(finish);
 
   return (
     <div
@@ -90,7 +93,11 @@ export function OnboardingModal({
       aria-label="Welcome tutorial"
       className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-[#6D655C]/25 p-4 backdrop-blur-[2px]"
     >
-      <div className="w-full max-w-lg rounded-3xl border border-[#A29C93]/60 bg-[#FFFDF7] p-6 font-serif text-[#6D655C] shadow-[6px_6px_0_#EAE5DA]">
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="modal-enter w-full max-w-lg rounded-3xl border border-[var(--border-subtle)] bg-[#FFFDF7] p-6 font-serif text-[#5C544B] shadow-sm outline-none"
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <span
@@ -137,7 +144,7 @@ export function OnboardingModal({
                 aria-label={s.badge}
                 onClick={() => setStepIdx(i)}
                 className={cx(
-                  "h-2.5 rounded-full transition-all",
+                  "h-2.5 rounded-full transition-[width,background-color] duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5D564E]",
                   i === stepIdx ? "w-6 bg-[#E6C56B]" : "w-2.5 bg-[#DFD9CC] hover:bg-[#C7BFB3]",
                 )}
               />

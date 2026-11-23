@@ -1,6 +1,5 @@
-// Interactive Mr. Tiny Studio-style planner state: Weekly Plan, Habit Tracker,
-// Pomodoro Tracker, and Monthly Calendar, persisted locally with a daily
-// check-in reward to encourage regular use.
+// Interactive Ship · Pwedo Pomo Studio planner state: Weekly Plan, Habit Tracker,
+// Pomodoro Tracker, die-cut stickers, and Monthly Calendar, persisted locally.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -38,6 +37,10 @@ export interface PlannerState {
   weekStartedAt: string;
   /** 10 rows x 7 columns (mon..sun). */
   weeklyCells: string[][];
+  /** Day index (0..6) -> up to 3 die-cut sticker IDs; resets every Sunday 12:00 am. */
+  weeklyStickers: Record<number, string[]>;
+  /** Session ID -> up to 3 die-cut sticker IDs. */
+  sessionStickers: Record<string, string[]>;
   habits: HabitRow[];
   pomodoros: PomodoroSession[];
   monthTitle: string;
@@ -58,6 +61,8 @@ export interface PlannerState {
   setWeeklyTitle(title: string): void;
   setWeeklyGoal(goal: string): void;
   setWeeklyCell(row: number, col: number, text: string): void;
+  toggleWeeklySticker(dayIdx: number, stickerId: string): void;
+  toggleSessionSticker(sessionId: string, stickerId: string): void;
   checkAndResetWeek(now?: Date): boolean;
   setHabitLabel(row: number, label: string): void;
   toggleHabit(row: number, col: number): void;
@@ -133,6 +138,8 @@ export const usePlanner = create<PlannerState>()(
       weeklyGoal: "",
       weekStartedAt: getCurrentWeekStart(),
       weeklyCells: makeEmptyWeeklyCells(),
+      weeklyStickers: {},
+      sessionStickers: {},
       habits: makeDefaultHabits(),
       pomodoros: [makeSession(1), makeSession(2)],
       monthTitle: new Date().toLocaleString("en-US", { month: "long", year: "numeric" }),
@@ -150,6 +157,22 @@ export const usePlanner = create<PlannerState>()(
         set((s) => ({
           weeklyCells: s.weeklyCells.map((r, ri) => (ri === row ? r.map((c, ci) => (ci === col ? text : c)) : r)),
         })),
+      toggleWeeklySticker: (dayIdx, stickerId) =>
+        set((s) => {
+          const current = s.weeklyStickers?.[dayIdx] ?? [];
+          const next = current.includes(stickerId)
+            ? current.filter((id) => id !== stickerId)
+            : [...current, stickerId].slice(-3);
+          return { weeklyStickers: { ...(s.weeklyStickers ?? {}), [dayIdx]: next } };
+        }),
+      toggleSessionSticker: (sessionId, stickerId) =>
+        set((s) => {
+          const current = s.sessionStickers?.[sessionId] ?? [];
+          const next = current.includes(stickerId)
+            ? current.filter((id) => id !== stickerId)
+            : [...current, stickerId].slice(-3);
+          return { sessionStickers: { ...(s.sessionStickers ?? {}), [sessionId]: next } };
+        }),
       checkAndResetWeek: (now = new Date()) => {
         const currentWeek = getCurrentWeekStart(now);
         if (get().weekStartedAt === currentWeek) return false;
@@ -158,6 +181,7 @@ export const usePlanner = create<PlannerState>()(
           weeklyTitle: "",
           weeklyGoal: "",
           weeklyCells: makeEmptyWeeklyCells(),
+          weeklyStickers: {},
         });
         return true;
       },
@@ -227,6 +251,8 @@ export const usePlanner = create<PlannerState>()(
         weeklyGoal: s.weeklyGoal,
         weekStartedAt: s.weekStartedAt,
         weeklyCells: s.weeklyCells,
+        weeklyStickers: s.weeklyStickers,
+        sessionStickers: s.sessionStickers,
         habits: s.habits,
         pomodoros: s.pomodoros,
         monthTitle: s.monthTitle,

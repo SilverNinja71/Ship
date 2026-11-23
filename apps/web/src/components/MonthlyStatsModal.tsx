@@ -2,10 +2,12 @@
 // across Total Focus Time, Completed Sessions & Cycles, Top #Hashtags, and Habit Streaks.
 
 import { useEffect, useMemo, useState } from "react";
+import { useModalBehavior } from "../hooks/useModalBehavior.js";
 import { streakDays } from "../lib/voyageLogic.js";
 import { currentMonthKey, usePlanner } from "../stores/plannerStore.js";
 import { useVoyage } from "../stores/voyageStore.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
+import { DieCutSticker } from "./StickerArt.js";
 import { IconClose } from "./icons.js";
 
 const VIEWS = [
@@ -57,8 +59,11 @@ export function MonthlyStatsModal() {
   const habits = usePlanner((s) => s.habits);
   const weeklyCells = usePlanner((s) => s.weeklyCells);
   const weeklyGoal = usePlanner((s) => s.weeklyGoal);
+  const weeklyStickers = usePlanner((s) => s.weeklyStickers);
+  const sessionStickers = usePlanner((s) => s.sessionStickers);
 
   const [page, setPage] = useState(0);
+  const modalRef = useModalBehavior(closeMonthlyStats, open);
 
   // Auto-open at the end of each month or when the month rolls over.
   useEffect(() => {
@@ -87,17 +92,16 @@ export function MonthlyStatsModal() {
     if (open) setPage(0);
   }, [open]);
 
-  // Keyboard navigation (Escape, ArrowLeft, ArrowRight).
+  // Keyboard navigation (ArrowLeft, ArrowRight; Escape handled by useModalBehavior).
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeMonthlyStats();
-      else if (e.key === "ArrowLeft") setPage((p) => (p - 1 + VIEWS.length) % VIEWS.length);
+      if (e.key === "ArrowLeft") setPage((p) => (p - 1 + VIEWS.length) % VIEWS.length);
       else if (e.key === "ArrowRight") setPage((p) => (p + 1) % VIEWS.length);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, closeMonthlyStats]);
+  }, [open]);
 
   const activeMonthKey = targetMonth ?? currentMonthKey();
 
@@ -173,6 +177,14 @@ export function MonthlyStatsModal() {
     };
   }, [activeMonthKey, habits, pomodoros, records, weeklyCells, weeklyGoal]);
 
+  const recentStickers = useMemo(() => {
+    const all = [
+      ...Object.values(weeklyStickers ?? {}).flat(),
+      ...Object.values(sessionStickers ?? {}).flat(),
+    ];
+    return [...new Set(all)].slice(0, 6);
+  }, [weeklyStickers, sessionStickers]);
+
   if (!open) return null;
 
   const view = VIEWS[page]!;
@@ -187,7 +199,11 @@ export function MonthlyStatsModal() {
       onMouseDown={(e) => e.target === e.currentTarget && closeMonthlyStats()}
       className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[#6D655C]/25 p-4 backdrop-blur-[2px]"
     >
-      <div className="flex aspect-square w-full max-w-md flex-col justify-between rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2 text-[var(--page-ink)] shadow-sm">
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="modal-enter flex aspect-square w-full max-w-md flex-col justify-between rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2 text-[var(--page-ink)] shadow-sm outline-none"
+      >
         <div className="flex flex-1 flex-col justify-between rounded-[16px] border border-[rgb(0_0_0_/_0.06)] bg-[var(--surface-1)] p-4">
           {/* Header */}
           <div className="flex items-center justify-between gap-2">
@@ -259,16 +275,23 @@ export function MonthlyStatsModal() {
                   </p>
                 </div>
               </div>
-              <div className="rounded-xl border border-[#A29C93]/25 bg-[#FFFDF7]/80 px-4 py-2.5 text-xs text-[#8E887F]">
-                <span className="font-bold text-[#6D655C]">{stats.pomoTasksDone}</span>{" "}
+              <div className="rounded-xl border border-[#A29C93]/25 bg-[#FFFDF7]/80 px-4 py-2.5 text-xs text-[#6B635B]">
+                <span className="font-bold text-[#4D453E]">{stats.pomoTasksDone}</span>{" "}
                 planner tasks checked off ·{" "}
-                <span className="font-bold text-[#6D655C]">
+                <span className="font-bold text-[#4D453E]">
                   {stats.totalVoyages > 0
                     ? `${Math.round((stats.completedVoyages / stats.totalVoyages) * 100)}%`
                     : "0%"}
                 </span>{" "}
                 completion rate
               </div>
+              {recentStickers.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                  {recentStickers.map((stId) => (
+                    <DieCutSticker key={stId} id={stId} size={28} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -354,7 +377,7 @@ export function MonthlyStatsModal() {
                 type="button"
                 onClick={() => setPage(idx)}
                 aria-label={`View ${v.label}`}
-                className={`h-2 rounded-full transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)] ${
+                className={`h-2 rounded-full transition-[width,background-color] duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)] ${
                   idx === page
                     ? "w-5 bg-[#8E887F]"
                     : "w-2 bg-[rgb(0_0_0_/_0.18)] hover:bg-[rgb(0_0_0_/_0.32)]"

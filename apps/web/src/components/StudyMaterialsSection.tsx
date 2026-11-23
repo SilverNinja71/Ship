@@ -1,5 +1,5 @@
-// Scrollable Mr. Tiny Studio workspace below the main scene:
-// 1. Interactive Pomodoro Tracker task form (wired to usePlanner)
+// Scrollable Ship · Pwedo Pomo Studio stationery workspace below the main scene:
+// 1. Interactive Pomodoro Tracker task form + die-cut sticker stamping (wired to usePlanner)
 // 2. Active Recall Study Sheets quick-launch & file upload (wired to useFleet & useRecall)
 // 3. Banana Planna: Weekly Plan & Habit Tracker (wired to usePlanner)
 
@@ -12,11 +12,10 @@ import { useVoyage } from "../stores/voyageStore.js";
 import { BananaPlannaSection } from "./BananaPlannaSection.js";
 import { useNow } from "./Hud.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
+import { DieCutSticker } from "./StickerArt.js";
+import { StickerPickerPopover } from "./StickerPickerPopover.js";
 import { IconCards, IconLog } from "./icons.js";
 import { cx, readFile } from "./ui.js";
-
-const CARD =
-  "rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-5 text-[var(--page-ink)] shadow-sm sm:p-6";
 
 export function StudyMaterialsSection() {
   const openMonthlyStats = usePlanner((s) => s.openMonthlyStats);
@@ -25,12 +24,15 @@ export function StudyMaterialsSection() {
     <section
       id="study-materials"
       aria-label="Study materials and Pomodoro task form"
-      className="relative z-10 border-t border-[#A29C93]/25 bg-[#FAF6E8] px-4 py-10 text-[#6D655C] sm:px-8 sm:py-14"
+      className="notebook-grid relative z-10 border-t border-[var(--border-subtle)] px-4 py-10 text-[var(--page-ink)] sm:px-8 sm:py-14"
     >
-      <div className="mx-auto flex max-w-5xl flex-col gap-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="mx-auto flex max-w-5xl flex-col gap-10">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-5">
           <div>
-            <h2 className="font-display text-2xl font-extrabold text-[#6D655C]">
+            <p className="font-serif text-[11px] uppercase tracking-[0.22em] text-[var(--muted-ink)]">
+              Ship · Pwedo Pomo Studio Notebook
+            </p>
+            <h2 className="font-display text-2xl font-extrabold text-[var(--page-ink)]">
               Pwedo Pomo &amp; Study Materials
             </h2>
           </div>
@@ -38,7 +40,7 @@ export function StudyMaterialsSection() {
             <button
               type="button"
               onClick={() => openMonthlyStats()}
-              className="rounded-full border border-[#A29C93]/45 bg-[#FFF8D6] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] shadow-[2px_2px_0_#EAE5DA] transition hover:bg-[#FFF3A8]/70 focus:outline-none"
+              className="rounded-full border border-[var(--border-subtle)] bg-[#FFF8D6] px-3.5 py-1.5 text-xs font-bold text-[#4D453E] transition-[background-color] duration-150 hover:bg-[#FFF3A8] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
             >
               Monthly Stats
             </button>
@@ -48,7 +50,7 @@ export function StudyMaterialsSection() {
                 e.preventDefault();
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              className="rounded-full border border-[#A29C93]/55 bg-[#FFFDF7] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] shadow-[2px_2px_0_#EAE5DA] transition hover:bg-[#FFF8D6] focus:outline-none"
+              className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3.5 py-1.5 text-xs font-bold text-[var(--page-ink)] transition-[background-color] duration-150 hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
             >
               Back to scene ↑
             </a>
@@ -70,6 +72,8 @@ export function StudyMaterialsSection() {
 
 function PomodoroTrackerSection() {
   const pomodoros = usePlanner((s) => s.pomodoros);
+  const sessionStickers = usePlanner((s) => s.sessionStickers);
+  const toggleSessionSticker = usePlanner((s) => s.toggleSessionSticker);
   const updatePomodoro = usePlanner((s) => s.updatePomodoro);
   const togglePomodoroTask = usePlanner((s) => s.togglePomodoroTask);
   const setPomodoroTaskText = usePlanner((s) => s.setPomodoroTaskText);
@@ -78,6 +82,7 @@ function PomodoroTrackerSection() {
   const cyclesCompleted = useVoyage((s) => s.cyclesCompleted);
 
   const [focusedSessionIdx, setFocusedSessionIdx] = useState<number | null>(null);
+  const [stickerSessionId, setStickerSessionId] = useState<string | null>(null);
 
   // Auto-fill focus & break checkboxes for the active session as Pwedo Pomo cycles complete.
   useEffect(() => {
@@ -120,14 +125,14 @@ function PomodoroTrackerSection() {
       : pomodoros.map((session, sIdx) => ({ session, sIdx }));
 
   return (
-    <div className={CARD}>
+    <div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#E6F2FA]/75">
+          <div className="grid size-11 place-items-center rounded-2xl border border-[var(--border-subtle)] bg-[#E6F2FA]">
             <PastelMinionBadge costume="pwedo" size={38} />
           </div>
           <div>
-            <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
+            <h3 className="font-serif text-lg tracking-[0.18em] text-[var(--page-ink)]">
               Pomodoro Tracker
             </h3>
             <p className="text-xs text-[var(--muted-ink)]">
@@ -142,42 +147,67 @@ function PomodoroTrackerSection() {
             <button
               type="button"
               onClick={() => setFocusedSessionIdx(null)}
-              className="rounded-full border border-[#A29C93]/35 bg-[#FAF6E8] px-3 py-1 text-xs font-semibold text-[#8E887F] transition hover:bg-[#FFF8D6]"
+              className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-1 text-xs font-semibold text-[var(--page-ink)] transition-[background-color] duration-150 hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
             >
               Show all sessions
             </button>
           )}
-          <span className="rounded-full border border-[#EAE2C8] bg-[#FFF8D6] px-3 py-1 text-xs font-semibold text-[#8E887F]">
+          <span className="rounded-full border border-[var(--border-subtle)] bg-[#FFF8D6] px-3 py-1 text-xs font-semibold text-[#5C544B]">
             Auto-saved
           </span>
         </div>
       </div>
 
-      <div className="space-y-5">
-        {visibleSessions.map(({ session, sIdx }) => (
+      <div className="grid gap-5 md:grid-cols-2">
+        {visibleSessions.map(({ session, sIdx }) => {
+          const stamped = sessionStickers?.[session.id] ?? [];
+          return (
           <div
             key={session.id}
-            className="rounded-2xl border border-[#A29C93]/40 bg-[#FFFDF7] p-4 sm:p-5"
+            className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)]/92 p-4 sm:p-5"
           >
-            <div className="mb-4 flex items-center justify-between gap-2 border-b border-[#A29C93]/25 pb-2.5">
-              <span className="font-serif text-sm tracking-[0.2em] text-[#6D655C] select-none">
-                Session #{sIdx + 1}
-              </span>
-              {focusedSessionIdx === sIdx && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="font-serif text-sm tracking-[0.2em] text-[var(--page-ink)] select-none">
+                  Session #{sIdx + 1}
+                </span>
+                {stamped.map((stId) => (
+                  <DieCutSticker key={stId} id={stId} size={26} />
+                ))}
+              </div>
+              <div className="relative flex items-center gap-2">
+                {focusedSessionIdx === sIdx && (
+                  <button
+                    type="button"
+                    onClick={() => setFocusedSessionIdx(null)}
+                    className="text-xs font-medium text-[var(--muted-ink)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+                  >
+                    Show all
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setFocusedSessionIdx(null)}
-                  className="text-xs font-medium text-[#8E887F] underline-offset-2 hover:underline"
+                  onClick={() =>
+                    setStickerSessionId((cur) => (cur === session.id ? null : session.id))
+                  }
+                  className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--page-ink)] transition-[background-color] duration-150 hover:bg-[#FFF8D6] hover:text-[#4D453E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
                 >
-                  Show all sessions
+                  + Sticker
                 </button>
-              )}
+                {stickerSessionId === session.id && (
+                  <StickerPickerPopover
+                    selected={stamped}
+                    onToggle={(id) => toggleSessionSticker(session.id, id)}
+                    onClose={() => setStickerSessionId(null)}
+                  />
+                )}
+              </div>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-[1.15fr_1fr]">
+            <div className="grid gap-5">
               {/* Task checkboxes + textboxes */}
               <div className="space-y-2.5">
-                <p className="font-serif text-xs tracking-[0.18em] text-[#8E887F]">
+                <p className="font-serif text-xs tracking-[0.18em] text-[var(--muted-ink)]">
                   TASKS
                 </p>
                 {session.tasks.map((task, tIdx) => (
@@ -188,10 +218,10 @@ function PomodoroTrackerSection() {
                       aria-label={`Toggle session ${sIdx + 1} task ${tIdx + 1}`}
                       aria-pressed={task.done}
                       className={cx(
-                        "grid size-5 shrink-0 place-items-center rounded-md border border-[#A29C93]/55 text-xs transition",
+                        "grid size-5 shrink-0 place-items-center rounded-md border border-[var(--border-subtle)] text-xs transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]",
                         task.done
-                          ? "bg-[#E2F3EC] font-bold text-[#668B7D]"
-                          : "bg-white hover:bg-[#FAF6E8]",
+                          ? "bg-[#E2F3EC] font-bold text-[#386657]"
+                          : "bg-[var(--surface-2)] hover:bg-[#FAF6E8] hover:text-[#4D453E]",
                       )}
                     >
                       {task.done ? "✓" : ""}
@@ -208,7 +238,7 @@ function PomodoroTrackerSection() {
                       placeholder={`Task ${tIdx + 1}...`}
                       aria-label={`Session ${sIdx + 1} task ${tIdx + 1}`}
                       className={cx(
-                        "min-w-0 flex-1 border-b border-[#A29C93]/35 bg-transparent py-0.5 text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:border-[#8E887F] focus:outline-none",
+                        "min-w-0 flex-1 border-b border-[var(--border-subtle)] bg-transparent py-0.5 text-sm text-[var(--page-ink)] placeholder:text-[var(--muted-ink)] focus:border-[var(--page-ink)] focus:outline-none",
                         task.done && "line-through opacity-55",
                       )}
                     />
@@ -220,12 +250,12 @@ function PomodoroTrackerSection() {
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <div className="mb-1.5 flex items-center gap-1 font-serif text-xs tracking-[0.14em] text-[#8E887F]">
+                    <div className="mb-1.5 flex items-center gap-1 font-serif text-xs tracking-[0.14em] text-[var(--muted-ink)]">
                       <input
                         value={session.focusMinutes}
                         onChange={(e) => updatePomodoro(sIdx, { focusMinutes: e.target.value })}
                         aria-label={`Session ${sIdx + 1} focus minutes`}
-                        className="w-8 border-b border-[#A29C93]/45 bg-transparent text-center font-sans text-xs font-bold text-[#6D655C] focus:outline-none"
+                        className="w-8 border-b border-[var(--border-subtle)] bg-transparent text-center font-sans text-xs font-bold text-[var(--page-ink)] focus:border-[var(--page-ink)] focus:outline-none"
                       />
                       <span>min focus</span>
                     </div>
@@ -238,8 +268,8 @@ function PomodoroTrackerSection() {
                           aria-label={`Session ${sIdx + 1} focus interval ${bIdx + 1}`}
                           aria-pressed={checked}
                           className={cx(
-                            "grid size-7 place-items-center rounded-lg border border-[#A29C93]/45 text-xs transition",
-                            checked ? "bg-[#FFF8D6] font-bold text-[#8E887F]" : "bg-white hover:bg-[#FAF6E8]",
+                            "grid size-7 place-items-center rounded-lg border border-[var(--border-subtle)] text-xs transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]",
+                            checked ? "bg-[#FFF8D6] font-bold text-[#5C544B]" : "bg-[var(--surface-2)] hover:bg-[#FFF8D6]/60",
                           )}
                         >
                           {checked ? "✓" : ""}
@@ -249,12 +279,12 @@ function PomodoroTrackerSection() {
                   </div>
 
                   <div>
-                    <div className="mb-1.5 flex items-center gap-1 font-serif text-xs tracking-[0.14em] text-[#8E887F]">
+                    <div className="mb-1.5 flex items-center gap-1 font-serif text-xs tracking-[0.14em] text-[var(--muted-ink)]">
                       <input
                         value={session.breakMinutes}
                         onChange={(e) => updatePomodoro(sIdx, { breakMinutes: e.target.value })}
                         aria-label={`Session ${sIdx + 1} break minutes`}
-                        className="w-8 border-b border-[#A29C93]/45 bg-transparent text-center font-sans text-xs font-bold text-[#6D655C] focus:outline-none"
+                        className="w-8 border-b border-[var(--border-subtle)] bg-transparent text-center font-sans text-xs font-bold text-[var(--page-ink)] focus:border-[var(--page-ink)] focus:outline-none"
                       />
                       <span>min break</span>
                     </div>
@@ -267,8 +297,8 @@ function PomodoroTrackerSection() {
                           aria-label={`Session ${sIdx + 1} break ${bIdx + 1}`}
                           aria-pressed={checked}
                           className={cx(
-                            "grid size-7 place-items-center rounded-lg border border-[#A29C93]/45 text-xs transition",
-                            checked ? "bg-[#EFE8FA] font-bold text-[#8E887F]" : "bg-white hover:bg-[#FAF6E8]",
+                            "grid size-7 place-items-center rounded-lg border border-[var(--border-subtle)] text-xs transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--page-ink)]",
+                            checked ? "bg-[#EFE8FA] font-bold text-[#52466A]" : "bg-[var(--surface-2)] hover:bg-[#EFE8FA]/60",
                           )}
                         >
                           {checked ? "✓" : ""}
@@ -278,8 +308,8 @@ function PomodoroTrackerSection() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-[#A29C93]/35 bg-white/80 p-3">
-                  <span className="block font-serif text-xs tracking-[0.1em] text-[#8E887F]">
+                <div className="border-t border-[var(--border-subtle)] pt-3">
+                  <span className="block font-serif text-xs tracking-[0.1em] text-[var(--muted-ink)]">
                     How can I improve next session:
                   </span>
                   <textarea
@@ -288,13 +318,13 @@ function PomodoroTrackerSection() {
                     onChange={(e) => updatePomodoro(sIdx, { improveNote: e.target.value })}
                     placeholder="Write a quick reflection..."
                     aria-label={`Session ${sIdx + 1} how can I improve next session`}
-                    className="mt-1 w-full resize-none bg-transparent text-sm text-[#6D655C] placeholder:text-[#B8B0A4] focus:outline-none"
+                    className="mt-1 w-full resize-none bg-transparent text-sm text-[var(--page-ink)] placeholder:text-[var(--muted-ink)] focus:outline-none"
                   />
                 </div>
               </div>
             </div>
           </div>
-        ))}
+        );})}
       </div>
     </div>
   );
@@ -339,18 +369,21 @@ function StudySheetsSection() {
         setDragging(false);
         void onFiles(e.dataTransfer.files);
       }}
-      className={cx(CARD, dragging && "ring-2 ring-[#8E887F] bg-[#FFFDF7]")}
+      className={cx(
+        "border-t border-[var(--border-subtle)] pt-8 transition-[background-color] duration-150",
+        dragging && "rounded-2xl bg-[var(--surface-1)]/70 ring-2 ring-[var(--page-ink)] px-3 pb-4",
+      )}
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl border border-[#A29C93]/30 bg-[#EFE8FA]/70">
+          <div className="grid size-11 place-items-center rounded-2xl border border-[var(--border-subtle)] bg-[#EFE8FA]">
             <PastelMinionBadge costume="bunny" size={38} />
           </div>
           <div>
-            <h3 className="font-serif text-lg tracking-[0.18em] text-[#6D655C]">
+            <h3 className="font-serif text-lg tracking-[0.18em] text-[var(--page-ink)]">
               Active Recall Study Sheets
             </h3>
-            <p className="text-xs text-[#8E887F]">
+            <p className="text-xs text-[var(--muted-ink)]">
               Drag &amp; drop files here or click Upload, then practice blurting or flashcards.
             </p>
           </div>
@@ -369,21 +402,21 @@ function StudySheetsSection() {
             type="button"
             disabled={uploading}
             onClick={() => fileRef.current?.click()}
-            className="rounded-full border border-[#EAE2C8] bg-[#FFF8D6] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] transition hover:bg-[#FFF3A8]/80 disabled:opacity-50"
+            className="rounded-full border border-[var(--border-subtle)] bg-[#FFF8D6] px-3.5 py-1.5 text-xs font-bold text-[#4D453E] transition-[background-color] duration-150 hover:bg-[#FFF3A8] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             {uploading ? "Uploading..." : "Upload"}
           </button>
           <button
             type="button"
             onClick={() => openPanel("log")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/40 bg-[#FFFDF7] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] transition hover:bg-[#FAF6E8]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3.5 py-1.5 text-xs font-bold text-[var(--page-ink)] transition-[background-color] duration-150 hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             <IconLog size={14} /> Open Study Sheets
           </button>
           <button
             type="button"
             onClick={() => openPanel("flashcards")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#A29C93]/35 bg-[#EFE8FA] px-3.5 py-1.5 text-xs font-bold text-[#8E887F] transition hover:bg-[#E6DAF8]/80"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[#EFE8FA] px-3.5 py-1.5 text-xs font-bold text-[#4A3C63] transition-[background-color] duration-150 hover:bg-[#E6DAF8] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             <IconCards size={14} /> Flashcards{due > 0 ? ` (${due} due)` : ""}
           </button>
@@ -391,25 +424,25 @@ function StudySheetsSection() {
       </div>
 
       {notes.length > 0 ? (
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="divide-y divide-[var(--border-subtle)] rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)]/92">
           {notes.slice(0, 6).map((n) => (
             <button
               key={n.id}
               type="button"
               onClick={() => openPanel("log")}
-              className="flex flex-col items-start rounded-2xl border border-[#A29C93]/35 bg-[#FFFDF7] p-3 text-left transition hover:bg-[#FAF6E8]"
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-[background-color] duration-150 first:rounded-t-2xl last:rounded-b-2xl hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--page-ink)]"
             >
-              <span className="w-full truncate font-display text-sm font-bold text-[#6D655C]">
+              <span className="min-w-0 truncate font-display text-sm font-bold text-[var(--page-ink)]">
                 {n.title}
               </span>
-              <span className="mt-0.5 text-[11px] text-[#8E887F]">
-                {n.pages.length} {n.pages.length === 1 ? "page" : "pages"} · Click to practice recall
+              <span className="shrink-0 text-[11px] text-[var(--muted-ink)]">
+                {n.pages.length} {n.pages.length === 1 ? "page" : "pages"} · Practice →
               </span>
             </button>
           ))}
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-1)]/60 px-4 py-5 text-center text-xs text-[var(--muted-ink)]">
+        <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--surface-1)]/70 px-4 py-5 text-center text-xs text-[var(--muted-ink)]">
           No study sheets uploaded yet. Drop in a PDF, DOCX, Markdown, or image above to start active recall.
         </div>
       )}

@@ -15,7 +15,9 @@ import type { SeaGeometry } from "./OceanEngine.js";
 import type { EmitterContext } from "./ParticleFX.js";
 import { drawBell, drawCitrusTree, drawDeckCritters, drawHelm, drawLabel } from "./props.js";
 import type { TreeLook } from "./props.js";
+import type { KawaiiTheme } from "./kawaiiThemes.js";
 import { drawPastelMinion } from "./minions.js";
+import { drawThemeBackdrop } from "./themeBackdrop.js";
 import { toTinyInkAvatar, toTinyInkEnv, toTinyInkShip } from "./tinyInk.js";
 import type { Ctx, FrameInfo, Point } from "./types.js";
 
@@ -39,6 +41,8 @@ export interface DeckScene {
   bellSwing: number;
   tinyInk?: boolean;
   preparing?: boolean;
+  kawaiiTheme?: KawaiiTheme;
+  showAffirmations?: boolean;
 }
 
 export interface Viewport {
@@ -75,10 +79,20 @@ export function deckCamera(view: Viewport, layout: Pick<HullLayout, "waterline" 
 
 export function renderDeck(ctx: Ctx, view: Viewport, frame: FrameInfo, rawScene: DeckScene, layout: HullLayout): DeckOutput {
   const tiny = Boolean(rawScene.tinyInk);
+  const kt = tiny ? rawScene.kawaiiTheme : undefined;
+  const tinyEnvBase = tiny ? toTinyInkEnv(rawScene.env) : rawScene.env;
+  const themedEnv = kt
+    ? {
+        ...tinyEnvBase,
+        skyTop: kt.canvas.skyTop,
+        skyBottom: kt.canvas.skyBottom,
+        sea: [kt.canvas.seaTop, kt.canvas.seaBottom, kt.canvas.seaBottom] as [string, string, string],
+      }
+    : tinyEnvBase;
   const scene: DeckScene = tiny
     ? {
         ...rawScene,
-        env: toTinyInkEnv(rawScene.env),
+        env: themedEnv,
         ship: toTinyInkShip(rawScene.ship),
         me: { ...rawScene.me, avatar: toTinyInkAvatar(rawScene.me.avatar) },
         crew: rawScene.crew.map((c) => ({ ...c, avatar: toTinyInkAvatar(c.avatar) })),
@@ -89,7 +103,11 @@ export function renderDeck(ctx: Ctx, view: Viewport, frame: FrameInfo, rawScene:
   const geo: SeaGeometry = { width: view.width, height: view.height, seaY: cam.seaY, unit: cam.unit };
   const u = cam.unit;
 
-  drawSky(ctx, env, geo, frame, tiny);
+  if (kt) {
+    drawThemeBackdrop(ctx, view.width, view.height, kt, frame, { showAffirmation: rawScene.showAffirmations ?? true });
+  } else {
+    drawSky(ctx, env, geo, frame, tiny);
+  }
   drawClouds(ctx, env, geo, frame, tiny);
   if (!tiny) drawScenery(ctx, env, geo, frame);
   drawSeaBack(ctx, env, geo, frame, tiny);
@@ -182,6 +200,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   const tiny = Boolean(scene.tinyInk);
   const helmPos = tiny ? { x: l.helm.x, y: 0 } : l.helm;
   drawHelm(ctx, helmPos, scene.helmAngle, ship.palette.trim, tiny);
+  const acc = scene.kawaiiTheme?.accessory ?? "none";
   if (tiny) {
     const capPos = { x: l.helm.x + 22, y: 0 };
     drawPastelMinion(ctx, capPos, "captain", frame, {
@@ -190,6 +209,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
       shadow: false,
       cheering: Boolean(scene.preparing),
       chore: scene.preparing ? "mop" : "none",
+      accessory: acc,
     });
   }
   regions.push(rectRegion(ctx, dpr, "helm", "Helm: plan your voyage", helmPos.x - 48, helmPos.y - 125, 96, 125));
@@ -219,6 +239,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
     chore: "sweep",
     cheering: Boolean(scene.preparing),
     shadow: !tiny,
+    accessory: acc,
   });
   drawPastelMinion(ctx, mochiPos, "teddy", frame, {
     scale: 1.28,
@@ -226,6 +247,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
     chore: scene.preparing ? "mop" : "none",
     cheering: Boolean(scene.preparing),
     shadow: !tiny,
+    accessory: acc,
   });
   drawPastelMinion(ctx, lumiPos, "bunny", frame, {
     scale: 1.24,
@@ -233,6 +255,7 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
     chore: scene.preparing ? "sweep" : "spyglass",
     cheering: Boolean(scene.preparing),
     shadow: !tiny,
+    accessory: acc,
   });
 
   if (tiny) {
@@ -324,7 +347,7 @@ function sketchLine(ctx: Ctx, x1: number, y1: number, x2: number, y2: number, co
   ctx.restore();
 }
 
-/** Draws a cream/pastel box with soft drop shadow and Mr. Tiny Studio open-corner hand-drawn outline. */
+/** Draws a cream/pastel box with soft drop shadow and open-corner hand-drawn outline. */
 function sketchOpenRoundedBox(
   ctx: Ctx,
   x: number,
@@ -340,7 +363,7 @@ function sketchOpenRoundedBox(
   paint(ctx, (c) => roundRectPath(c, x, y, w, h, r), fill, { width, stroke: TINY_OUTLINE });
 }
 
-/** Ultra-minimal Mr. Tiny Studio boat: hand-sketched cream silhouette, imperfect strokes & open corners. */
+/** Ultra-minimal stationery studio boat: hand-sketched cream silhouette, imperfect strokes & open corners. */
 function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, onDeck: (layout: HullLayout) => void): void {
   const { deck, masts, flag, helm, surfaces } = layout;
   const { sternX, bowX, hullTopY, hullBottomY } = tinyInkHullMetrics(layout);

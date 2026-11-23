@@ -55,9 +55,17 @@ export function dismissSignInPromptStorage(): void {
   safeSet(SIGNIN_PROMPT_DISMISSED_KEY, "1");
 }
 
+/** Returns true if the visitor's browser is broadcasting Global Privacy Control (GPC). */
+export function isGpcEnabled(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
+}
+
 export function getConsentState(): "accepted" | "essential-only" | null {
   const val = safeGet(COOKIE_CONSENT_KEY);
-  return val === "accepted" || val === "essential-only" ? val : null;
+  if (val === "accepted" || val === "essential-only") return val;
+  if (isGpcEnabled()) return "essential-only";
+  return null;
 }
 
 export function setConsentState(choice: "accepted" | "essential-only"): void {

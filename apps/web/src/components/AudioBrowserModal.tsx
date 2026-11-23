@@ -1,6 +1,7 @@
 // Focus Soundscapes browser modal (extracted from VoyageDock for modularity).
 
 import { useState } from "react";
+import { useModalBehavior } from "../hooks/useModalBehavior.js";
 import { selectAudioTrack, useActiveAudioTrack } from "../hooks/useAmbiance.js";
 import { CURATED_FOCUS_TRACKS, findCuratedTrack } from "../lib/audio.js";
 import type { CuratedTrack } from "../lib/audio.js";
@@ -22,6 +23,7 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }) {
   const activeTrackId = useActiveAudioTrack();
   const [category, setCategory] = useState<"All" | CuratedTrack["category"]>("All");
   const [query, setQuery] = useState("");
+  const modalRef = useModalBehavior(onClose);
 
   const filtered = CURATED_FOCUS_TRACKS.filter((t) => {
     const matchesCat = category === "All" || t.category === category;
@@ -43,7 +45,11 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[84dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2 text-[var(--page-ink)] shadow-sm">
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="modal-enter flex max-h-[84dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2 text-[var(--page-ink)] shadow-sm outline-none"
+      >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[16px] border border-[rgb(0_0_0_/_0.06)] bg-[var(--surface-1)]">
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3.5">
