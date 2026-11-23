@@ -46,13 +46,15 @@ export interface VaultOptions {
   clippings: boolean;
   /** Keep Ship/Planner.md up to date with Banana Planna. */
   planner: boolean;
+  /** Keep Ship/Kanban.md up to date, as a board the Obsidian Kanban plugin opens. */
+  kanban: boolean;
   /** Write each flashcard deck to Ship/Flashcards/ as question::answer lines. */
   decks: boolean;
   /** Copy uploaded notes (PDF, Word, PowerPoint, links) into Ship/Notes/. */
   notes: boolean;
 }
 
-export const DEFAULT_VAULT_OPTIONS: VaultOptions = { clippings: true, planner: true, decks: true, notes: false };
+export const DEFAULT_VAULT_OPTIONS: VaultOptions = { clippings: true, planner: true, kanban: true, decks: true, notes: false };
 
 export interface VaultManifest {
   /** Vault note path -> its last-modified time when Ship last read it. */
@@ -67,6 +69,7 @@ export const emptyManifest = (): VaultManifest => ({ files: {}, written: {} });
 export interface VaultOutbox {
   clips: NoteDocument[];
   planner: string | null;
+  kanban: string | null;
   decks: { deck: Deck; cards: Pick<Flashcard, "front" | "back">[] }[];
   notes: NoteDocument[];
 }
@@ -193,6 +196,7 @@ export async function syncVault(root: VaultDirHandle, manifest: VaultManifest, o
       }
     }
     if (options.planner && outbox.planner) await put(`${SHIP_FOLDER}/Planner.md`, outbox.planner, true);
+    if (options.kanban && outbox.kanban) await put(`${SHIP_FOLDER}/Kanban.md`, outbox.kanban, true);
     // Decks and notes: one file each (two with the same name get " 2"), and files for ones deleted in Ship go too.
     const mirror = async (dir: string, items: { name: string; text: string }[]) => {
       const wanted = new Set<string>();

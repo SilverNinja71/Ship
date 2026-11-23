@@ -63,7 +63,7 @@ class MemoryFile implements VaultFileHandle {
   }
 }
 
-const emptyOutbox = (): VaultOutbox => ({ clips: [], planner: null, decks: [], notes: [] });
+const emptyOutbox = (): VaultOutbox => ({ clips: [], planner: null, kanban: null, decks: [], notes: [] });
 const note = (id: string, title: string, text: string, extra: Partial<NoteDocument> = {}): NoteDocument => ({ id, source: "clip", title, subject: null, created: null, modified: null, pages: [{ id: "1", text }], ...extra });
 
 describe("syncing with a vault", () => {
@@ -121,14 +121,16 @@ describe("syncing with a vault", () => {
     const outbox: VaultOutbox = {
       clips: [],
       planner: "# Planner\n",
+      kanban: "---\n\nkanban-plugin: board\n\n---\n",
       decks: [{ deck: { id: "d", name: "Bio: cells", subject: null, created: 0, source: "manual" }, cards: [{ front: "Q", back: "A" }] }],
       notes: [note("file:1", "Lecture 1", "Cells are small.", { source: "file", url: "https://x.edu/l1.pdf" })],
     };
     const r = await syncVault(vault, emptyManifest(), outbox, { ...DEFAULT_VAULT_OPTIONS, notes: true });
     expect(vault.read("Ship/Planner.md")).toBe("# Planner\n");
+    expect(vault.read("Ship/Kanban.md")).toContain("kanban-plugin: board");
     expect(vault.read("Ship/Flashcards/Bio cells.md")).toContain("Q::A");
     expect(vault.read("Ship/Notes/Lecture 1.md")).toContain('source: "https://x.edu/l1.pdf"');
-    expect(r.written).toBe(3);
+    expect(r.written).toBe(4);
     // Ship's own folder is never read back as the sailor's notes.
     expect(r.upserts).toEqual([]);
     const again = await syncVault(vault, r.manifest, outbox, { ...DEFAULT_VAULT_OPTIONS, notes: true });
@@ -159,7 +161,7 @@ describe("syncing with a vault", () => {
   it("leaves out what the options switch off", async () => {
     const vault = new MemoryDir("v");
     const outbox = { ...emptyOutbox(), planner: "p", clips: [note("clip:1", "c", "x")] };
-    const r = await syncVault(vault, emptyManifest(), outbox, { clippings: false, planner: false, decks: false, notes: false });
+    const r = await syncVault(vault, emptyManifest(), outbox, { clippings: false, planner: false, kanban: false, decks: false, notes: false });
     expect(r.written).toBe(0);
     expect(r.clipsMoved).toEqual([]);
     expect(vault.children.size).toBe(0);

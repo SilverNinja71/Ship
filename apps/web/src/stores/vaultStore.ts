@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { kanbanToMarkdown } from "../lib/kanban.js";
 import { buildObsidianMarkdown } from "../lib/plannerExport.js";
 import { storageKey, shipStorage } from "../lib/storage.js";
 import {
@@ -20,6 +21,7 @@ import {
 } from "../lib/obsidianVault.js";
 import type { VaultDirHandle, VaultManifest, VaultOptions, VaultOutbox } from "../lib/obsidianVault.js";
 import { notesLoaded, useFleet } from "./fleetStore.js";
+import { usePlanner } from "./plannerStore.js";
 import { useRecall } from "./recallStore.js";
 
 export interface VaultSummary {
@@ -66,6 +68,7 @@ function outbox(): VaultOutbox {
   return {
     clips: notes.filter((n) => n.source === "clip"),
     planner: buildObsidianMarkdown(),
+    kanban: usePlanner.getState().kanban.length ? kanbanToMarkdown(usePlanner.getState().kanban) : null,
     // Decks read from the vault are already there.
     decks: decks.filter((d) => d.source !== "obsidian").map((deck) => ({ deck, cards: cards.filter((c) => c.deckId === deck.id) })),
     notes: notes.filter((n) => n.source === "file"),

@@ -118,7 +118,7 @@ Everything below is on `main`:
 
 Open, as draft pull requests:
 - `claude/flashcards-stage1` (pull request #8): Learn, Test and Match modes, cards from notes, Anki import;
-- `claude/obsidian`: Obsidian vaults, the Note Nook and the Lookout's Web Clipper (see "Obsidian"). It branched from `main`, not from #8; whichever merges second needs a rebase.
+- `claude/obsidian` (pull request #9): Obsidian vaults, the Note Nook and the Lookout's Web Clipper (see "Obsidian"), plus the Kanban board and the 10-minute daily plan (see "Kanban and the daily plan"). It branched from `main`, not from #8; whichever merges second needs a rebase.
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -136,7 +136,7 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 910 tests on `claude/obsidian`, and all pass (run on 2026-11-23):
+`npm test` runs 915 tests on `claude/obsidian`, and all pass (run on 2026-11-23):
 
 | Package | Tests |
 |---|---|
@@ -145,7 +145,7 @@ Every build step now has working code:
 | crew server | 100 |
 | integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34, Obsidian 12) | 197 |
 | extension (incl. video groups 25, clips 5) | 192 |
-| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16, Markdown 7, vault sync 8, clips 2) | 320 |
+| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16, Markdown 7, vault sync 8, clips 2, Kanban and daily plan 5) | 325 |
 
 `npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds.
 
@@ -840,7 +840,7 @@ So without a keyboard (a phone or tablet), nobody can open Crew to join a first 
   - writes the planner as `Ship-Planner.md` into a folder you pick (the browser asks first; Chrome and Edge only), or downloads it;
   - builds a plain-text monthly report to download, or to open in your mail app through a `mailto:` link. Ship itself sends no email.
 
-**Daily check-in:** a button in the panel pays 5 doubloons and 20 XP once a day. The day is counted in UTC (`todayDateKey`), so it rolls over at a different hour than local midnight.
+**Daily check-in:** a button in the panel paid 5 doubloons and 20 XP once a day, counted in UTC. Since 2026-11-23 the reward comes from finishing the 10-minute daily plan instead, counted on the sailor's own calendar (see "Kanban and the daily plan").
 
 **Monthly stats** (`MonthlyStatsModal.tsx`): four slides (focus time, sessions and cycles, top hashtags, habit streaks).
 - It opens by itself on the last day of a month, and on the first visit after a month ends. The Monthly Stats button opens it any time.
@@ -920,7 +920,7 @@ Not fixed; listed so nobody rediscovers them:
 - **Scrolling on a touchscreen.** The canvas still has `touch-action: none` from when the app was one screen. A swipe that starts on the scene may not scroll the page; the pill's "Scroll for study sheets" link does. Not checked on a real phone.
 - **The phone top bar** wraps onto two rows at 390 px wide, and Flashcards and Desk lose their text labels.
 - ~~The planner export wrote each habit as "n/31 days"~~: fixed on `claude/obsidian`; it now counts the habit's own ticks.
-- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, habit ticks never reset, and the daily check-in counts days in UTC.
+- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, and habit ticks never reset. (The UTC check-in day is fixed on `claude/obsidian`.)
 
 ### Verified, and not
 
@@ -1038,6 +1038,7 @@ A new panel (top bar, key `N`, and a button on the page below the scene) for eve
 - Ship's things are written into the vault, each switchable under "What Ship writes":
   - clips go to `Clippings/` (on by default). Once written, a clipping is the sailor's: Ship never overwrites one, and a second clip with the same title gets " 2". The clip note in Ship is then replaced by the vault copy;
   - Banana Planna to `Ship/Planner.md` (on);
+  - the Kanban board to `Ship/Kanban.md`, in the Obsidian Kanban plugin's format (on);
   - each flashcard deck to `Ship/Flashcards/<deck>.md` as `question::answer` lines (on). Decks read from the vault aren't written back. A deck deleted in Ship has its file removed, unless the sailor edited the file;
   - uploaded notes to `Ship/Notes/` (off).
 
@@ -1076,6 +1077,32 @@ A new panel (top bar, key `N`, and a button on the page below the scene) for eve
 - The built extension in full headless Chromium, with Ship and a local test article: Clip this page through the real popup (the popup's "active tab" pointed at the article, since the popup ran as a tab), Readability dropping the menu, sidebar and footer, Save to Ship, the toast, the vault sync moving the clip to `Clippings/` with the Web Clipper properties, and the Lookout's queue emptying.
 
 **Not verified:** a real Obsidian vault on disk (the folder picker can't be driven headless), the browser asking again after a restart, Send to Obsidian (needs Obsidian installed), the popup opened from the toolbar (so `activeTab` itself), real websites, the folder-copy fallback in Safari or Firefox, and two devices with the same vault.
+
+## Kanban and the daily plan (2026-11-23)
+
+The user asked for a Kanban board and to "emphasize 10 minutes every day to plan". Both live in Banana Planna, on `claude/obsidian`. The rules are in `lib/kanban.ts` (5 tests), the state in `plannerStore`, and the sheets in `components/panels/PlannerToday.tsx`.
+
+**The 10-minute daily plan** ("Plan today · 10 min", the planner's first tab):
+- A silent 10-minute countdown ring (Start, Pause, Resume, Reset). It runs from a timestamp, so a hidden tab can't slow it, and it makes no sound when it ends.
+- Four steps, each with a tick: check what's due (the next 3 deadlines and the flashcards due), empty your head onto the board (adds To do cards), pick today's top 3 (stars; at most 3), and plan your Pwedo Pomos (sets the cycles setting).
+- "I've planned my day" records the day and pays 5 doubloons and 20 XP once a day. This replaced the old Daily Check-in button, which counted days in UTC; days are now the sailor's own (`localDayKey`).
+- A planning streak counts days in a row. Today unplanned doesn't break it until the day is over.
+
+**Kept in front of the sailor until today is planned:**
+- Banana Planna opens on this tab (after planning, on the board).
+- A yellow dot on the top bar's Banana Planna button.
+- A banner at the very top of the page below the scene ("Take 10 minutes to plan today"), which turns green with today's top picks and the streak once planned.
+
+**The Kanban board:** To do, Doing and Done columns.
+- Add cards at the bottom of To do or Doing; click a card to edit its text or due date, or delete it.
+- Move cards with the arrows (works on phones) or by dragging (computers). Done stamps when it finished; Clear done empties it.
+- Doing has a gentle limit of 3: past it, the column says "Three at a time keeps you focused" but still accepts the card.
+- ★ picks a card for today's top 3. ▶ starts a Pwedo Pomo with the card as its objective (with the usual one-minute prep) and moves it to Doing.
+- `Ship/Planner.md` gets a Kanban section, and `Ship/Kanban.md` is the board as a note the Obsidian Kanban plugin opens: `kanban-plugin: board`, one `##` per list, `- [ ]` cards, `@{date}` due dates, Done marked complete, and the plugin's settings block. Not checked with the plugin itself.
+
+**Sync:** the board, the planned days and today's picks are in `SYNCED_FIELDS`; the step ticks and the timer stay on the device.
+
+**Verified** in muted headless Chromium: the top-bar dot and the planner opening on today's plan, the countdown running, adding four cards, picking two, "I've planned my day" paying 5 doubloons once with a toast, moving a card with an arrow and another by dragging, adding to Doing, ▶ starting a Pwedo Pomo with the card's text, the banner turning green, and phone width. **Not verified:** a real day rolling over, and the Obsidian Kanban plugin opening `Ship/Kanban.md`.
 
 ## Conventions
 

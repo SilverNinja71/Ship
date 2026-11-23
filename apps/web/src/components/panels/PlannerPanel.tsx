@@ -3,16 +3,19 @@
 
 import { useState } from "react";
 import { buildMonthlyReportText, buildObsidianMarkdown, downloadTextFile } from "../../lib/plannerExport.js";
-import { DAYS, todayDateKey, usePlanner } from "../../stores/plannerStore.js";
+import { DAYS, plannedToday, usePlanner } from "../../stores/plannerStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { useVoyage } from "../../stores/voyageStore.js";
 import { IconCalendar } from "../icons.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
 import { Button, Panel, Tabs, cx } from "../ui.js";
+import { DailyPlanSheet, KanbanBoard } from "./PlannerToday.js";
 
-type PlannerTab = "weekly" | "habits" | "pomodoro" | "monthly" | "sync";
+type PlannerTab = "today" | "kanban" | "weekly" | "habits" | "pomodoro" | "monthly" | "sync";
 
 const MINION_FOR_TAB: Record<PlannerTab, { costume: "banana" | "teddy" | "bunny" | "frog"; note: string }> = {
+  today: { costume: "banana", note: "Ten minutes of planning a day keeps the drifting away." },
+  kanban: { costume: "bunny", note: "To do, Doing, Done: one card at a time." },
   weekly: { costume: "banana", note: "Little by little is a lot over time." },
   habits: { costume: "teddy", note: "Small daily habits build steady voyages." },
   pomodoro: { costume: "bunny", note: "One calm interval at a time!" },
@@ -21,18 +24,10 @@ const MINION_FOR_TAB: Record<PlannerTab, { costume: "banana" | "teddy" | "bunny"
 };
 
 export function PlannerPanel({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<PlannerTab>("weekly");
-  const lastCheckInDay = usePlanner((s) => s.lastCheckInDay);
-  const claimDailyCheckIn = usePlanner((s) => s.claimDailyCheckIn);
-  const toast = useUi((s) => s.toast);
-  const checkedInToday = lastCheckInDay === todayDateKey();
+  // Not planned yet today? Banana Planna opens on the 10-minute plan.
+  const [tab, setTab] = useState<PlannerTab>(() => (plannedToday(usePlanner.getState()) ? "kanban" : "today"));
+  const checkedInToday = usePlanner((s) => plannedToday(s));
   const buddy = MINION_FOR_TAB[tab];
-
-  const onCheckIn = () => {
-    if (claimDailyCheckIn()) {
-      toast("Banana Planna checked in for today!", "info");
-    }
-  };
 
   const now = new Date();
   const isStartOfMonth = now.getDate() <= 3;
@@ -70,11 +65,13 @@ export function PlannerPanel({ onClose }: { onClose: () => void }) {
         </div>
         <button
           type="button"
-          disabled={checkedInToday}
-          onClick={onCheckIn}
-          className="bg-transparent px-2 py-1 font-serif text-sm tracking-wide text-[#6D655C] transition hover:underline underline-offset-4 disabled:opacity-50"
+          onClick={() => setTab("today")}
+          className={cx(
+            "rounded-full px-3 py-1 font-serif text-sm tracking-wide transition",
+            checkedInToday ? "bg-transparent text-[#2F6B55] hover:underline underline-offset-4" : "bg-[#FFE27A] text-[#4B3A0B] hover:bg-[#FFD95A]",
+          )}
         >
-          {checkedInToday ? "Checked in today ✓" : "Daily Check-in"}
+          {checkedInToday ? "Planned today ✓" : "Plan today · 10 min"}
         </button>
       </div>
 
@@ -82,6 +79,8 @@ export function PlannerPanel({ onClose }: { onClose: () => void }) {
         value={tab}
         onChange={setTab}
         tabs={[
+          { id: "today", label: checkedInToday ? "Today ✓" : "Plan today · 10 min" },
+          { id: "kanban", label: "Kanban" },
           { id: "weekly", label: "Weekly Plan" },
           { id: "habits", label: "Habit Tracker" },
           { id: "pomodoro", label: "Pwedo Pomo" },
@@ -90,6 +89,8 @@ export function PlannerPanel({ onClose }: { onClose: () => void }) {
         ]}
       />
 
+      {tab === "today" && <DailyPlanSheet onOpenBoard={() => setTab("kanban")} />}
+      {tab === "kanban" && <KanbanBoard />}
       {tab === "weekly" && <WeeklySheet />}
       {tab === "habits" && <HabitSheet />}
       {tab === "pomodoro" && <PomodoroSheet />}

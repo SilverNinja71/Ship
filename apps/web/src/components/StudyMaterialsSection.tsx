@@ -9,7 +9,7 @@ import { usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useUi } from "../stores/uiStore.js";
 import { useVoyage } from "../stores/voyageStore.js";
-import { BananaPlannaSection } from "./BananaPlannaSection.js";
+import { BananaPlannaSection, DailyPlanBanner } from "./BananaPlannaSection.js";
 import { useNow } from "./Hud.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { DieCutSticker } from "./StickerArt.js";
@@ -56,6 +56,9 @@ export function StudyMaterialsSection() {
             </a>
           </div>
         </div>
+
+        {/* 0. The 10-minute daily plan comes first: plan, then sail. */}
+        <DailyPlanBanner onOpen={() => useUi.getState().openPanel("planner")} />
 
         {/* 1. Interactive Pomodoro Tracker Task Form */}
         <PomodoroTrackerSection />

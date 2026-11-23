@@ -3,6 +3,9 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { newId } from "../lib/ids.js";
+import { localDayKey, moveCard, PLAN_MINUTES, togglePick } from "../lib/kanban.js";
+import type { KanbanCard, KanbanColumnId } from "../lib/kanban.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 import { useEconomy } from "./economyStore.js";
 
@@ -57,6 +60,18 @@ export interface PlannerState {
   monthlyStatsOpen: boolean;
   /** Optional YYYY-MM target month to display in MonthlyStatsModal. */
   monthlyStatsTargetMonth: string | null;
+  /** The Kanban board, in board order. */
+  kanban: KanbanCard[];
+  /** Local days (YYYY-MM-DD) the sailor finished the 10-minute daily plan; the newest 120. */
+  plannedDays: string[];
+  /** Today's top 3 card ids, for the day in `picksDay` (stale picks from another day count as none). */
+  picks: string[];
+  picksDay: string | null;
+  /** This device only: the daily plan's step ticks, and its 10-minute timer. */
+  planSteps: { day: string; done: boolean[] };
+  planTimerEndsAt: number | null;
+  /** Milliseconds left while paused. */
+  planTimerLeft: number | null;
 
   setWeeklyTitle(title: string): void;
   setWeeklyGoal(goal: string): void;
@@ -78,6 +93,29 @@ export interface PlannerState {
   closeMonthlyStats(): void;
   markMonthlyStatsSeen(monthKey: string): void;
   syncActiveMonth(monthKey: string): void;
+  addKanbanCard(text: string, column?: KanbanColumnId, due?: string | null): KanbanCard | null;
+  updateKanbanCard(id: string, patch: Partial<Pick<KanbanCard, "text" | "due">>): void;
+  moveKanbanCard(id: string, column: KanbanColumnId, beforeId?: string | null): void;
+  deleteKanbanCard(id: string): void;
+  clearDoneCards(): void;
+  togglePick(id: string): void;
+  togglePlanStep(index: number): void;
+  startPlanTimer(now?: number): void;
+  pausePlanTimer(now?: number): void;
+  resetPlanTimer(): void;
+  /** Marks today planned and pays the daily reward once. False if today was already planned. */
+  finishDailyPlan(): boolean;
+}
+
+const PLAN_MS = PLAN_MINUTES * 60_000;
+
+/** Today's picks, or none if they were made on another day. */
+export function todaysPicks(s: Pick<PlannerState, "picks" | "picksDay">, today = localDayKey()): string[] {
+  return s.picksDay === today ? s.picks : [];
+}
+
+export function plannedToday(s: Pick<PlannerState, "plannedDays">, today = localDayKey()): boolean {
+  return s.plannedDays.includes(today);
 }
 
 function makeEmptyWeeklyCells(): string[][] {
@@ -111,8 +149,9 @@ function makeSession(num: number): PomodoroSession {
   };
 }
 
+/** The sailor's own calendar day (it used to be the UTC day, which rolled over at the wrong hour). */
 export function todayDateKey(now = new Date()): string {
-  return now.toISOString().slice(0, 10);
+  return localDayKey(now);
 }
 
 /** Local Sunday 12:00 am week key (YYYY-MM-DD) for auto-resetting the Weekly Plan. */
@@ -150,6 +189,13 @@ export const usePlanner = create<PlannerState>()(
       lastActiveMonth: null,
       monthlyStatsOpen: false,
       monthlyStatsTargetMonth: null,
+      kanban: [],
+      plannedDays: [],
+      picks: [],
+      picksDay: null,
+      planSteps: { day: "", done: [] },
+      planTimerEndsAt: null,
+      planTimerLeft: null,
 
       setWeeklyTitle: (weeklyTitle) => set({ weeklyTitle }),
       setWeeklyGoal: (weeklyGoal) => set({ weeklyGoal }),
@@ -232,7 +278,7 @@ export const usePlanner = create<PlannerState>()(
       claimDailyCheckIn: (todayKey = todayDateKey()) => {
         if (get().lastCheckInDay === todayKey) return false;
         set({ lastCheckInDay: todayKey });
-        useEconomy.getState().earn(5, 20, "Daily Tiny Planner check-in");
+        useEconomy.getState().earn(5, 20, "Planned the day in Banana Planna");
         return true;
       },
 
@@ -241,6 +287,48 @@ export const usePlanner = create<PlannerState>()(
       closeMonthlyStats: () => set({ monthlyStatsOpen: false }),
       markMonthlyStatsSeen: (monthKey) => set({ lastMonthlyStatsMonth: monthKey }),
       syncActiveMonth: (monthKey) => set({ lastActiveMonth: monthKey }),
+
+      addKanbanCard: (text, column = "todo", due = null) => {
+        const clean = text.trim();
+        if (!clean) return null;
+        const now = Date.now();
+        const card: KanbanCard = { id: newId("kanban"), text: clean.slice(0, 500), column, due, createdAt: now, doneAt: column === "done" ? now : null };
+        set({ kanban: moveCard([...get().kanban, card], card.id, column) });
+        return card;
+      },
+      updateKanbanCard: (id, patch) =>
+        set({ kanban: get().kanban.map((c) => (c.id === id ? { ...c, ...patch, text: patch.text !== undefined ? patch.text.slice(0, 500) : c.text } : c)) }),
+      moveKanbanCard: (id, column, beforeId = null) => set({ kanban: moveCard(get().kanban, id, column, beforeId) }),
+      deleteKanbanCard: (id) => set({ kanban: get().kanban.filter((c) => c.id !== id), picks: get().picks.filter((p) => p !== id) }),
+      clearDoneCards: () => set({ kanban: get().kanban.filter((c) => c.column !== "done") }),
+      togglePick: (id) => {
+        const today = localDayKey();
+        set({ picks: togglePick(todaysPicks(get(), today), id), picksDay: today });
+      },
+      togglePlanStep: (index) => {
+        const today = localDayKey();
+        const done = get().planSteps.day === today ? [...get().planSteps.done] : [];
+        done[index] = !done[index];
+        set({ planSteps: { day: today, done } });
+      },
+      startPlanTimer: (now = Date.now()) => {
+        if (get().planTimerEndsAt !== null && get().planTimerEndsAt! > now) return;
+        const left = get().planTimerLeft ?? PLAN_MS;
+        set({ planTimerEndsAt: now + (left > 0 ? left : PLAN_MS), planTimerLeft: null });
+      },
+      pausePlanTimer: (now = Date.now()) => {
+        const ends = get().planTimerEndsAt;
+        if (ends === null) return;
+        set({ planTimerEndsAt: null, planTimerLeft: Math.max(0, ends - now) });
+      },
+      resetPlanTimer: () => set({ planTimerEndsAt: null, planTimerLeft: null }),
+      finishDailyPlan: () => {
+        const today = localDayKey();
+        if (get().plannedDays.includes(today)) return false;
+        set({ plannedDays: [...get().plannedDays, today].slice(-120), planTimerEndsAt: null, planTimerLeft: null });
+        get().claimDailyCheckIn(today);
+        return true;
+      },
     }),
     {
       name: storageKey("planner"),
@@ -261,6 +349,13 @@ export const usePlanner = create<PlannerState>()(
         lastCheckInDay: s.lastCheckInDay,
         lastMonthlyStatsMonth: s.lastMonthlyStatsMonth,
         lastActiveMonth: s.lastActiveMonth,
+        kanban: s.kanban,
+        plannedDays: s.plannedDays,
+        picks: s.picks,
+        picksDay: s.picksDay,
+        planSteps: s.planSteps,
+        planTimerEndsAt: s.planTimerEndsAt,
+        planTimerLeft: s.planTimerLeft,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;

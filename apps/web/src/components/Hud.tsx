@@ -15,7 +15,7 @@ import { retryCloudSync } from "../hooks/useCloudSync.js";
 import { signInWithGoogle, signOutGoogle, subscribeAuthUser } from "../lib/firebase.js";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
-import { usePlanner } from "../stores/plannerStore.js";
+import { plannedToday, usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useSettings } from "../stores/settingsStore.js";
 import { useSync } from "../stores/syncStore.js";
@@ -172,6 +172,7 @@ function TopBar({
   const sync = useSync();
   const now = useNow(30_000);
   const due = dueNow(cards, now).length;
+  const plannedTodayYet = usePlanner((s) => plannedToday(s));
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 sm:py-4">
@@ -180,10 +181,14 @@ function TopBar({
           type="button"
           onClick={() => openPanel("planner")}
           className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
-          title="Banana Planna (P)"
+          title={plannedTodayYet ? "Banana Planna (P)" : "Banana Planna (P): take 10 minutes to plan today"}
         >
-          <IconCalendar size={15} />
+          <span className="relative">
+            <IconCalendar size={15} />
+            {!plannedTodayYet && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-[#E8B84A] ring-2 ring-[var(--page-bg)]" aria-hidden="true" />}
+          </span>
           <span>Banana Planna</span>
+          {!plannedTodayYet && <span className="sr-only">(not planned yet today)</span>}
         </button>
 
         <button

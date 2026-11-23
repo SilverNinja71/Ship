@@ -320,6 +320,7 @@ function Reader({
 const OPTION_TEXT: Record<keyof VaultOptions, { label: string; hint: string }> = {
   clippings: { label: "Clippings", hint: "Lookout clips go to Clippings/, like Obsidian's Web Clipper." },
   planner: { label: "Banana Planna", hint: "Kept up to date in Ship/Planner.md." },
+  kanban: { label: "Kanban board", hint: "Ship/Kanban.md, which Obsidian's Kanban plugin opens as a board." },
   decks: { label: "Flashcard decks", hint: "Written to Ship/Flashcards/ as question::answer lines." },
   notes: { label: "Uploaded notes", hint: "PDF, Word and PowerPoint notes copied to Ship/Notes/." },
 };

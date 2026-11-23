@@ -2,7 +2,8 @@
 // Extracted from StudyMaterialsSection for cleaner separation on the stationery graph grid.
 
 import { useEffect, useState } from "react";
-import { DAYS, usePlanner } from "../stores/plannerStore.js";
+import { localDayKey, planStreak } from "../lib/kanban.js";
+import { DAYS, plannedToday, todaysPicks, usePlanner } from "../stores/plannerStore.js";
 import { useUi } from "../stores/uiStore.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { DieCutSticker } from "./StickerArt.js";
@@ -191,6 +192,52 @@ export function BananaPlannaSection() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The 10-minute daily plan, front and centre until today is planned. */
+export function DailyPlanBanner({ onOpen }: { onOpen: () => void }) {
+  const today = localDayKey();
+  const done = usePlanner((s) => plannedToday(s, today));
+  const plannedDays = usePlanner((s) => s.plannedDays);
+  const kanban = usePlanner((s) => s.kanban);
+  const picks = todaysPicks({ picks: usePlanner((s) => s.picks), picksDay: usePlanner((s) => s.picksDay) }, today);
+  const streak = planStreak(plannedDays, today);
+  const count = (col: string) => kanban.filter((c) => c.column === col).length;
+  const top = picks.map((id) => kanban.find((c) => c.id === id)).filter((c) => c !== undefined);
+
+  return (
+    <div
+      className={cx(
+        "flex flex-wrap items-center gap-x-5 gap-y-3 rounded-2xl border px-4 py-3.5",
+        done ? "border-[#C7E6D5] bg-[#F1FAF5]" : "border-[#F1E3A0] bg-[#FFF9DC]",
+      )}
+    >
+      <PastelMinionBadge costume="banana" size={44} />
+      <div className="min-w-0 flex-1">
+        <p className="font-display text-lg text-[#4B3A0B]">{done ? "Today is planned ✓" : "Take 10 minutes to plan today"}</p>
+        <p className="text-sm text-[#6B5E45]">
+          {done
+            ? top.length
+              ? `Top picks: ${top.map((c) => c.text).join(" · ")}`
+              : "Your plan is set. Sail it one Pwedo Pomo at a time."
+            : "Check what's due, empty your head onto the Kanban board, pick your top 3 and plan your Pwedo Pomos."}
+        </p>
+        <p className="mt-0.5 text-xs text-[#8A7B5C]">
+          {streak > 0 ? `🍌 ${streak}-day planning streak · ` : ""}Kanban: {count("todo")} to do · {count("doing")} doing · {count("done")} done
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cx(
+          "rounded-full px-4 py-2 font-serif text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+          done ? "border border-[#C7E6D5] bg-white text-[#2F6B55] hover:bg-[#E9F6EF]" : "bg-[#FFE27A] text-[#4B3A0B] shadow-[0_3px_0_#E0B93E] hover:bg-[#FFD95A]",
+        )}
+      >
+        {done ? "Open the board" : "Plan now · 10 min"}
+      </button>
     </div>
   );
 }
