@@ -52,12 +52,89 @@ export function sourceTypeOf(url: string): BottleSourceType {
   return "website";
 }
 
+const EMAIL_WARNING = "It has an email address in it.";
+const PHONE_WARNING = "It has something that looks like a phone number.";
+const EMAIL = /[\w.+-]+@([\w-]+\.[\w.-]+)/g;
+
+// Ways to reach someone outside Ship. App names that are also everyday words (the Apple of
+// Discord, the Zimmermann Telegram, a snap election, "snap" in physics) count only next to a
+// word that points at an account; the others count anywhere, as whole words.
+const SOCIAL_APP = /\b(snapchat|snap ?chat|instagram|insta|tiktok|tik tok|whatsapp|whats app)\b/i;
+const SOCIAL_WORD =
+  /\b(?:(?:my|our|on|via|add me on|find me on|message me on|dm me on|join (?:my|our))\s+(?:discord|telegram|snap)\b|(?:discord|telegram|snap)\s*(?:@|(?:user ?name|name|handle|id|tag|server|group|channel|account|code)\b))/i;
+const ASK_TO_CONTACT = /\b(?:add me|dm me|text me)\b/i;
+const INVITE_LINK =
+  /\bdiscord(?:app)?\.(?:gg|com\/invite)\/|(?:^|[^\w.])(?:t|wa)\.me\b|\bchat\.whatsapp\.com\b|\bsnapchat\.com\/add\b|\binstagram\.com\/[\w.]/i;
+// "@name" not inside an email (no letter just before the @), and not code: Java's @Override,
+// Python's @staticmethod, CSS's @media, or anything called like a function, as in @app.route(...).
+const HANDLE = /(?:^|[^\w@.+-])@([A-Za-z_][\w.]{1,29})(?![\w.]*\()/g;
+const CODE_ANNOTATIONS = new Set([
+  "override", "deprecated", "suppresswarnings", "functionalinterface", "safevarargs", "test", "param", "return", "returns", "throws",
+  "author", "see", "since", "version", "link", "inheritdoc", "staticmethod", "classmethod", "property", "abstractmethod", "dataclass",
+  "media", "import", "keyframes", "font-face", "supports", "page", "charset", "namespace", "layer", "container", "apply", "tailwind", "interface",
+]);
+
+function contactWarnings(all: string): string[] {
+  const warnings: string[] = [];
+  if (SOCIAL_APP.test(all) || SOCIAL_WORD.test(all)) warnings.push("It names a chat or social app, which could be a way to find someone.");
+  if (ASK_TO_CONTACT.test(all)) warnings.push("It asks people to get in touch (like \"add me\" or \"DM me\").");
+  if ([...all.matchAll(HANDLE)].some((m) => !CODE_ANNOTATIONS.has(m[1]!.toLowerCase()))) warnings.push("It has something that looks like a username (@name).");
+  if (INVITE_LINK.test(all)) warnings.push("It has an invite or profile link for a chat or social app.");
+  return warnings;
+}
+
+// RFC 2606's made-up domains: an example address in a lesson isn't anyone's.
+const EXAMPLE_DOMAIN = /(^|\.)(example\.(com|org|net)|example|test|invalid|localhost)$/i;
+
+const PHONE_CONTEXT = /\b(?:call|text|phone|cell|mobile|tel|number is|whatsapp|ring|reach me)\b[^\d\n]{0,20}$/i;
+
+/**
+ * Phone numbers, strictly enough to block on: 10–15 digits written the way phone numbers are,
+ * so numbers from a lesson don't count: a decimal (1.602176634, pi's digits), thousands
+ * (1 000 000 000), or a bare run (2147483647) unless it starts with 0 or follows "call me",
+ * "my number is" and the like.
+ */
+function hasPhoneNumber(all: string): boolean {
+  const text = all.replace(/\b(19|20)\d{2}\b/g, "");
+  for (const m of text.matchAll(/\+?\(?\d[\d \t().-]{8,}\d/g)) {
+    const raw = m[0];
+    const groups = raw.split(/\D+/).filter(Boolean);
+    const digits = groups.join("").length;
+    if (digits < 10 || digits > 15) continue;
+    if (/^\+\d|^\(\d{1,4}\)/.test(raw)) return true;
+    if (groups.length === 1) {
+      if (raw.startsWith("0") || PHONE_CONTEXT.test(text.slice(Math.max(0, m.index - 40), m.index))) return true;
+      continue;
+    }
+    if (groups.length === 2 && /^\d{1,3}\.\d+$/.test(raw)) continue;
+    if (groups.slice(1).every((g) => g.length === 3)) continue;
+    if (groups.slice(1).every((g) => g.length >= 2)) return true;
+  }
+  return false;
+}
+
+/**
+ * Contact details: a social or chat app, a username, an invite link, "add me", a real email
+ * address or a phone number. Study Rooms refuses a skipper's own deck that has any of these
+ * (ROOM_DECK_CONTACT_PROBLEM); Bottle Bay only warns.
+ */
+export function hasContactDetails(texts: readonly string[]): string[] {
+  const all = texts.join("\n");
+  const warnings: string[] = [];
+  if ([...all.matchAll(EMAIL)].some((m) => !EXAMPLE_DOMAIN.test(m[1]!.replace(/\.+$/, "")))) warnings.push(EMAIL_WARNING);
+  if (hasPhoneNumber(all)) warnings.push(PHONE_WARNING);
+  return [...warnings, ...contactWarnings(all)];
+}
+
+/** What a skipper sees when their own deck has contact details in it. */
+export const ROOM_DECK_CONTACT_PROBLEM = "Room decks can't hold contact details: remove them first.";
+
 /** Things in a bottle that could point back at a person. Warnings, not refusals: the sailor decides. */
 export function personalInfoWarnings(texts: readonly string[], url: string | null): string[] {
   const all = texts.join("\n");
   const warnings: string[] = [];
-  if (/[\w.+-]+@[\w-]+\.[\w.-]+/.test(all)) warnings.push("It has an email address in it.");
-  if (/(?:\+?\d[\s().-]?){9,}\d/.test(all.replace(/\b(19|20)\d{2}\b/g, ""))) warnings.push("It has something that looks like a phone number.");
+  if (/[\w.+-]+@[\w-]+\.[\w.-]+/.test(all)) warnings.push(EMAIL_WARNING);
+  if (/(?:\+?\d[\s().-]?){9,}\d/.test(all.replace(/\b(19|20)\d{2}\b/g, ""))) warnings.push(PHONE_WARNING);
   if (/\b\d{1,5}\s+\w+(\s\w+)?\s+(street|st|avenue|ave|road|rd|lane|ln|drive|dr|boulevard|blvd)\b/i.test(all)) warnings.push("It has something that looks like a street address.");
   if (/\b(my name is|i am|i'm)\s+[A-Z][a-z]+\s+[A-Z][a-z]+/.test(all)) warnings.push("It may say someone's full name.");
   if (url) {
@@ -72,6 +149,8 @@ export function personalInfoWarnings(texts: readonly string[], url: string | nul
       warnings.push("It links to a file in someone's own cloud storage. People who open it may see the owner's name.");
     if (/(^|\.)instructure\.com$|canvas\./.test(host)) warnings.push("It's a school (Canvas) link: others usually can't open it, and it names the school.");
   }
+  // The link too: a Discord invite or an Instagram profile is a way to reach its owner.
+  warnings.push(...contactWarnings(url ? `${all}\n${url}` : all));
   return warnings;
 }
 

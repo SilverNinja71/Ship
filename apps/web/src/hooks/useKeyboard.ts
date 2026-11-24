@@ -16,6 +16,7 @@ export const PANEL_KEYS: Record<string, PanelId> = {
   s: "shipwright",
   w: "wardrobe",
   c: "crew",
+  r: "rooms",
   g: "fleet",
   o: "lookout",
   ",": "settings",

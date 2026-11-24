@@ -1,25 +1,33 @@
 // 12 original white-bordered die-cut SVG study stickers starring Ship's crew.
 // Hand-crafted vector artwork (100% original, NO traced/third-party assets).
 
+import { STICKER_IDS } from "@ship/shared-types";
+
+export type StickerId = (typeof STICKER_IDS)[number];
+
 export interface StickerDef {
-  id: string;
+  id: StickerId;
   label: string;
 }
 
-export const STICKERS: readonly StickerDef[] = [
-  { id: "100-sign", label: "100% Goal" },
-  { id: "fire-focus", label: "Locked In Fire" },
-  { id: "boba-break", label: "Boba Break" },
-  { id: "teacup-nap", label: "Warm Matcha Cup" },
-  { id: "plane-pwedo", label: "Paper Plane Pwedo" },
-  { id: "blanket-zz", label: "Cozy Blanket zZ" },
-  { id: "book-stack", label: "Book Stack" },
-  { id: "astro-mochi", label: "Astro Mochi" },
-  { id: "mini-dumbbell", label: "Brain Lift" },
-  { id: "buttered-toast", label: "Buttered Toast" },
-  { id: "star-sparkle", label: "Star Sparkle" },
-  { id: "dango-trio", label: "Dango Trio" },
-] as const;
+const STICKER_LABELS: Record<StickerId, string> = {
+  "100-sign": "100% Goal",
+  "fire-focus": "Locked In Fire",
+  "boba-break": "Boba Break",
+  "teacup-nap": "Warm Matcha Cup",
+  "plane-pwedo": "Paper Plane Pwedo",
+  "blanket-zz": "Cozy Blanket zZ",
+  "book-stack": "Book Stack",
+  "astro-mochi": "Astro Mochi",
+  "mini-dumbbell": "Brain Lift",
+  "buttered-toast": "Buttered Toast",
+  "star-sparkle": "Star Sparkle",
+  "dango-trio": "Dango Trio",
+};
+
+// Study Rooms send a sticker as its place in STICKER_IDS (say 24..35), so the order lives in
+// shared-types and this list follows it.
+export const STICKERS: readonly StickerDef[] = STICKER_IDS.map((id) => ({ id, label: STICKER_LABELS[id] }));
 
 export function DieCutSticker({ id, size = 34 }: { id: string; size?: number }) {
   const ink = "#7C746B";

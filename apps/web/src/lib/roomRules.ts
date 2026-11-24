@@ -1,0 +1,855 @@
+// Study Rooms' own rules, with no database in sight: codes and invite links, sailor keys,
+// made-up names, the only builders of what a sailor writes, reading a room back, who's here and
+// who skippers, sailing together, the Kraken's damage, rewards, and the two break games.
+// Every number the database also checks comes from ROOM_LIMITS (firestore.rules mirrors them),
+// and bottleStep follows the rules' turn check exactly, so a turn the app sends is one the
+// database accepts.
+
+import {
+  NICK_ADJECTIVES,
+  NICK_NOUNS,
+  NICK_NUMBER_SKIP,
+  QUEST_BEASTS,
+  ROOM_ACCESSORIES,
+  ROOM_CHEERS,
+  ROOM_CODE_ALPHABET,
+  ROOM_COSTUMES,
+  ROOM_LIMITS,
+  ROOM_NAME_FIRST,
+  ROOM_NAME_PLACE,
+  ROOM_REPORT_REASONS,
+  ROOM_SUBJECTS,
+  STICKER_IDS,
+  beastsDefeatedBetween,
+} from "@ship/shared-types";
+import type {
+  BottleCard,
+  BottleGame,
+  Room,
+  RoomCard,
+  RoomCostume,
+  RoomDeckRef,
+  RoomGame,
+  RoomLook,
+  RoomMember,
+  RoomMode,
+  RoomReportReason,
+  RoomSail,
+  RoomState,
+  TidyGame,
+  VoyagePhase,
+  VoyagePresetId,
+} from "@ship/shared-types";
+import { MATCH_PENALTY_MS } from "@ship/active-recall-engine";
+import type { PracticeCard } from "@ship/active-recall-engine";
+
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+
+const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
+const KEY_PATTERN = /^[0-9a-f]{64}$/;
+
+// ---- Codes and links ------------------------------------------------------------------------
+
+/** A fresh room code. 256 is a multiple of 32, so `byte % 32` favours no letter. */
+export function newRoomCode(randomBytes: (n: number) => Uint8Array): string {
+  const bytes = randomBytes(ROOM_LIMITS.codeLength);
+  if (bytes.length < ROOM_LIMITS.codeLength) throw new RangeError("A room code needs 8 random bytes.");
+  let code = "";
+  for (let i = 0; i < ROOM_LIMITS.codeLength; i++) code += ROOM_CODE_ALPHABET[bytes[i]! % ROOM_CODE_ALPHABET.length];
+  return code;
+}
+
+function decode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/** A typed or pasted code, made tidy: spaces and dashes dropped, capitals, or what's wrong with it. A pasted invite link works too. */
+export function normalizeCode(input: string): { ok: true; code: string } | { ok: false; reason: string } {
+  const linked = /[#&?]room=([^&#\s]*)/i.exec(input);
+  const raw = (linked ? decode(linked[1]!) : input).replace(/[\s\-‐‑–—_]+/g, "").toUpperCase();
+  if (!raw) return { ok: false, reason: "Type the room's code: 8 letters and numbers." };
+  if (/[IO01]/.test(raw)) return { ok: false, reason: "Room codes never use the letters I or O, or the numbers 0 or 1. Check those characters again." };
+  if (/[^A-Z2-9]/.test(raw)) return { ok: false, reason: "A room code only has letters and numbers." };
+  if (raw.length < ROOM_LIMITS.codeLength) return { ok: false, reason: `That code is too short: room codes have ${ROOM_LIMITS.codeLength} letters and numbers.` };
+  if (raw.length > ROOM_LIMITS.codeLength) return { ok: false, reason: `That code is too long: room codes have ${ROOM_LIMITS.codeLength} letters and numbers.` };
+  return CODE_PATTERN.test(raw) ? { ok: true, code: raw } : { ok: false, reason: "That doesn't look like a room code." };
+}
+
+/** "K7MP2QXA" as "K7MP 2QXA", easier to read out loud. */
+export function formatCode(code: string): string {
+  return code.length === ROOM_LIMITS.codeLength ? `${code.slice(0, 4)} ${code.slice(4)}` : code;
+}
+
+/** The room code in an invite link's #fragment ("#room=k7mp-2qxa" gives "K7MP2QXA"), or null. */
+export function parseInviteHash(hash: string): string | null {
+  const m = /(?:^#?|[#&])room=([^&#]*)/i.exec(hash);
+  if (!m) return null;
+  const r = normalizeCode(decode(m[1]!));
+  return r.ok ? r.code : null;
+}
+
+/** The invite link. The code rides in the #fragment, which browsers never send to a server. */
+export function inviteLink(code: string, origin: string, pathname: string): string {
+  return `${origin}${pathname}#room=${code}`;
+}
+
+/** What's left of location.hash once the invite is taken out ("" when nothing is). */
+export function withoutInviteHash(hash: string): string {
+  const body = hash.replace(/^#/, "");
+  if (!/(?:^|&)room=/i.test(body)) return hash;
+  const rest = body.split("&").filter((part) => part && !/^room=/i.test(part));
+  return rest.length ? `#${rest.join("&")}` : "";
+}
+
+// ---- Keys -----------------------------------------------------------------------------------
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** A sailor's key in one room: the same as the rules' sha256(uid + '/' + code), never the account id. */
+export function memberKey(uid: string, code: string): Promise<string> {
+  return sha256Hex(`${uid}/${code}`);
+}
+
+/** A report's key: can't be matched to the reporter's sailor key. */
+export function reportKey(uid: string, code: string): Promise<string> {
+  return sha256Hex(`report/${uid}/${code}`);
+}
+
+// ---- Words ----------------------------------------------------------------------------------
+
+/** "Cozy Dango 42". The lists only grow, so an index from a newer app shows a plain stand-in. */
+export function nickText(n: readonly [number, number, number]): string {
+  const adjective = NICK_ADJECTIVES[n[0]];
+  const noun = NICK_NOUNS[n[1]];
+  return adjective && noun ? `${adjective} ${noun} ${n[2]}` : `Sailor ${n[2]}`;
+}
+
+/** "Mellow Lighthouse". */
+export function roomNameText(name: readonly [number, number]): string {
+  const first = ROOM_NAME_FIRST[name[0]];
+  const place = ROOM_NAME_PLACE[name[1]];
+  return first && place ? `${first} ${place}` : "Study Room";
+}
+
+export function subjectText(i: number): string {
+  return ROOM_SUBJECTS[i] ?? "Another subject";
+}
+
+const pick = (rand: () => number, count: number) => Math.min(count - 1, Math.max(0, Math.floor(rand() * count)));
+
+/** Nickname numbers 1–99, without the ones nobody gets. */
+const NICK_NUMBERS = Array.from({ length: ROOM_LIMITS.nickNumberMax }, (_, i) => i + 1).filter((n) => !NICK_NUMBER_SKIP.includes(n));
+
+export function randomNick(rand: () => number): [number, number, number] {
+  return [pick(rand, NICK_ADJECTIVES.length), pick(rand, NICK_NOUNS.length), NICK_NUMBERS[pick(rand, NICK_NUMBERS.length)]!];
+}
+
+export function randomRoomName(rand: () => number): [number, number] {
+  return [pick(rand, ROOM_NAME_FIRST.length), pick(rand, ROOM_NAME_PLACE.length)];
+}
+
+/** A first look: one of the first four costumes (the banana is never picked for you), and no accessory. */
+export function randomLook(rand: () => number): RoomLook {
+  return { nick: randomNick(rand), costume: pick(rand, 4), accessory: 0 };
+}
+
+// ---- Building writes ------------------------------------------------------------------------
+
+/** A new sailor's entry, apart from the three server times rooms.ts adds (in, seen, cr). */
+export type MemberCore = { n: [number, number, number]; c: number; a: number; st: 0; end: null; dmg: 0; say: -1; sayAt: null; gid: 0; g: 0; gt: 0; gp: 0 };
+
+const wholeIn = (v: unknown, lo: number, hi: number, fallback: number) => (typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : fallback);
+
+/**
+ * The only builder of a new sailor's entry. It copies the three look numbers and nothing else,
+ * so no name, email or goal can ride along, and keeps each inside what the rules accept.
+ */
+export function newMemberFields(look: RoomLook): MemberCore {
+  const nick = Array.isArray(look?.nick) ? look.nick : [];
+  let number = wholeIn(nick[2], 1, ROOM_LIMITS.nickNumberMax, 7);
+  if (NICK_NUMBER_SKIP.includes(number)) number += 1;
+  return {
+    n: [wholeIn(nick[0], 0, NICK_ADJECTIVES.length - 1, 0), wholeIn(nick[1], 0, NICK_NOUNS.length - 1, 0), number],
+    c: wholeIn(look?.costume, 0, ROOM_COSTUMES.length - 1, 0),
+    a: wholeIn(look?.accessory, 0, ROOM_ACCESSORIES.length - 1, 0),
+    st: 0,
+    end: null,
+    dmg: 0,
+    say: -1,
+    sayAt: null,
+    gid: 0,
+    g: 0,
+    gt: 0,
+    gp: 0,
+  };
+}
+
+/** What a sailor's next own write changes. `endsAt` is server time; null means no clock. */
+export interface SelfPatch {
+  st?: RoomState;
+  endsAt?: number | null;
+  addDmg?: number;
+  say?: number;
+  tidy?: { gid: number; g: number; gt: number; gp: number };
+}
+
+/** Two queued changes as one write: the later wins, and focus minutes add up. */
+export function mergeSelf(a: SelfPatch, b: SelfPatch): SelfPatch {
+  const out: SelfPatch = {};
+  for (const p of [a, b]) {
+    if (p.st !== undefined) out.st = p.st;
+    if (p.endsAt !== undefined) out.endsAt = p.endsAt;
+    if (p.say !== undefined) out.say = p.say;
+    if (p.tidy !== undefined) out.tidy = { ...p.tidy };
+  }
+  if (a.addDmg !== undefined || b.addDmg !== undefined) out.addDmg = (a.addDmg ?? 0) + (b.addDmg ?? 0);
+  return out;
+}
+
+/** 0 in port (docked or preparing), 1 focusing, 2 on a break, 3 paused. */
+export function roomStateFor(phase: VoyagePhase, prepEndsAt: number | null): RoomState {
+  if (prepEndsAt !== null) return 0;
+  switch (phase) {
+    case "sailing":
+      return 1;
+    case "shore-leave":
+      return 2;
+    case "drifting":
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+/** Focus minutes the rules let this sailor add now: one per minute since their last credit, plus a minute of slack. */
+export function creditableMinutes(m: RoomMember, serverNow: number): number {
+  return Math.max(0, Math.floor(((serverNow - m.creditedAt) / SECOND + ROOM_LIMITS.creditSlackSeconds) / 60));
+}
+
+// ---- Reading --------------------------------------------------------------------------------
+
+type Data = Record<string, unknown>;
+
+const isObject = (v: unknown): v is Data => typeof v === "object" && v !== null && !Array.isArray(v);
+const isInt = (v: unknown, lo = -Infinity, hi = Infinity): v is number => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
+const isKey = (v: unknown): v is string => typeof v === "string" && KEY_PATTERN.test(v);
+const strings = (v: unknown, max: number): string[] | null => (Array.isArray(v) && v.length <= max && v.every((s) => typeof s === "string") ? [...(v as string[])] : null);
+
+/**
+ * A database time in ms: a Firestore Timestamp (anything with toMillis), a Date or a number.
+ * A server time still on its way reads as null in some snapshots; "now" stands in, so a sailor
+ * never looks long gone because of it. Anything else is undefined (not a time).
+ */
+function timeOf(v: unknown): number | undefined {
+  if (v === null) return Date.now();
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  if (v instanceof Date) return v.getTime();
+  if (isObject(v) && typeof v.toMillis === "function") {
+    const t = (v.toMillis as () => unknown)();
+    return typeof t === "number" && Number.isFinite(t) ? t : undefined;
+  }
+  return undefined;
+}
+
+/** For fields that may be null on purpose (no clock, no cheer). */
+function optionalTime(v: unknown): number | null | undefined {
+  return v === null || v === undefined ? null : timeOf(v);
+}
+
+function toMember(key: string, d: unknown): RoomMember | null {
+  if (!isKey(key) || !isObject(d)) return null;
+  const n = d.n;
+  if (!Array.isArray(n) || n.length !== 3 || !isInt(n[0], 0, ROOM_LIMITS.wordList - 1) || !isInt(n[1], 0, ROOM_LIMITS.wordList - 1)) return null;
+  if (!isInt(n[2], 1, ROOM_LIMITS.nickNumberMax) || NICK_NUMBER_SKIP.includes(n[2])) return null;
+  if (!isInt(d.c, 0, ROOM_LIMITS.costumes - 1) || !isInt(d.a, 0, ROOM_LIMITS.accessories - 1) || !isInt(d.st, 0, 3)) return null;
+  const endsAt = optionalTime(d.end);
+  const joinedAt = timeOf(d.in);
+  const seenAt = timeOf(d.seen);
+  const creditedAt = timeOf(d.cr);
+  const sayAt = optionalTime(d.sayAt);
+  if (endsAt === undefined || joinedAt === undefined || seenAt === undefined || creditedAt === undefined || sayAt === undefined) return null;
+  // say: −1 none, then the cheers, then the stickers (the rules' `x.say < 36`).
+  if (!isInt(d.dmg, 0) || !isInt(d.say, -1, ROOM_CHEERS.length + STICKER_IDS.length - 1)) return null;
+  if (!isInt(d.gid) || !isInt(d.g, 0, 2 ** ROOM_LIMITS.tidy.maxPatches - 1) || !isInt(d.gt, 0, ROOM_LIMITS.tidy.maxMs) || !isInt(d.gp, 0, 999)) return null;
+  return {
+    key,
+    nick: [n[0], n[1], n[2]],
+    costume: d.c,
+    accessory: d.a,
+    state: d.st as RoomState,
+    endsAt,
+    joinedAt,
+    seenAt,
+    dmg: d.dmg,
+    creditedAt,
+    say: d.say,
+    sayAt,
+    tidy: { gid: d.gid, patches: d.g, ms: d.gt, mixups: d.gp },
+  };
+}
+
+function toSail(v: unknown): RoomSail | null {
+  if (!isObject(v)) return null;
+  const at = timeOf(v.at);
+  const { sailFocus: f, sailBreak: b, sailCycles: c } = ROOM_LIMITS;
+  if (at === undefined || !isInt(v.f, f.min, f.max) || !isInt(v.b, b.min, b.max) || !isInt(v.c, c.min, c.max)) return null;
+  return { at, focus: v.f, brk: v.b, cycles: v.c };
+}
+
+function toDeck(v: unknown): RoomDeckRef | null {
+  if (!isObject(v) || !isInt(v.n, ROOM_LIMITS.deckCards.min, ROOM_LIMITS.deckCards.max)) return null;
+  if (v.b !== null && typeof v.b !== "string") return null;
+  return { bottleId: v.b, cards: v.n };
+}
+
+function toGame(v: unknown): RoomGame | null {
+  if (!isObject(v) || v.v !== 1 || !isInt(v.seed)) return null;
+  const at = timeOf(v.at);
+  const seats = strings(v.seats, ROOM_LIMITS.size);
+  if (at === undefined || !seats || !seats.length) return null;
+  if (v.kind === "tidy") return { kind: "tidy", v: 1, seed: v.seed, at, seats };
+  if (v.kind !== "bottle") return null;
+  const b = ROOM_LIMITS.bottle;
+  const turnAt = timeOf(v.tAt);
+  if (turnAt === undefined || !isInt(v.turn, 0, b.maxTurns) || typeof v.holder !== "string" || !isInt(v.card, 0) || !isInt(v.del, 0)) return null;
+  if (!isInt(v.buoys, 0, b.buoys) || typeof v.res !== "boolean" || !isInt(v.goal, b.goal.min, b.goal.max) || !isInt(v.end, 0, 2)) return null;
+  return {
+    kind: "bottle",
+    v: 1,
+    seed: v.seed,
+    at,
+    seats,
+    turn: v.turn,
+    holder: v.holder,
+    turnAt,
+    card: v.card,
+    delivered: v.del,
+    buoys: v.buoys,
+    rescue: v.res,
+    goal: v.goal,
+    end: v.end as 0 | 1 | 2,
+  };
+}
+
+const isMode = (v: unknown): v is RoomMode => v === "invite" || v === "open";
+const isName = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && isInt(v[0], 0, ROOM_LIMITS.wordList - 1) && isInt(v[1], 0, ROOM_LIMITS.wordList - 1);
+
+/** A room as the database holds it, every field checked again (like toBottle), or null if it isn't one. Sailors with a broken entry are left out. */
+export function toRoom(code: string, data: unknown): Room | null {
+  if (!isObject(data) || data.v !== 1 || !isMode(data.mode) || !isName(data.name) || !isInt(data.subj, 0, ROOM_LIMITS.subjects - 1)) return null;
+  const at = timeOf(data.at);
+  const banned = strings(data.ban, ROOM_LIMITS.maxBans);
+  const reportKeys = strings(data.rep, ROOM_LIMITS.maxReports);
+  if (at === undefined || typeof data.host !== "string" || typeof data.listed !== "boolean" || typeof data.locked !== "boolean" || !banned || !reportKeys) return null;
+  if (!isInt(data.banked, 0) || (data.last !== null && typeof data.last !== "string") || !isObject(data.m)) return null;
+  const whyData = isObject(data.why) ? data.why : {};
+  const why = Object.fromEntries(ROOM_REPORT_REASONS.map((r) => [r, isInt(whyData[r], 0) ? whyData[r] : 0])) as Record<RoomReportReason, number>;
+  const members = Object.entries(data.m)
+    .map(([key, value]) => toMember(key, value))
+    .filter((m): m is RoomMember => m !== null)
+    .sort((x, y) => x.joinedAt - y.joinedAt || (x.key < y.key ? -1 : 1));
+  return {
+    code,
+    mode: data.mode,
+    name: [data.name[0], data.name[1]],
+    subject: data.subj,
+    at,
+    host: data.host,
+    listed: data.listed,
+    locked: data.locked,
+    banned,
+    reportKeys,
+    why,
+    banked: data.banked,
+    last: data.last,
+    sail: toSail(data.sail),
+    deck: toDeck(data.deck),
+    game: toGame(data.game),
+    members,
+  };
+}
+
+/** A room's public card, checked, or null. */
+export function toCard(code: string, data: unknown): RoomCard | null {
+  if (!isObject(data) || data.v !== 1 || !isMode(data.mode) || !isName(data.name) || !isInt(data.subj, 0, ROOM_LIMITS.subjects - 1)) return null;
+  const at = timeOf(data.at);
+  const aliveAt = timeOf(data.alive);
+  if (at === undefined || aliveAt === undefined || typeof data.listed !== "boolean" || typeof data.locked !== "boolean" || !isInt(data.n, 0, ROOM_LIMITS.size)) return null;
+  return { code, mode: data.mode, name: [data.name[0], data.name[1]], subject: data.subj, at, listed: data.listed, locked: data.locked, aboard: data.n, aliveAt };
+}
+
+/** A shared deck's cards for the practice engine. Ids are the card's place in the deck, so every device agrees. */
+export function toPracticeCards(cards: readonly BottleCard[]): PracticeCard[] {
+  return cards.map((c, i) => ({ id: String(i), front: c.f, back: c.b }));
+}
+
+// ---- Time and presence ----------------------------------------------------------------------
+
+/** How far the server's clock is ahead of this device's: server time minus the local midpoint of the round trip. */
+export function estimateOffset(sentAtLocal: number, ackAtLocal: number, serverMs: number): number {
+  return serverMs - (sentAtLocal + ackAtLocal) / 2;
+}
+
+/** Here, away (12 min without a write) or stale (25 min: anyone's tidy-up may sweep them). */
+export function presence(m: RoomMember, serverNow: number): "here" | "away" | "stale" {
+  const quiet = serverNow - m.seenAt;
+  if (quiet >= ROOM_LIMITS.staleMinutes * MINUTE) return "stale";
+  if (quiet >= ROOM_LIMITS.awayMinutes * MINUTE) return "away";
+  return "here";
+}
+
+function minutesLeft(endsAt: number | null, serverNow: number): string {
+  if (endsAt === null || endsAt <= serverNow) return "";
+  return ` · ${Math.ceil((endsAt - serverNow) / MINUTE)} min left`;
+}
+
+/** "Focusing · 12 min left", "On a break · 3 min left", "Paused", "In port" or "Away". */
+export function statusLine(m: RoomMember, serverNow: number): string {
+  if (presence(m, serverNow) !== "here") return "Away";
+  switch (m.state) {
+    case 1:
+      return `Focusing${minutesLeft(m.endsAt, serverNow)}`;
+    case 2:
+      return `On a break${minutesLeft(m.endsAt, serverNow)}`;
+    case 3:
+      return "Paused";
+    default:
+      return "In port";
+  }
+}
+
+// ---- The crew -------------------------------------------------------------------------------
+
+const memberOf = (room: Room, key: string) => room.members.find((m) => m.key === key);
+const isStale = (m: RoomMember, serverNow: number) => presence(m, serverNow) === "stale";
+
+/** The skipper has left or hasn't been seen for 25 minutes (the rules' roomOver and takeHat test). */
+export function isSkipperGone(room: Room, serverNow: number): boolean {
+  const skipper = memberOf(room, room.host);
+  return !skipper || isStale(skipper, serverNow);
+}
+
+const PRESENCE_RANK = { here: 0, away: 1, stale: 2 } as const;
+
+/** Who gets the hat when `leavingKey` goes: the longest-aboard sailor who's here (else away, else anyone), or null when nobody's left. */
+export function nextSkipper(room: Room, leavingKey: string, serverNow: number): string | null {
+  const rest = room.members.filter((m) => m.key !== leavingKey);
+  const best = [...rest].sort((x, y) => PRESENCE_RANK[presence(x, serverNow)] - PRESENCE_RANK[presence(y, serverNow)] || x.joinedAt - y.joinedAt || (x.key < y.key ? -1 : 1))[0];
+  return best ? best.key : null;
+}
+
+export type SweepAction = { kind: "take-hat" } | { kind: "sweep"; key: string };
+
+/**
+ * What this device should tidy up, if anything. Only one sailor acts, so devices don't race:
+ * the skipper sweeps out the longest-quiet stale sailor; with no live skipper, the sailor here
+ * with the smallest key takes the hat first (and sweeps on a later check).
+ */
+export function sweepAction(room: Room, myKey: string, serverNow: number): SweepAction | null {
+  const me = memberOf(room, myKey);
+  if (!me) return null;
+  if (room.host === myKey) {
+    const stale = room.members.filter((m) => m.key !== myKey && isStale(m, serverNow)).sort((x, y) => x.seenAt - y.seenAt || (x.key < y.key ? -1 : 1));
+    return stale[0] ? { kind: "sweep", key: stale[0].key } : null;
+  }
+  if (!isSkipperGone(room, serverNow)) return null;
+  const here = room.members.filter((m) => presence(m, serverNow) === "here").map((m) => m.key).sort();
+  return here[0] === myKey ? { kind: "take-hat" } : null;
+}
+
+export type JoinProblem = "gone" | "ended" | "skipper-away" | "full" | "locked" | "refused";
+
+const roomEnded = (at: number, serverNow: number) => serverNow >= at + ROOM_LIMITS.lifetimeHours * HOUR;
+const skipperStaleAt = (aliveAt: number, serverNow: number) => serverNow - aliveAt >= ROOM_LIMITS.staleMinutes * MINUTE;
+
+/** Why a card's room can't be joined, as far as the card shows; null when nothing shows. A join refused anyway is "refused" (a ban). */
+export function joinProblem(card: RoomCard | null, serverNow: number): JoinProblem | null {
+  if (!card) return "gone";
+  if (roomEnded(card.at, serverNow)) return "ended";
+  if (skipperStaleAt(card.aliveAt, serverNow)) return "skipper-away";
+  if (card.aboard >= ROOM_LIMITS.size) return "full";
+  if (card.locked) return "locked";
+  return null;
+}
+
+const cardOver = (c: RoomCard, serverNow: number) => roomEnded(c.at, serverNow) || skipperStaleAt(c.aliveAt, serverNow);
+
+/** The open list as shown: no full, locked, finished or hidden rooms; one subject if picked; busiest first, then the liveliest. */
+export function listView(cards: readonly RoomCard[], serverNow: number, hiddenCodes: readonly string[], subject: number | null): RoomCard[] {
+  return cards
+    .filter((c) => c.listed && !c.locked && c.aboard < ROOM_LIMITS.size && !cardOver(c, serverNow) && !hiddenCodes.includes(c.code))
+    .filter((c) => subject === null || c.subject === subject)
+    .sort((x, y) => y.aboard - x.aboard || y.aliveAt - x.aliveAt || (x.code < y.code ? -1 : 1));
+}
+
+/** Clearing finished rooms is shared work: each visit to the list clears at most this many. */
+const DEAD_ROOMS_PER_VISIT = 3;
+
+/** Cards whose rooms are over (skipper unseen 25 min, or 12 h old), at most 3. */
+export function deadCards(cards: readonly RoomCard[], serverNow: number): string[] {
+  return cards.filter((c) => cardOver(c, serverNow)).slice(0, DEAD_ROOMS_PER_VISIT).map((c) => c.code);
+}
+
+/** Whether the room stays on the open list after one more report (the third takes it off). */
+export function listedAfterReport(room: Room): boolean {
+  return room.listed && room.reportKeys.length + 1 < ROOM_LIMITS.hideAtReports;
+}
+
+// ---- Sailing together -----------------------------------------------------------------------
+
+export function presetFor(focus: number, brk: number): VoyagePresetId {
+  if (focus === 25 && brk === 5) return "coastal";
+  if (focus === 50 && brk === 10) return "ocean";
+  return "custom";
+}
+
+export interface SailStatus {
+  phase: "prep" | "focus" | "break" | "done";
+  /** 1-based. */
+  leg: number;
+  legs: number;
+  endsAt: number;
+}
+
+/** Where the crew's sail plan is: a minute to get ready, then a focus block and a break per leg (the last leg too, as Pwedo Pomo does). */
+export function sailStatus(sail: RoomSail, serverNow: number): SailStatus {
+  const start = sail.at + ROOM_LIMITS.prepSeconds * SECOND;
+  const legs = sail.cycles;
+  if (serverNow < start) return { phase: "prep", leg: 1, legs, endsAt: start };
+  const legMs = (sail.focus + sail.brk) * MINUTE;
+  const index = Math.floor((serverNow - start) / legMs);
+  if (index >= legs) return { phase: "done", leg: legs, legs, endsAt: start + legs * legMs };
+  const legStart = start + index * legMs;
+  const focusEnd = legStart + sail.focus * MINUTE;
+  return serverNow < focusEnd ? { phase: "focus", leg: index + 1, legs, endsAt: focusEnd } : { phase: "break", leg: index + 1, legs, endsAt: legStart + legMs };
+}
+
+export type SailOffer =
+  | { kind: "sail-with"; prepUntilServer: number }
+  | { kind: "hop-aboard"; focusMinutes: number; breakMinutes: number }
+  | { kind: "sail-on"; focusMinutes: number; breakMinutes: number; cycles: number; fromLeg: number };
+
+/** Hop aboard needs at least this much of the crew's focus block left. */
+const HOP_MIN_LEFT = 2 * MINUTE;
+/**
+ * Sail on (a whole leg, and the legs after it) is offered only in a leg's first half minute, so a
+ * sailor's breaks stay within half a minute of the crew's, as hop aboard's rounding does. Later
+ * in the leg, hop aboard fits the minutes that are left.
+ */
+const SAIL_ON_WINDOW = 30 * SECOND;
+
+/**
+ * How to join the crew's sail plan right now. Sail with them while they get ready; sail on at
+ * the start of a leg (only when this sailor's own timer is docked, so a sailor already sailing
+ * with the crew isn't asked again); otherwise hop aboard their focus block. The panel disables
+ * sail-with and hop-aboard while a timer runs ("You're already sailing").
+ */
+export function sailOffer(sail: RoomSail | null, voyage: { phase: VoyagePhase; prepEndsAt: number | null }, serverNow: number): SailOffer | null {
+  if (!sail) return null;
+  const status = sailStatus(sail, serverNow);
+  if (status.phase === "prep") return { kind: "sail-with", prepUntilServer: status.endsAt };
+  if (status.phase !== "focus") return null;
+  const docked = voyage.phase === "docked" && voyage.prepEndsAt === null;
+  const legStart = status.endsAt - sail.focus * MINUTE;
+  if (docked && serverNow - legStart < SAIL_ON_WINDOW) {
+    return { kind: "sail-on", focusMinutes: sail.focus, breakMinutes: sail.brk, cycles: status.legs - status.leg + 1, fromLeg: status.leg };
+  }
+  const left = status.endsAt - serverNow;
+  if (left < HOP_MIN_LEFT) return null;
+  // Whole minutes (the timer rounds them), the nearest, so the break starts within half a minute of the crew's.
+  return { kind: "hop-aboard", focusMinutes: Math.round(left / MINUTE), breakMinutes: sail.brk };
+}
+
+// ---- Kraken Watch ---------------------------------------------------------------------------
+
+/** The damage everyone agrees on: banked minutes of sailors who left, plus every credited minute aboard. */
+export function creditedDamage(room: Room): number {
+  return room.banked + room.members.reduce((sum, m) => sum + m.dmg, 0);
+}
+
+/** For the hp bar only: credited damage plus the minutes each focusing sailor has sailed since their last write. */
+export function liveDamage(room: Room, serverNow: number): number {
+  let live = creditedDamage(room);
+  for (const m of room.members) {
+    if (m.state !== 1) continue;
+    const until = m.endsAt === null ? serverNow : Math.min(serverNow, m.endsAt);
+    live += Math.max(0, Math.floor((until - m.seenAt) / MINUTE));
+  }
+  return live;
+}
+
+export interface RoomReward {
+  /** Paid once ever (earnOnce), on every device. */
+  id: string;
+  doubloons: number;
+  xp: number;
+  reason: string;
+  figurehead?: string;
+}
+
+const BEAST_REWARD = { doubloons: 20, xp: 50 } as const;
+const TIDY_REWARD = { doubloons: 5, xp: 10 } as const;
+const BOTTLE_PER_DELIVERY = { doubloons: 1, xp: 2 } as const;
+const BOTTLE_ISLAND = { doubloons: 10, xp: 20 } as const;
+
+const popcount = (bits: number) => {
+  let count = 0;
+  for (let b = bits; b; b &= b - 1) count++;
+  return count;
+};
+
+/** How many Tidy the Deck patches a game has, worked out from the room alone (exact unless the deck repeats answers). */
+function estimatedTidyPatches(room: Room, game: TidyGame): number {
+  const usable = room.deck?.cards ?? 0;
+  return Math.min(game.seats.length, Math.floor(usable / 4), ROOM_LIMITS.tidy.maxPatches);
+}
+
+function tidyEarned(room: Room, myKey: string, patches: number): TidyGame | null {
+  const game = room.game;
+  if (game?.kind !== "tidy") return null;
+  const me = memberOf(room, myKey);
+  if (!me || me.tidy.gid !== game.seed || popcount(me.tidy.patches & ((1 << patches) - 1)) === 0) return null;
+  return tidyStatus(room, game, patches, game.at).done ? game : null;
+}
+
+function bottleEarned(room: Room, myKey: string): BottleGame | null {
+  const game = room.game;
+  return game?.kind === "bottle" && bottleOver(game) !== 0 && game.seats.includes(myKey) ? game : null;
+}
+
+const beastReason = (name: string) => `The crew beat ${name.replace(/^The /, "the ")}!`;
+
+/**
+ * What this snapshot newly pays me. The first snapshot (prev null) is only a baseline, so
+ * joining never pays for beasts beaten before. A beast pays only with 10 of my own minutes in
+ * the room; Tidy the Deck once the crew finishes, if I cleared a patch; Pass the Bottle once
+ * the game ends, if I had a seat. `tidyPatches` is the game's real patch count when the deck
+ * is loaded (tidyPatches(...).length); without it, it's worked out from the deck's size.
+ */
+export function roomRewards(prev: Room | null, next: Room, myKey: string, opts: { tidyPatches?: number } = {}): RoomReward[] {
+  if (!prev || prev.code !== next.code || prev.at !== next.at) return [];
+  const me = memberOf(next, myKey);
+  if (!me) return [];
+  const base = `room:${next.code}:${next.at}`;
+  const rewards: RoomReward[] = [];
+
+  if (me.dmg >= ROOM_LIMITS.rewardMinDmg) {
+    for (const beast of beastsDefeatedBetween(creditedDamage(prev), creditedDamage(next))) {
+      const name = QUEST_BEASTS.find((b) => b.id === beast.beastId)?.name ?? "a beast";
+      rewards.push({ id: `${base}:beast:${beast.index}`, ...BEAST_REWARD, reason: beastReason(name), figurehead: beast.reward });
+    }
+  }
+
+  if (next.game?.kind === "tidy") {
+    const game = next.game;
+    const patches = opts.tidyPatches ?? estimatedTidyPatches(next, game);
+    const before = prev.game?.kind === "tidy" && prev.game.seed === game.seed ? tidyEarned(prev, myKey, patches) : null;
+    if (!before && tidyEarned(next, myKey, patches)) rewards.push({ id: `${base}:tidy:${game.seed}`, ...TIDY_REWARD, reason: "Tidy the Deck: ship shape!" });
+  }
+
+  const bottle = bottleEarned(next, myKey);
+  const bottleBefore = bottle && prev.game?.kind === "bottle" && prev.game.seed === bottle.seed ? bottleEarned(prev, myKey) : null;
+  if (bottle && !bottleBefore) {
+    const island = bottle.end === 1;
+    const doubloons = bottle.delivered * BOTTLE_PER_DELIVERY.doubloons + (island ? BOTTLE_ISLAND.doubloons : 0);
+    const xp = bottle.delivered * BOTTLE_PER_DELIVERY.xp + (island ? BOTTLE_ISLAND.xp : 0);
+    if (doubloons > 0 || xp > 0) {
+      const reason = island ? "Pass the Bottle: island reached!" : `Pass the Bottle: ${bottle.delivered} ${bottle.delivered === 1 ? "bottle" : "bottles"} delivered`;
+      rewards.push({ id: `${base}:bottle:${bottle.seed}`, doubloons, xp, reason });
+    }
+  }
+  return rewards;
+}
+
+// ---- Games ----------------------------------------------------------------------------------
+
+/** Who gets a seat: sailors who are here and not focusing, in the order they came aboard, at most 6. */
+export function gameSeats(room: Room, serverNow: number): string[] {
+  return room.members
+    .filter((m) => m.state !== 1 && presence(m, serverNow) === "here")
+    .slice(0, ROOM_LIMITS.size)
+    .map((m) => m.key);
+}
+
+/** Bottles to deliver to reach the island: 6 for 1–3 sailors, 8 for 4–6. */
+export function bottleGoal(seats: number): number {
+  return seats >= 4 ? 8 : 6;
+}
+
+/** The next seat after the holder who can answer (aboard, here and not focusing); the holder when nobody else can. */
+export function nextPresentSeat(game: BottleGame, room: Room, serverNow: number): string {
+  const seats = game.seats;
+  const from = seats.indexOf(game.holder);
+  for (let step = 1; step < seats.length + (from < 0 ? 1 : 0); step++) {
+    const key = seats[(from + step + seats.length) % seats.length]!;
+    if (key === game.holder) continue;
+    const m = memberOf(room, key);
+    if (m && m.state !== 1 && presence(m, serverNow) === "here") return key;
+  }
+  return game.holder;
+}
+
+export type BottleOutcome = "right" | "close" | "miss" | "timeout";
+export type BottleTurnPatch = Pick<BottleGame, "turn" | "holder" | "card" | "delivered" | "buoys" | "rescue" | "end">;
+
+/**
+ * One Pass the Bottle turn, exactly as the rules check it. Right (or close) delivers the bottle
+ * and moves to the next card; a first miss sends the same card to the next sailor as a rescue;
+ * a missed rescue loses a lifebuoy and moves on. Taking the helm counts as a miss. The game ends
+ * at the goal (island) or with no buoys or cards left (tide). "Out of cards" uses the room's
+ * stored deck size, as the rules do, so pass room.deck.cards as `deckSize` (it's used only when
+ * the room has no deck).
+ */
+export function bottleStep(game: BottleGame, outcome: BottleOutcome, room: Room, deckSize: number, serverNow: number): BottleTurnPatch {
+  const holder = nextPresentSeat(game, room, serverNow);
+  const right = outcome === "right" || outcome === "close";
+  let { card, delivered, buoys } = game;
+  let rescue = false;
+  if (right) {
+    delivered += 1;
+    card += 1;
+  } else if (!game.rescue) {
+    rescue = true;
+  } else {
+    buoys = Math.max(0, buoys - 1);
+    card += 1;
+  }
+  const cards = room.deck ? room.deck.cards : deckSize;
+  const end: 0 | 1 | 2 = delivered >= game.goal ? 1 : buoys === 0 || card >= cards ? 2 : 0;
+  return { turn: game.turn + 1, holder, card, delivered, buoys, rescue, end };
+}
+
+/** Whether this sailor may answer for the holder: after 35 s, or at once when the holder has left or is focusing. */
+export function canTakeHelm(game: BottleGame, room: Room, myKey: string, serverNow: number): boolean {
+  const me = memberOf(room, myKey);
+  if (!me || me.state === 1 || game.holder === myKey || bottleOver(game) !== 0) return false;
+  const b = ROOM_LIMITS.bottle;
+  if (serverNow <= game.turnAt + b.minTurnSeconds * SECOND) return false;
+  const holder = memberOf(room, game.holder);
+  return !holder || holder.state === 1 || serverNow > game.turnAt + b.takeoverSeconds * SECOND;
+}
+
+/** 0 playing, 1 island reached, 2 the tide turned (including the 60th turn). */
+export function bottleOver(game: BottleGame): 0 | 1 | 2 {
+  if (game.end !== 0) return game.end;
+  return game.turn >= ROOM_LIMITS.bottle.maxTurns ? 2 : 0;
+}
+
+/**
+ * Patches cleared on a write can arrive up to 15 s after the bell (the write gap), so the time-out
+ * is called only this long after the 5 minutes, and a patch cleared just in time still counts.
+ */
+const TIDY_LATE_WRITE_MS = (ROOM_LIMITS.writeGapSeconds + 5) * SECOND;
+
+/**
+ * Tidy the Deck for the whole crew, from each sailor's progress for this game (gid == seed):
+ * `covered` is every cleared patch as bits, crew time is the latest clear plus 1 s per mix-up,
+ * and `open` lists patches nobody has cleared yet (for "Help a crewmate").
+ */
+export function tidyStatus(
+  room: Room,
+  game: TidyGame,
+  patches: number,
+  serverNow: number,
+): { cleared: number; covered: number; done: boolean; crewMs: number | null; timedOut: boolean; open: number[] } {
+  const count = Math.max(0, Math.min(Math.floor(patches), ROOM_LIMITS.tidy.maxPatches));
+  const mask = (1 << count) - 1;
+  let covered = 0;
+  let latest = 0;
+  let mixups = 0;
+  for (const m of room.members) {
+    if (m.tidy.gid !== game.seed || !m.tidy.patches) continue;
+    covered |= m.tidy.patches & mask;
+    latest = Math.max(latest, m.tidy.ms);
+    mixups += m.tidy.mixups;
+  }
+  const cleared = popcount(covered);
+  const done = count > 0 && cleared === count;
+  const open = Array.from({ length: count }, (_, i) => i).filter((i) => !(covered & (1 << i)));
+  const timedOut = !done && serverNow >= game.at + ROOM_LIMITS.tidy.timeLimitMs + TIDY_LATE_WRITE_MS;
+  return { cleared, covered, done, crewMs: done ? latest + MATCH_PENALTY_MS * mixups : null, timedOut, open };
+}
+
+// ---- The scene ------------------------------------------------------------------------------
+
+export interface SceneMate {
+  key: string;
+  label: string;
+  costume: RoomCostume;
+  accessory: string;
+  skipper: boolean;
+  state: RoomState;
+  away: boolean;
+  /** say index (0–23 a cheer, 24–35 a sticker) while it shows, else null. */
+  cheer: number | null;
+}
+
+const SCENE_MATES = ROOM_LIMITS.size - 1;
+
+/** Crewmates to draw (not me), in the order they came aboard, at most 5. Hidden sailors and muted cheers show no bubble. */
+export function sceneMates(room: Room, myKey: string, serverNow: number, hidden: readonly string[], muted: boolean): SceneMate[] {
+  return room.members
+    .filter((m) => m.key !== myKey)
+    .slice(0, SCENE_MATES)
+    .map((m) => {
+      const fresh = m.say >= 0 && m.sayAt !== null && serverNow - m.sayAt >= 0 && serverNow - m.sayAt < ROOM_LIMITS.cheerShowSeconds * SECOND;
+      return {
+        key: m.key,
+        label: nickText(m.nick),
+        costume: ROOM_COSTUMES[m.costume] ?? "pwedo",
+        accessory: ROOM_ACCESSORIES[m.accessory] ?? "none",
+        skipper: m.key === room.host,
+        state: m.state,
+        away: presence(m, serverNow) !== "here",
+        cheer: fresh && !muted && !hidden.includes(m.key) ? m.say : null,
+      };
+    });
+}
+
+// ---- Messages -------------------------------------------------------------------------------
+
+export type RoomAction = "load" | "open" | "join" | "write" | "leave" | "report" | "game";
+
+const JOIN_TEXT: Record<JoinProblem, string> = {
+  gone: "Couldn't find a room with that code. It may have closed.",
+  ended: "This room has ended.",
+  "skipper-away": "This room's skipper has gone ashore, so it's closing.",
+  full: `That room is full (${ROOM_LIMITS.size} sailors).`,
+  locked: "The door is locked.",
+  refused: "You can't rejoin this room.",
+};
+
+const REFUSED_TEXT: Record<RoomAction, string> = {
+  load: "Study Rooms isn't open on this database yet: its new rules need publishing.",
+  open: "Wait a few seconds, then try again. New rooms need a minute between them.",
+  join: JOIN_TEXT.refused,
+  write: "Wait a few seconds between messages.",
+  leave: "Couldn't leave the room just now. Try again in a few seconds.",
+  report: "You've already reported this room.",
+  game: "Someone else took that turn.",
+};
+
+/**
+ * Plain words for a room problem. `errorCode` is a Firestore error code (roomErrorCode in
+ * rooms.ts: "permission-denied", "resource-exhausted", "unavailable"…) or "paused" when
+ * config/rooms has open rooms switched off. For a join, a reason the card shows wins.
+ */
+export function roomProblem(errorCode: string, action: RoomAction, join?: JoinProblem | null): string {
+  if (action === "join" && join) return JOIN_TEXT[join];
+  const code = errorCode.toLowerCase();
+  if (code.includes("resource-exhausted")) return "Rooms are out of free database use for today. Your own timer keeps going; the crew catches up tomorrow.";
+  if (code.includes("paused")) return "Open rooms are resting for now. Invite rooms still work.";
+  if (/unavailable|deadline-exceeded|network|offline/.test(code)) return "Couldn't reach the room. Check your connection.";
+  if (code.includes("not-found")) return action === "join" || action === "load" ? JOIN_TEXT.gone : "This room has ended.";
+  if (code.includes("permission-denied")) return REFUSED_TEXT[action];
+  return "Something went wrong in the room. Try again in a moment.";
+}

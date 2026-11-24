@@ -476,6 +476,15 @@ export async function retrySync(): Promise<void> {
   await startSync(uid);
 }
 
+/** When the rules let a cooldown stamp go (local ms, with 1 s of slack): bottles after 20 s, rooms 60 s after opening and 10 s after joining. */
+function stampDueAt(path: string, data: DocumentData): number {
+  const after = (v: unknown, seconds: number) => {
+    const at = (v as { toMillis?: () => number } | null | undefined)?.toMillis?.();
+    return typeof at === "number" ? at + (seconds + 1) * 1000 : 0;
+  };
+  return path.endsWith("/meta/bottles") ? after(data.lastAt, 20) : Math.max(after(data.madeAt, 60), after(data.joinedAt, 10));
+}
+
 /**
  * Deletes everything this account keeps in the cloud. Used before deleting the
  * account itself, which would otherwise leave the data behind with no way to
@@ -483,35 +492,45 @@ export async function retrySync(): Promise<void> {
  */
 export async function deleteCloudData(uid: string): Promise<void> {
   stopSync();
+  // Once one read has worked, the database exists: a refusal after that is a real failure, not "nothing stored".
+  let readOk = false;
   try {
     const store = firestore();
+    // Leave (or close) every Study Room first, while the private notes saying which rooms are ours still exist.
+    await (await import("./rooms.js")).leaveAllRooms(uid);
     // Bottles this sailor set afloat go too (with their deck cards), while the private notes that they're theirs still exist.
     const shared = await getDocs(collection(store, "users", uid, "shared"));
-    for (let i = 0; i < shared.docs.length; i += 150) {
+    readOk = true;
+    // 10 bottles a batch: deleting a bottle and its cards costs the rules a lookup each, and one batch may make at most 20.
+    for (let i = 0; i < shared.docs.length; i += 10) {
       const batch = writeBatch(store);
-      for (const d of shared.docs.slice(i, i + 150)) {
+      for (const d of shared.docs.slice(i, i + 10)) {
         batch.delete(doc(store, "bottles", d.id, "deck", "cards"));
         batch.delete(doc(store, "bottles", d.id));
       }
       await batch.commit();
     }
-    const docs = (await Promise.all(["state", "notes", "meta", "shared"].map((name) => getDocs(collection(store, "users", uid, name))))).flatMap((snap) => snap.docs);
-    // The bottle cooldown stamp can only go once its 20 seconds are up (see firestore.rules), so it goes last.
-    const stamp = docs.find((d) => d.ref.path.endsWith("/meta/bottles"));
-    const refs = docs.filter((d) => d !== stamp).map((d) => d.ref);
+    const docs = (await Promise.all(["state", "notes", "meta", "shared", "rooms"].map((name) => getDocs(collection(store, "users", uid, name))))).flatMap((snap) => snap.docs);
+    // The bottle and room cooldown stamps can only go once their time is up (see firestore.rules), so they go last.
+    const isStamp = (path: string) => path.endsWith("/meta/bottles") || path.endsWith("/meta/rooms");
+    const stamps = docs.filter((d) => isStamp(d.ref.path));
+    const refs = docs.filter((d) => !isStamp(d.ref.path)).map((d) => d.ref);
     for (let i = 0; i < refs.length; i += 400) {
       const batch = writeBatch(store);
       for (const ref of refs.slice(i, i + 400)) batch.delete(ref);
       await batch.commit();
     }
-    if (stamp) {
-      const lastAt = (stamp.data().lastAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? 0;
-      const wait = lastAt + 21_000 - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 21_000)));
-      await deleteDoc(stamp.ref);
+    if (stamps.length) {
+      const dueAt = Math.max(...stamps.map((d) => stampDueAt(d.ref.path, d.data())));
+      // At most 61 s, even if this device's clock is behind.
+      const wait = Math.min(dueAt - Date.now(), 61_000);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      const batch = writeBatch(store);
+      for (const d of stamps) batch.delete(d.ref);
+      await batch.commit();
     }
   } catch (e) {
-    if (nothingStored(e)) return;
+    if (!readOk && nothingStored(e)) return;
     throw new Error(syncProblem(e));
   }
 }

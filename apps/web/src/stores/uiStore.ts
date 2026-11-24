@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { newId } from "../lib/ids.js";
 
-export type PanelId = "helm" | "planner" | "log" | "notes" | "bay" | "flashcards" | "shipwright" | "wardrobe" | "crew" | "fleet" | "lookout" | "settings";
+export type PanelId = "helm" | "planner" | "log" | "notes" | "bay" | "flashcards" | "shipwright" | "wardrobe" | "crew" | "rooms" | "fleet" | "lookout" | "settings";
 
 export type ToastTone = "reward" | "info" | "warning";
 
@@ -22,6 +22,9 @@ export interface UiState {
   /** The Log in window, which any panel can ask for (Bottle Bay does). */
   loginOpen: boolean;
   setLoginOpen(open: boolean): void;
+  /** A Study Room code from an invite link, waiting for the sailor to tap Join (never joined by itself). */
+  roomInvite: string | null;
+  setRoomInvite(code: string | null): void;
   /** Opens Study Sheets with this note already picked. */
   blurtNote(noteId: string): void;
   openPanel(panel: PanelId | null): void;
@@ -37,6 +40,8 @@ export const useUi = create<UiState>()((set, get) => ({
   toasts: [],
   blurtNoteId: null,
   loginOpen: false,
+  roomInvite: null,
+  setRoomInvite: (roomInvite) => set({ roomInvite }),
   setLoginOpen: (loginOpen) => set(loginOpen ? { loginOpen, panel: null } : { loginOpen }),
   blurtNote: (noteId) => set({ blurtNoteId: noteId, panel: "log" }),
   openPanel: (panel) => set({ panel }),

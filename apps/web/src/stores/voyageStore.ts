@@ -43,6 +43,8 @@ export interface VoyageStartOptions {
   breakMinutes?: number;
   cycles?: number;
   prep?: boolean;
+  /** With `prep`: when the prep minute ends (local ms), so a crew can start together. Capped at 5 minutes ahead; a time already past starts at once. */
+  prepUntil?: number;
   objective?: string | null;
   assignmentId?: string | null;
 }
@@ -165,14 +167,15 @@ export const useVoyage = create<VoyageState>()(
           const breakMinutes = opts.breakMinutes ?? preset.breakMinutes;
           const cycles = Math.max(1, Math.min(8, opts.cycles ?? 1));
           const now = Date.now();
-          if (opts.prep) {
+          const prepEndsAt = !opts.prep ? null : opts.prepUntil === undefined ? now + 60_000 : Math.min(opts.prepUntil, now + 300_000);
+          if (prepEndsAt !== null && prepEndsAt > now) {
             set({
               presetId: opts.presetId,
               focusMinutes,
               breakMinutes,
               cyclesTotal: cycles,
               cyclesCompleted: 0,
-              prepEndsAt: now + 60_000,
+              prepEndsAt,
               objective: opts.objective?.trim() || null,
               assignmentId: opts.assignmentId ?? null,
               showBreakReflection: false,

@@ -19,6 +19,8 @@ import type { LearnQuestion, LearnState, MatchTile, PracticeCard, QuestionResult
 import { useRecall } from "../../stores/recallStore.js";
 import { useNow } from "../Hud.js";
 import { Badge, Button, Card, EmptyState, ProgressBar, Select, TextInput, cx } from "../ui.js";
+import { ChoiceButtons } from "./ChoiceButtons.js";
+import { MatchTiles } from "./MatchTiles.js";
 
 type Mode = "learn" | "test" | "match";
 
@@ -158,30 +160,7 @@ function Learn({ cards }: { cards: PracticeCard[] }) {
         <p className="mt-1 font-display text-xl leading-snug font-bold whitespace-pre-wrap">{question.card.front}</p>
       </Card>
       {question.kind === "choice" ? (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {question.options.map((opt, i) => {
-            const isAnswer = opt === question.card.back;
-            const picked = feedback?.given === opt;
-            return (
-              <button
-                key={opt}
-                type="button"
-                disabled={Boolean(feedback)}
-                onClick={() => answer(opt)}
-                className={cx(
-                  "rounded-xl border px-3 py-2.5 text-left transition",
-                  !feedback && "border-[var(--border-subtle)] bg-[var(--surface-1)] hover:bg-[var(--surface-2)]",
-                  feedback && isAnswer && "border-seafoam-700 bg-seafoam-500/15 font-bold",
-                  feedback && picked && !isAnswer && "border-coral-700 bg-coral-500/15",
-                  feedback && !isAnswer && !picked && "border-[var(--border-subtle)] opacity-60",
-                )}
-              >
-                <span className="mr-2 text-xs text-[var(--muted-ink)]">{i + 1}</span>
-                {opt}
-              </button>
-            );
-          })}
-        </div>
+        <ChoiceButtons options={question.options} onPick={answer} reveal={feedback ? { right: question.card.back, picked: feedback.given } : undefined} />
       ) : (
         <form
           className="mt-3 flex gap-2"
@@ -377,42 +356,22 @@ function Match({ cards, deckKey }: { cards: PracticeCard[]; deckKey: string }) {
   const best = useRecall((s) => s.matchBest[deckKey]);
   const recordMatch = useRecall((s) => s.recordMatch);
   const [tiles, setTiles] = useState<MatchTile[] | null>(null);
-  const [cleared, setCleared] = useState<Set<string>>(new Set());
-  const [selected, setSelected] = useState<string | null>(null);
-  const [wrong, setWrong] = useState<string[]>([]);
   const [startedAt, setStartedAt] = useState(0);
   const [penalty, setPenalty] = useState(0);
   const [finished, setFinished] = useState<{ ms: number; record: boolean } | null>(null);
   const now = useNow(100);
 
+  // A fresh board (a new array) also clears MatchTiles' own picks.
   const start = () => {
     setTiles(matchBoard(cards, freshRng()));
-    setCleared(new Set());
-    setSelected(null);
-    setWrong([]);
     setPenalty(0);
     setFinished(null);
     setStartedAt(Date.now());
   };
 
-  const pick = (tile: MatchTile) => {
-    if (!tiles || finished || cleared.has(tile.id)) return;
-    if (!selected) return setSelected(tile.id);
-    if (selected === tile.id) return setSelected(null);
-    const first = tiles.find((t) => t.id === selected)!;
-    setSelected(null);
-    if (first.cardId === tile.cardId && first.side !== tile.side) {
-      const next = new Set([...cleared, first.id, tile.id]);
-      setCleared(next);
-      if (next.size === tiles.length) {
-        const ms = Date.now() - startedAt + penalty;
-        setFinished({ ms, record: recordMatch(deckKey, ms) });
-      }
-    } else {
-      setPenalty((p) => p + MATCH_PENALTY_MS);
-      setWrong([first.id, tile.id]);
-      setTimeout(() => setWrong([]), 450);
-    }
+  const done = () => {
+    const ms = Date.now() - startedAt + penalty;
+    setFinished({ ms, record: recordMatch(deckKey, ms) });
   };
 
   if (!tiles || finished) {
@@ -441,29 +400,7 @@ function Match({ cards, deckKey }: { cards: PracticeCard[]; deckKey: string }) {
         </span>
         {penalty > 0 && <span className="text-[var(--muted-ink)]">+{penalty / 1000} s for wrong pairs</span>}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-        {tiles.map((t) => {
-          const gone = cleared.has(t.id);
-          return (
-            <button
-              key={t.id}
-              type="button"
-              disabled={gone}
-              onClick={() => pick(t)}
-              aria-pressed={selected === t.id}
-              className={cx(
-                "min-h-20 rounded-xl border p-2 text-sm leading-snug transition-[opacity,background-color] duration-200",
-                gone && "invisible",
-                !gone && selected === t.id && "border-navy-600 bg-[var(--surface-3)] font-bold",
-                !gone && wrong.includes(t.id) && "border-coral-700 bg-coral-500/20",
-                !gone && selected !== t.id && !wrong.includes(t.id) && "border-[var(--border-subtle)] bg-[var(--surface-1)] hover:bg-[var(--surface-2)]",
-              )}
-            >
-              {t.text}
-            </button>
-          );
-        })}
-      </div>
+      <MatchTiles tiles={tiles} onCleared={done} onMistake={() => setPenalty((p) => p + MATCH_PENALTY_MS)} />
     </div>
   );
 }

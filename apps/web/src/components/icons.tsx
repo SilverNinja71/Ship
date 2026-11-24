@@ -185,6 +185,13 @@ export const IconAnchor = (p: IconProps) => (
   </Icon>
 );
 
+/** A chevron, for "next" and "back": the serif font draws arrow characters as dashes. */
+export const IconChevron = ({ dir = "right", ...p }: IconProps & { dir?: "right" | "left" | "up" | "down" }) => (
+  <Icon {...p}>
+    <path d="M9 5.5l6.5 6.5L9 18.5" transform={`rotate(${{ right: 0, down: 90, left: 180, up: 270 }[dir]} 12 12)`} />
+  </Icon>
+);
+
 /** A little doubloon, in color. */
 export function Doubloon({ size = 20 }: { size?: number }) {
   return (

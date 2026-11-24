@@ -16,7 +16,9 @@ export type HitId =
   | "bookshelf"
   | `crew:${string}`
   | `ghost:${string}`
-  | `minion:${string}`;
+  | `minion:${string}`
+  /** A Study Rooms crewmate, by their per-room sailor key. */
+  | `mate:${string}`;
 
 export interface HitRegion {
   id: HitId;

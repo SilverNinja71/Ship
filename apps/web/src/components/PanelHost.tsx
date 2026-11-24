@@ -17,6 +17,8 @@ import { WardrobePanel } from "./panels/WardrobePanel.js";
 // Bottle Bay brings Firestore with it, so it loads the first time it opens too.
 const BottleBayPanel = lazy(() => import("./panels/BottleBayPanel.js").then((m) => ({ default: m.BottleBayPanel })));
 const NoteNookPanel = lazy(() => import("./panels/NoteNookPanel.js").then((m) => ({ default: m.NoteNookPanel })));
+// Study Rooms brings Firestore and the room screens with it, so it loads on first open as well.
+const RoomsPanel = lazy(() => import("./panels/RoomsPanel.js").then((m) => ({ default: m.RoomsPanel })));
 
 export function PanelHost() {
   const panel = useUi((s) => s.panel);
@@ -48,6 +50,12 @@ export function PanelHost() {
       return <WardrobePanel onClose={close} />;
     case "crew":
       return <CrewPanel onClose={close} />;
+    case "rooms":
+      return (
+        <Suspense fallback={null}>
+          <RoomsPanel onClose={close} />
+        </Suspense>
+      );
     case "fleet":
       return <FleetLogPanel onClose={close} />;
     case "lookout":

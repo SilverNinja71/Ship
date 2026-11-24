@@ -17,6 +17,7 @@ import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
 import { plannedToday, usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
+import { useRooms } from "../stores/roomStore.js";
 import { useSettings } from "../stores/settingsStore.js";
 import { useSync } from "../stores/syncStore.js";
 import type { SyncState } from "../stores/syncStore.js";
@@ -25,6 +26,8 @@ import type { PanelId } from "../stores/uiStore.js";
 import { LegalModal, type LegalTab } from "./LegalModal.js";
 import { OnboardingModal, SignInPromptToast } from "./OnboardingModal.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
+import { CrewStrip } from "./rooms/CrewStrip.js";
+import { RoomBanner } from "./rooms/RoomBanner.js";
 import {
   IconCabin,
   IconCalendar,
@@ -56,6 +59,7 @@ export const PANELS: { id: PanelId; label: string; icon: (p: { size?: number }) 
   { id: "shipwright", label: "Shipwright", icon: IconHammer },
   { id: "wardrobe", label: "Wardrobe", icon: IconShirt },
   { id: "crew", label: "Crew", icon: IconCrew },
+  { id: "rooms", label: "Study Rooms", icon: IconCrew },
   { id: "fleet", label: "Fleet Log", icon: IconScroll },
   { id: "lookout", label: "Lookout", icon: IconSpyglass },
 ];
@@ -131,6 +135,9 @@ export function Hud() {
   return (
     <>
       <TopBar authUser={authUser} onOpenLogin={() => setLoginOpen(true)} onOpenTutorial={() => setTutorialOpen(true)} />
+      {/* Study Rooms: the crew in every scene, and one offer at a time under the top bar. */}
+      <CrewStrip />
+      <RoomBanner />
       <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 flex flex-col items-center gap-2">
         <VoyageDock />
       </div>
@@ -176,6 +183,8 @@ function TopBar({
   const now = useNow(30_000);
   const due = dueNow(cards, now).length;
   const plannedTodayYet = usePlanner((s) => plannedToday(s));
+  // While aboard a study room the top bar shows no real name, in case the screen is shared.
+  const aboard = useRooms((s) => s.current !== null);
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 sm:py-4">
@@ -226,6 +235,8 @@ function TopBar({
           <span className="hidden sm:inline">Bottle Bay</span>
         </button>
 
+        <RoomsButton />
+
         <button
           type="button"
           onClick={() => openPanel("flashcards")}
@@ -272,7 +283,7 @@ function TopBar({
           className={cx("py-1 text-sm", SOFT_PILL)}
           title={authUser ? syncSentence(sync) : "Log in with Google to keep your progress in your account and pick it up on any device"}
         >
-          {authUser ? `${authUser.displayName?.split(" ")[0] ?? "Signed in"} ${syncMark(sync.status)}` : "Log in"}
+          {authUser ? `${aboard ? "Signed in" : (authUser.displayName?.split(" ")[0] ?? "Signed in")} ${syncMark(sync.status)}` : "Log in"}
         </button>
 
         <button
@@ -336,6 +347,11 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
   const handleGoogleSignOut = async () => {
     setAuthBusy(true);
     try {
+      // Leave the study room first, while still signed in, so the crew isn't left with a sailor
+      // who never comes back. Offline the write never answers, so give up after 8 s.
+      if (useRooms.getState().current) {
+        await Promise.race([useRooms.getState().leaveRoom().catch(() => {}), new Promise((r) => setTimeout(r, 8000))]);
+      }
       await signOutGoogle();
       toast("Signed out. This browser keeps its copy; your account keeps its own.", "info");
     } finally {
@@ -475,13 +491,46 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
           <button type="button" onClick={() => setLegalTab("privacy")} className="hover:underline underline-offset-4">
             Privacy &amp; Terms
           </button>
-          <button type="button" onClick={() => setLegalTab("refunds")} className="text-[#8A3B31] hover:underline underline-offset-4">
+          <button
+            type="button"
+            onClick={() => setLegalTab("refunds")}
+            title="Deletes your account, its cloud copy, your bottles and your study rooms. This can take up to a minute."
+            className="text-[#8A3B31] hover:underline underline-offset-4"
+          >
             Delete account &amp; data
           </button>
         </div>
       </div>
       {legalTab && <LegalModal initialTab={legalTab} onClose={() => setLegalTab(null)} />}
     </div>
+  );
+}
+
+/** Study Rooms: a seafoam dot and the crew count while aboard, a yellow dot while an offer waits. */
+function RoomsButton() {
+  const openPanel = useUi((s) => s.openPanel);
+  const aboard = useRooms((s) => (s.current !== null && s.room ? s.room.members.length : 0));
+  const offer = useRooms((s) => s.offer !== null || s.notice !== null);
+  return (
+    <button
+      type="button"
+      onClick={() => openPanel("rooms")}
+      className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+      title="Study Rooms (R)"
+      aria-label={aboard ? `Study Rooms, ${aboard} aboard` : "Study Rooms"}
+    >
+      <span className="relative">
+        <IconCrew size={15} />
+        {offer && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-[#E8B84A] ring-2 ring-[var(--page-bg)]" aria-hidden="true" />}
+      </span>
+      <span className="hidden sm:inline">Rooms</span>
+      {aboard > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#E9F6EF] px-1.5 py-0.5 text-[11px] text-[#2D6252] tabular-nums" aria-hidden="true">
+          <span className="size-1.5 rounded-full bg-[#7FC8B2]" />
+          {aboard}
+        </span>
+      )}
+    </button>
   );
 }
 

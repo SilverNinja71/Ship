@@ -14,7 +14,7 @@ import { useNow } from "./Hud.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { DieCutSticker } from "./StickerArt.js";
 import { StickerPickerPopover } from "./StickerPickerPopover.js";
-import { IconBottle, IconCards, IconLog, IconNotebook } from "./icons.js";
+import { IconBottle, IconCards, IconCrew, IconLog, IconNotebook } from "./icons.js";
 import { cx, readFile } from "./ui.js";
 
 export function StudyMaterialsSection() {
@@ -436,6 +436,13 @@ function StudySheetsSection() {
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[#EAF7F3] px-3.5 py-1.5 text-xs font-bold text-[#2D6252] transition-[background-color] duration-150 hover:bg-[#DDF2EB] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             <IconBottle size={14} /> Bottle Bay
+          </button>
+          <button
+            type="button"
+            onClick={() => openPanel("rooms")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[#E6F2FA] px-3.5 py-1.5 text-xs font-bold text-[#2F4F6B] transition-[background-color] duration-150 hover:bg-[#D9EAF6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+          >
+            <IconCrew size={14} /> Study Rooms
           </button>
         </div>
       </div>

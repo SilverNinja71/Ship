@@ -130,7 +130,7 @@ export function WardrobePanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="space-y-4">
-          <Field label="Sailor's name" hint="Your crew sees this name.">
+          <Field label="Sailor's name" hint="Only your local crew room shows this name. Study rooms give you a made-up one.">
             <TextInput value={avatar.name} maxLength={MAX_SAILOR_NAME} onChange={(e) => setAvatar({ name: e.target.value })} />
           </Field>
           <section>

@@ -50,43 +50,49 @@ ship/
 │   ├── web/                 Vite 8 + React 19 + Tailwind 4 + Zustand 5. The main app.
 │   │   ├── dev/             ships.html and avatars.html: art galleries (dev server only)
 │   │   ├── public/assets/   the graphics AI's sprites: index.json + one folder per sheet (empty until art arrives)
-│   │   ├── scripts/         assets.ts (checks the art, writes index.json and docs/sprite-list.md), spriteList.ts
+│   │   ├── scripts/         assets.ts (checks the art, writes index.json and docs/sprite-list.md), spriteList.ts,
+│   │   │                    checkFirestoreRules.cjs (firestore.rules against the emulators: npm run check:rules)
 │   │   └── src/
 │   │       ├── ship-engine/ ShipCanvas.tsx (the frame loop), ShipRenderer.ts (main deck), QuartersRenderer.ts,
 │   │       │                OceanEngine.ts, ParticleFX.ts, props.ts (helm, citrus tree, bell), hitRegions.ts,
 │   │       │                draw.ts (style helpers), AvatarRenderer.ts + avatar/ (the sailors and desks),
 │   │       │                sprites/ (the sprite loader and compositor: store, paint, ship, props, avatar, ocean),
 │   │       │                tinyInk.ts (the Ink & Paper palette), minions.ts (the deck characters),
-│   │       │                StudySceneRenderer.ts (the Pwedo Pomo, focus-desk and break scenes)
+│   │       │                StudySceneRenderer.ts (the Pwedo Pomo, focus-desk and break scenes),
+│   │       │                roomCrew.ts (Study Rooms crewmates in the scenes)
 │   │       ├── ships/       types.ts (the art contract), index.ts (drawShip), one file per HullStyle, parts/, decor.ts,
 │   │       │                tinyInkShip.ts (pastel palettes for the Shipwright's previews)
 │   │       ├── components/  Hud (top bar, login), VoyageDock (the Pwedo Pomo pill), PanelHost, ui kit, icons,
 │   │       │                StudyMaterialsSection + BananaPlannaSection (the page below the scene),
 │   │       │                OnboardingModal, ConsentBanner, LegalModal, BreakReflectModal, MonthlyStatsModal,
 │   │       │                AudioBrowserModal, PastelMinionBadge,
-│   │       │                panels/ (Helm, Planner, Captain's Log, Note Nook, Bottle Bay, Flashcards, Shipwright, Wardrobe,
-│   │       │                Crew, Fleet Log, Lookout, Settings)
-│   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore,
+│   │       │                panels/ (Helm, Planner, Captain's Log, Note Nook, Bottle Bay, Study Rooms, Flashcards, Shipwright,
+│   │       │                Wardrobe, Crew, Fleet Log, Lookout, Settings), rooms/ (Study Rooms' cards, crew strip, banner and
+│   │       │                games), flashcards/ (Practice, MatchTiles, ChoiceButtons…)
+│   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore, roomStore,
 │   │       │                settingsStore, uiStore, activityStore, lookoutStore, plannerStore, vaultStore
 │   │       ├── hooks/       useVoyageTicker, useIdleDetection, useKeyboard, useAmbiance, useLookoutBridge,
-│   │       │                useCrewSync, useWebRTC, useAutoSync, useCloudSync, useVaultSync
+│   │       │                useCrewSync, useWebRTC, useAutoSync, useCloudSync, useVaultSync, useRoomSync, useRoomLink
 │   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage,
 │   │                        hosting, backup, noteVault, blurtGrading, firebase (Google sign-in), accountData
 │   │                        (profile, consent, delete everything), captainsLogService (hashtags), plannerExport,
 │   │                        markdown (Obsidian-style reading), obsidianVault (vault sync), clipNotes,
-│   │                        db (the shared Firestore), bottleRules + bottleBay (Bottle Bay)
+│   │                        db (the shared Firestore), bottleRules + bottleBay (Bottle Bay),
+│   │                        roomRules + rooms + roomSession (Study Rooms)
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
 │   │   └── src/ background/ content/ popup/ options/; core/videoGroups.ts + videoSort.ts sort watch pages;
 │   │                        content/clipper.ts + popup/clipper.ts + core/clips.ts: the Web Clipper
-│   └── signaling-server/    Node + ws: crew rooms, quest damage, WebRTC signaling, /relay
+│   └── signaling-server/    Node + ws: the localhost crew rooms (not Study Rooms), quest damage, WebRTC signaling, /relay
 ├── docs/                    art-brief.md (for the graphics AI), sprite-list.md (generated: every sprite, size, anchor),
 │                            ARCHITECTURE.md, FUTURE_DRAFTS.md and THIRD_PARTY_NOTICES.md (from the redesign)
 ├── firebase.json, .firebaserc   Firebase Hosting for the second web address (see "The kawaii redesign")
+├── firestore.rules          the database rules for cloud sync, Bottle Bay and Study Rooms (published by hand)
 └── packages/
-    ├── shared-types/        THE CONTRACTS. Every app and package agrees on these shapes.
+    ├── shared-types/        THE CONTRACTS. Every app and package agrees on these shapes (room.ts: Study Rooms).
     ├── ship-theme-kit/      ship registry, parts catalogs (sails, figureheads, flags, desks), avatar catalog, prices,
     │                        sprite sheet specs + manifest validation (sprites.ts)
-    ├── active-recall-engine/ SM-2 + FSRS schedulers, typed-answer grading, blurt diff engine
+    ├── active-recall-engine/ SM-2 + FSRS schedulers, typed-answer grading, blurt diff engine, practice modes,
+    │                        review stats, crewPlay (dealing Study Rooms' games)
     └── integrations/        adapters: Canvas, Todoist, Lodestar, Google Drive, Parchment (.parchment), CSV cards,
                              and the Gemini client (gemini.ts) + Gemini blurt grader (geminiBlurt.ts)
 ```
@@ -100,6 +106,7 @@ npm test             # every package's Vitest tests
 npm run typecheck    # tsc (TypeScript 7) across the repo
 npm run build:site   # the public website in apps/web/dist, with the Lookout as lookout.zip
 npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/index.json and docs/sprite-list.md
+npm run check:rules -w @ship/web   # firestore.rules against the emulators (start them first; see "Cloud sync")
 ```
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
@@ -119,7 +126,7 @@ Everything below is on `main`:
 - pull request #8: stage 1 of the study-app features, flashcards (see "Features from other study apps");
 - pull request #9: Obsidian vaults, the Note Nook and the Lookout's Web Clipper (see "Obsidian"), plus the Kanban board and the 10-minute daily plan (see "Kanban and the daily plan").
 
-Open: branch `claude/commons`, Bottle Bay (see "Studying together"). **It needs the new `firestore.rules` published before it works on the real site.**
+Open: branch `claude/rooms` (which includes `claude/commons`): Bottle Bay and Study Rooms (see "Studying together"). **They need the new `firestore.rules` published before they work on the real site.**
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -137,18 +144,19 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 949 tests on `claude/commons`, and all pass (run on 2026-11-24):
+`npm test` runs 1,114 tests on `claude/rooms`, and all pass (run on 2026-11-24):
 
 | Package | Tests |
 |---|---|
 | ship-theme-kit (catalogs 22, sprite specs 14) | 36 |
-| active-recall-engine (incl. Parchment's schedule 24, practice modes and review stats 17) | 82 |
+| shared-types (Study Rooms contracts and the Kraken's sums) | 21 |
+| active-recall-engine (incl. Parchment's schedule 24, practice modes and review stats 17, room games' dealing 12) | 94 |
 | crew server | 100 |
 | integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34, Gemini flashcards 4, Anki exports 3, Obsidian 12) | 204 |
 | extension (incl. video groups 25, clips 5) | 192 |
-| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16, Markdown 7, vault sync 8, clips 2, Kanban and daily plan 5, Bottle Bay 10) | 335 |
+| web (ship art 147, sailor art 68, stores and voyage rules 33, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 15, Ink & Paper palette 4, cloud sync rules 17, Markdown 7, vault sync 8, clips 2, Kanban and daily plan 5, Bottle Bay 18, Study Rooms rules 49, room limits in the rules 39, room session 11, crewmates in the scenes 16) | 467 |
 
-`npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds. `npm run check:rules -w @ship/web` checks `firestore.rules` against the emulator (30 checks; see "Studying together").
+`npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds. `npm run check:rules -w @ship/web` checks `firestore.rules` against the emulator (147 checks, about 45 s; see "Studying together").
 
 **The redesign has almost no tests.** It added about 7,000 lines of code and 5 tests (the palette and the Gemini schema check). The planner, the Pwedo Pomo cycles, sign-in, the consent bar and data deletion have none.
 
@@ -824,7 +832,7 @@ A footer with the legal links comes last.
 | Crew | `C` | a crewmate, so only once you're already in a room |
 | Banana Planna | `P` (new) | its top-bar button |
 
-So without a keyboard (a phone or tablet), nobody can open Crew to join a first room, in either look, and the Wardrobe can't be opened in Ink & Paper.
+So without a keyboard (a phone or tablet), nobody can open Crew to join a first room, in either look, and the Wardrobe can't be opened in Ink & Paper. (Later branches added top-bar buttons for the Note Nook, Bottle Bay and Study Rooms; Study Rooms works on phones and on the website. See "Studying together".)
 
 **First visit:** a four-step tutorial (`OnboardingModal.tsx`, reopened with `?`) and a storage notice (`ConsentBanner.tsx`).
 
@@ -872,7 +880,7 @@ So without a keyboard (a phone or tablet), nobody can open Crew to join a first 
 
 **The storage notice** (`ConsentBanner.tsx`) offers "Essential only" and "Accept", and saves the answer as `ship:storage-consent`. **Nothing reads that answer**: Ship has no analytics or ads to switch off, so both choices behave the same.
 
-**The legal window** (`LegalModal.tsx`) has four tabs: Privacy Policy, Terms of Service, Cookies & Storage, and Free Tier & Contact. Its text names the project's operator and makes promises about data, so read it before changing how data is handled.
+**The legal window** (`LegalModal.tsx`) has six tabs: Privacy Policy, Terms of Service, Community Rules (added with Study Rooms), Cookies & Storage, Free Tier & Contact, and Accessibility. Its text names the project's operator and makes promises about data, so read it before changing how data is handled.
 
 **Delete everything** (`deleteAllUserData` in `lib/accountData.ts`): deletes the account's cloud copy, then the Firebase account, removes every `ship:` key and empties the notes. If the cloud copy can't be deleted, nothing is deleted and the window says why. If Firebase refuses to delete the account because the sign-in is too old, it signs out instead and still clears the cloud copy and this browser. Settings → Start over is the local-only version: signed in, it signs out first, because the cloud copy would otherwise come straight back.
 
@@ -919,9 +927,9 @@ The Siren Gate's art and wording changed to match (`apps/extension/src/gate/`): 
 Not fixed; listed so nobody rediscovers them:
 - **A 0-minute break stops the cycles.** With Custom and a break of 0, the ship docks after the first focus block and the remaining cycles never start.
 - **Scrolling on a touchscreen.** The canvas still has `touch-action: none` from when the app was one screen. A swipe that starts on the scene may not scroll the page; the pill's "Scroll for study sheets" link does. Not checked on a real phone.
-- **The phone top bar** wraps onto two rows at 390 px wide, and Flashcards and Desk lose their text labels.
+- **The phone top bar** wraps onto three rows at 390 px wide (two before Study Rooms' button), and Flashcards, Desk and Rooms lose their text labels.
 - ~~The planner export wrote each habit as "n/31 days"~~: fixed on `claude/obsidian`; it now counts the habit's own ticks.
-- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe and Crew panels can't be opened without a keyboard, and habit ticks never reset. (The UTC check-in day is fixed on `claude/obsidian`.)
+- The gaps already named above: fruit can't be picked in Ink & Paper, the Wardrobe can't be opened without a keyboard there, and habit ticks never reset. (The UTC check-in day is fixed on `claude/obsidian`. Study Rooms has a top-bar button, so studying with a crew no longer needs a keyboard; the localhost Crew panel still opens only with `C` or a crewmate.)
 
 ### Verified, and not
 
@@ -1053,7 +1061,7 @@ The Flashcards panel's tabs are now Review, Practice, Stats, Decks and Add cards
 
 **Not verified:** Gemini card making with a real key, and phones.
 
-**Found while testing, not fixed:** at 390 px the page itself is 590 px wide on `main`, because of the Weekly Plan card added on 2026-11-23, so phones scroll sideways.
+**Found while testing:** at 390 px the page itself was 590 px wide, because of the Weekly Plan card added on 2026-11-23, so phones scrolled sideways. Fixed on `claude/rooms` (the section's grid is `grid-cols-1`, so the week grid scrolls inside its card).
 
 ## Obsidian (2026-11-23)
 
@@ -1161,7 +1169,7 @@ A panel (top bar, key `B`, a button on the page below the scene; `components/pan
 - **Fish:** the newest 40 bottles (more on request), search, Sources/Decks, and subject chips (a subject is its own query, sorted in the browser, so no extra database index is needed). A source can be opened or kept in the Note Nook (`bottle:<id>`, an Obsidian-style note with a "From Bottle Bay" callout). A deck can be added to the sailor's flashcards (`source: "bottle"`, fresh schedules). ⚑ Report takes a reason: spam, wrong, unkind or personal details.
 - **Set one afloat:** a link (typed, or picked from notes and clips that have one) or one of the sailor's own decks (not ones fished out of the bay), with a title, subject, tags and an optional description. A preview shows exactly what others will see. Before anything goes out:
   - `cleanShareUrl` keeps https links only, and removes tracking codes (`utm_*`, `fbclid`, `gclid`…) and sharer codes (YouTube's and Spotify's `si`, which point back at the person who shared);
-  - `personalInfoWarnings` warns about emails, phone numbers, street addresses, full names, personal cloud files (Drive, OneDrive, Dropbox…) and Canvas links;
+  - `personalInfoWarnings` warns about emails, phone numbers, street addresses, full names, personal cloud files (Drive, OneDrive, Dropbox…) and Canvas links, and (since Study Rooms) chat and social apps, "add me" or "DM me", `@usernames` and chat invite links;
   - a tick box confirms no personal details. Then "Set it afloat 🍾".
 - **My bottles:** the sailor's own bottles, from their private list, with report counts and "Take it back".
 - **Anonymity:** a bottle (`bottles/{random id}`) holds no name, email or account id, and its time shows as a date only. The sharer's own folder keeps `users/{uid}/shared/{bottleId}`, so only they can take it back. Ship's operator could connect the two in the database; other sailors can't. The privacy text says so.
@@ -1169,7 +1177,7 @@ A panel (top bar, key `B`, a button on the page below the scene; `components/pan
 - **Deck cards** live in `bottles/{id}/deck/cards`, so browsing never downloads whole decks. Limits (`BOTTLE_LIMITS` in `shared-types/bottle.ts`): title 200, link 2000, subject 60, 8 tags of 30, description 500, 300 cards of 500 characters a side, 3 preview cards.
 - **The rules** (`firestore.rules`) enforce all of it on Google's side, because the app's own checks can be skipped by a script. A bottle is created in one batch with its sharer's private note and their cooldown stamp (`users/{uid}/meta/bottles`, `lastAt` = server time, rewritable only after 20 s, and not deletable early). Only the sharer can delete a bottle or its cards, and a report must add exactly 1 alongside a new report record.
 - **Account deletion** (`deleteCloudData`) takes the sailor's bottles back too, and deletes the cooldown stamp last, waiting out its 20 seconds if needed. The Log in window wording is unchanged; the privacy policy has a "Bottle Bay" paragraph.
-- **Code:** pure rules in `lib/bottleRules.ts` (10 tests), database calls in `lib/bottleBay.ts`, and `lib/db.ts` now holds the one Firestore instance for both cloud sync and Bottle Bay. `uiStore.loginOpen` lets any panel open the Log in window. Contracts: `shared-types/bottle.ts` (new), `IntegrationId` and `DeckSource` gain `bottle`.
+- **Code:** pure rules in `lib/bottleRules.ts` (18 tests, with Study Rooms' contact-detail checks), database calls in `lib/bottleBay.ts`, and `lib/db.ts` now holds the one Firestore instance for both cloud sync and Bottle Bay. `uiStore.loginOpen` lets any panel open the Log in window. Contracts: `shared-types/bottle.ts` (new), `IntegrationId` and `DeckSource` gain `bottle`.
 
 **Switching it on** (the user, once): publish the new `firestore.rules` in the Firebase console (Firestore → Rules → paste → Publish), or run `firebase deploy --only firestore:rules`. Until then the bay says its rules need publishing; cloud sync keeps working either way.
 
@@ -1185,9 +1193,97 @@ A panel (top bar, key `B`, a button on the page below the scene; `components/pan
 
 **Not verified:** the real Firebase project (rules not yet published there), real Google sign-in, and use by many people at once (the free tier's daily reads are shared: each visit to the bay reads about 40 documents).
 
-### 2. Study rooms and co-op games, 3. Shared Obsidian notes
+### 2. Study Rooms and co-op games (branch `claude/rooms`)
 
-Not started; next, after a usage check.
+A panel (`components/panels/RoomsPanel.tsx`, loaded on first open) where sailors study side by side and play two short co-op games on their breaks. It opens from the top bar's **Rooms** button, the `R` key, a pill on the page below the scene, and invite links (`…/#room=K7MP2QXA`). The fragment after `#` never reaches a server; `useRoomLink` takes it out of the address bar at once and opens the panel on that room's card. **Nothing joins until the sailor taps "Come aboard".**
+
+**Two kinds of room** (chosen when it opens; it never changes):
+- **Invite** (the default): anyone with the code or link.
+- **Open**: also listed for anyone logged in who ticked "I'm 13 or older" on the room rules card. The tick is stored with the account (`users/{uid}/meta/rooms.over13`), and the rules check it before anyone opens, joins or lists an open room.
+
+**On screen.** Each sailor gets a made-up nickname (e.g. "Cozy Dango 42"; the numbers 14, 18, 69 and 88 never appear), one of 5 characters (Pigeon, Teddy, Bunny, Frog, Banana; Banana is never picked by default) and one of 8 accessories, new in every room. The room leader is the **Skipper**; Captain Banan stays the app's character, and calls the legs. While aboard, the top bar shows "Signed in" instead of the first name.
+- **Crew strip** (`rooms/CrewStrip.tsx`): badges with status dots, the Kraken's bar and cheer bubbles, at the bottom left on wide screens and under the top bar on phones. Tapping it opens Study Rooms.
+- **Banner** (`rooms/RoomBanner.tsx`): one offer at a time: "Your crew sets sail in 0:48!", "Hop aboard", "Next leg is starting: sail on?", "Pass the Bottle is starting", "Pwedo brought you the bottle!", and Lumi's notices.
+- **The scenes**: crewmates are drawn as pastel characters at the focus desk, at the break picnic and pool, and at the deck's galley tables, in both looks (`ship-engine/roomCrew.ts`). Clicking one opens Study Rooms. With crew at the tables, Pip, Mochi and Lumi stand in front of them.
+- **Talk** is 24 preset cheers and the 12 die-cut stickers, shown for 6 seconds. There's no typed chat, voice or video.
+
+**Studying together**
+- **Set sail together:** the skipper picks a plan (25/5, 50/10 or custom 5–120 / 1–30 minutes, 1–8 legs). Everyone's banner counts down the 1-minute prep, and "Sail with them" starts their Pwedo Pomo so the prep ends at the same moment (`voyageStore.start({ prepUntil })`).
+- **Hop aboard:** joining in the middle of a leg (with at least 2 minutes of it left) starts a timer for the minutes the crew has left, rounded to the nearest minute, so the break starts within half a minute of the crew's. The button says those minutes ("Hop aboard · 4 min left"). **Sail on** (the leg and those after it) is offered only in a leg's first half minute.
+- **Kraken Watch:** every focused minute anyone sails aboard is one bonk. The minutes ride on writes sailors already make (phase changes and a keep-alive), and the rules cap them by time since the last credit. Beasts beaten pay 20 doubloons and 50 XP and the beast's figurehead, but only to sailors with 10 of their own minutes in the room, and never for beasts beaten before they joined.
+- **Room rewards** are capped at 60 doubloons and 150 XP a day (`economyStore.earnOnce`, `roomEarnings`), and each pays once across devices (`paidRewardIds`, which syncs).
+
+**The games** (breaks only: focusing sailors aren't seated; they see "A game is on · it'll be here after your focus block"). Both deal from a seed with the practice engine (`active-recall-engine/crewPlay.ts`), so every device shows the same cards, and neither changes when cards are due. The skipper picks the deck: a Bottle Bay deck (open rooms use only these), or in invite rooms one of their own decks of 4–100 cards, which is refused if it holds contact details (`hasContactDetails`) and needs an "Okay for everyone in this room to see" tick.
+- **Tidy the Deck** (Mochi; 1–2 minutes): co-op Match. Each sailor tidies a patch of up to 6 pairs, then helps with the patches left. Crew time is the slowest patch plus 1 s per mix-up. 5 doubloons and 10 XP to everyone who tidied a patch.
+- **Pass the Bottle** (Pwedo; about 4 minutes): a relay quiz. The holder has 30 s; a miss gives the next sailor a rescue try at the same card; a missed rescue loses one of 5 lifebuoys. Anyone can "Take the helm" when the holder has left, started focusing, or gone 35 s without answering. Each turn is one write, and the rules refuse a second write of the same turn. The island (6 bottles for up to 3 seats, 8 for more) pays 1 doubloon and 2 XP per bottle plus 10 and 20.
+- After either, "Keep these cards" adds them to Flashcards with fresh schedules.
+
+**The skipper's tools:** lock the door (which also unlists), ask someone to leave (they're banned for the room's life), pass the hat, close the room. When the skipper is unseen for 25 minutes, a sailor who's present takes the hat (the room keeps going).
+
+**Safety and privacy**
+- Nothing in a room names a sailor: no Google name, email, photo, uid, Wardrobe name or timer goal. Room code never reads them (checked with `grep`), `newMemberFields` is the only builder of a sailor's entry (with a privacy test), and the rules' key lists refuse any other field.
+- Every sailor can leave, hide a sailor's cheers, mute cheers, hide a room from their list, and report (once, with one of 4 reasons, counted in `why` without saying who). Reports come only from sailors aboard or removed. 3 reports take an open room off the list.
+- A sailor's key in a room is `sha256(uid + "/" + code)`, and a report's is `sha256("report/" + uid + "/" + code)`, so other sailors can't link rooms to each other or to an account. Ship's operator could; the privacy policy says so.
+- The legal window gained a **Community Rules** tab (be kind, no personal details, how to leave, hide, mute and report, and "tell an adult you trust") and a Study Rooms paragraph in the privacy policy. The room rules card links to the Community Rules tab. There's no private safety address yet: the tab points to the existing contact route under Free Tier & Contact (public GitHub issues) and warns not to put a room code or anyone's details there.
+
+**Leaving, signing out and deleting**
+- Signing out and Settings → Start over leave the room first, giving up after 8 s when offline (the room sweeps a sailor it stops hearing from anyway).
+- Delete account & data (`deleteCloudData`) first leaves every room and closes the ones the sailor skippers, while the private notes saying which rooms are theirs still exist. Then it deletes their bottles 10 to a batch (the rules may look up at most 20 documents per batch; it used to try 150) and the rest of their cloud copy. The bottle and room cooldown stamps go last, once the rules allow it, so it can take up to a minute; the window says so. A refusal after the first successful read now counts as a failure, not as "nothing stored".
+
+**How it's stored** (`firestore.rules`, all limits enforced there):
+- `rooms/{CODE}`: one document per room, **readable only by sailors aboard**: up to 6 sailors, the sail plan, the Kraken total, the deck and the current game. Each sailor runs one listener on it.
+- `roomCards/{CODE}`: the public card (made-up name, subject, mode, listed, locked, how many aboard, opened, skipper last seen). The rules make it mirror its room on every write. The open list is one query of up to 20 cards.
+- `rooms/{CODE}/deck/cards` (a skipper's own deck), `users/{uid}/meta/rooms` (cooldowns, rules version, the 13+ tick), `users/{uid}/rooms/{CODE}` (a private note "I'm in this room", for account deletion and tidying up), and `config/rooms` (`{create, open}`: the operator's off switch in the console; missing means on).
+- `ship:rooms` (the room you're in, recent rooms, hidden sailors and rooms, mute, the rules tick, the last look, rooms you reported) stays on the device: not synced and not backed up, because recent codes work as invite keys.
+
+**Decisions:** 6 sailors per room; joins stop 12 hours after it opens. Codes are 8 characters with no I, O, 0 or 1. Each sailor writes their own entry at most once every 15 s, with a keep-alive every 10 minutes; Away after 12 minutes, swept after 25 (their minutes stay with the crew). A room ends 25 minutes after the skipper was last seen, or at 12 hours, and anyone may then delete it; the last one out deletes it too. One new room per account per minute, one join per 10 s. The localhost crew server (`apps/signaling-server`, the Crew panel, voice and video, ghosts) stays as it was; the two never share state. Sound stays off; rooms add none.
+
+**Observed in the emulator:** a removed or swept sailor's open listener gets `permission-denied`, not a last snapshot showing them gone. The session handles both: the panel then says "You're no longer aboard…" with Hop back in, which a ban refuses ("You can't rejoin this room.", with Report).
+
+**Cost** (Firestore's free tier is shared by everyone on the site: 50,000 reads and 20,000 writes a day): a 4-sailor room-hour with one game is about 89 writes, 6 deletes and 390 reads, so roughly 38 such room-hours a day if rooms get 30% of the reads (reads run out before writes). Cloud sync's coin saves cost more than rooms; throttle those first if the quota gets tight.
+
+**Code map:** contracts in `shared-types/room.ts` (and `questFromDamage` in `crew.ts`); dealing in `active-recall-engine/crewPlay.ts`; pure rules in `lib/roomRules.ts`; every database call in `lib/rooms.ts` and the live link in `lib/roomSession.ts` (both loaded only when needed); `stores/roomStore.ts`; `hooks/useRoomSync.ts` and `useRoomLink.ts`; the UI in `components/rooms/` (games in `games/`); the scenes in `ship-engine/roomCrew.ts`. `lib/roomLimits.test.ts` checks that every number in `ROOM_LIMITS` appears in `firestore.rules`.
+
+**Load size:** the first download grew by about 32 kB gzipped (to about 372 kB over 15 files), because `roomStore`, `roomRules` (with its word lists), the crew strip, the banner and `roomCrew` load for everyone. Firestore, `lib/rooms.ts`, `lib/roomSession.ts` and the panel are separate chunks, loaded only when someone opens a room. If the size matters, split out the word lists or the crew strip.
+
+**Switching it on** (the user, once): publish `firestore.rules` (Firestore → Rules → paste → Publish, or `firebase deploy --only firestore:rules`); optionally add `config/rooms`; then `npm run build:site` and `firebase deploy --only hosting`. Until the rules are published, the panel says they need publishing.
+
+**Testing it locally:** start the emulators and the dev server as "Cloud sync" describes (`VITE_FIREBASE_EMULATORS=1`), then sign each test browser in with `window.__shipEmulatorSignIn(email)`. `npm run check:rules -w @ship/web` runs the 147 rules checks against the same emulators. After editing `roomRules.ts` or `roomStore.ts` while the app runs, reload the page: Vite's hot update makes a second copy of the store, and the panel can get stuck on "Climbing aboard…". That's a dev-only effect, not a bug.
+
+**Verified (2026-11-24):**
+- `npm run check:rules` against the emulator: 147 checks (30 Bottle Bay and cloud sync, 115 Study Rooms, 2 account-deletion batches), and no refusal hit the 1,000-expression limit.
+- Three muted headless Chromium sailors (two computers, one 390 px phone) against the emulators and the dev server, in one clean run of 14 steps with no page errors:
+  - an invite room opened, its link copied; the link's `#room=` left the address bar, the rules card then the Join card showed, and nobody joined until the tap. A sailor with only the code saw just the card (9 fields) and was refused the room itself. An owner dump of `rooms/` and `roomCards/` held no uid, email, display name, Wardrobe name or timer goal;
+  - Set sail together (5/1, 2 legs): both prep timers ended within 25 ms of each other; each desk scene showed the other as a pastel character; a reload mid-focus picked the room back up; the Kraken bar fell after a minute; a sailor joining 40 s into the leg hopped aboard and her focus ended 14 s before the crew's; all three went on a break together; at leg 2 the docked sailor was offered "sail on";
+  - Tidy the Deck with a Bottle Bay deck: the same 3 patches on every device, the same crew time everywhere, and 5 doubloons and 10 XP paid once each;
+  - Pass the Bottle: a right answer, a miss, a saved rescue, the holder starting to focus and another sailor taking the helm in under a second, the island (6 bottles), 16 doubloons and 32 XP paid once each, nothing more after a reload; the focusing sailor saw "A game is on · it'll be here after your focus block";
+  - the skipper removed a sailor: his listener lost access within a second, Lumi told him, "Hop back in" was refused ("You can't rejoin this room."), and his report ("unkind") was counted;
+  - a sailor's `seen` aged through the emulator's REST API showed Away, then was swept with her 4 minutes banked; her tab told her, and Hop back in worked;
+  - an open room: the phone sailor saw it on the list (cards only, no nicknames), joined from the top-bar button with no keyboard, and sent a sticker that showed as a bubble in the skipper's crew strip and scene; three reports took it off the list; the last one out of the invite room deleted it and its card;
+  - account deletion: the skipper's open room closed (the other sailor was told), his notes, stamps and bottle went, in 27 s (it waits out the room cooldown);
+  - the Full Color look, Midnight Moon and Deep Sea Jellyfish themes, reduced motion, the break scene with a crewmate, and no sideways scroll at 390 px; a fourth sailor without the 13+ tick saw no open list but joined an invite room.
+- The built site's first download has no Firestore; rooms, the session and the panel are separate chunks loaded on demand.
+
+**Not verified:** the real Firebase project (rules not published), real Google sign-in, Safari and real phones, more than 4 sailors at once, the daily quota under real use, a beast's defeat and its figurehead (it needs 120 focused minutes; the rule is unit-tested), and the storage notice's buttons on a phone now that the page no longer scrolls sideways (they couldn't be tapped at 390 px before that fix).
+
+**Known limits, not fixed:**
+- Because of the refused listener above, a removed sailor never saw "the skipper asked you to leave" in the emulator; they learn about the ban only when Hop back in is refused. That note shows only if the real database delivers the last snapshot.
+- After a page reload, a sailor's focus minutes aren't credited until their own next write sets the clock (by design in `roomSession`); they catch up then.
+- The break reflection window covers the Ink & Paper break scene each time a focus block ends, so crewmates there show only after Skip.
+- At the galley tables on the Woolly Wanderer, Pip, Mochi and Lumi slightly overlap seated crewmates. Left for the kawaii review.
+
+**Questions for the user** (each with the default used):
+1. Pip's banana costume is selectable but never a default or a mascot, while the Minions question (see "Open questions for the user" under "The kawaii redesign") is open. Keep it, or hide it?
+2. Crewmates reuse the pastel characters drawn in code; only the small accessory emblems are new. Fine while the sprite question is open?
+3. 6 seats and 12 hours a room? Yes, by default.
+4. May invite rooms use the skipper's own decks (contact details blocked, a tick needed)? Yes, by default.
+5. Open rooms are strictly 13 and older, self-declared, with no "parent or school permission" exception. Keep that?
+6. A private safety-report email address for the policy: which one? Until then the Community Rules tab points to Free Tier & Contact.
+7. Retire the localhost crew server (voice and video, ghost ships) once rooms prove themselves? Kept, by default.
+
+### 3. Shared Obsidian notes
+
+Not started; next, after a usage check. It will add `rooms/{code}/notes/{id}`, readable and writable only by sailors aboard **and** only in invite rooms (`mode` never changes), with `cleanText` moved from `apps/signaling-server/src/protocol.ts` into shared code and `hasContactDetails` on every save.
 
 ## Conventions
 

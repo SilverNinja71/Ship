@@ -1,11 +1,19 @@
 // Ship · Pwedo Pomo Studio Focus / Study Desk, Break, and Pwedo Play scenes:
 // 100% original kawaii hand-drawn stationery aesthetic with NO black outlines.
+// Study Rooms crewmates join the desk and break scenes (roomCrew.ts); they're the only thing
+// in these scenes to click, and a click opens Study Rooms.
 
-import { alpha, circlePath, ellipsePath, line, paint, roundRectPath, smoothClosedPath, withTransform } from "./draw.js";
+import type { SceneMate } from "../lib/roomRules.js";
+import { alpha, circlePath, clamp, ellipsePath, line, paint, roundRectPath, smoothClosedPath, withTransform } from "./draw.js";
+import { rectRegion } from "./hitRegions.js";
+import type { HitRegion } from "./hitRegions.js";
 import { getKawaiiTheme } from "./kawaiiThemes.js";
 import type { KawaiiTheme } from "./kawaiiThemes.js";
 import { drawPastelMinion } from "./minions.js";
 import type { MinionCostume } from "./minions.js";
+import { drawLabel } from "./props.js";
+import { MATE_HEIGHT, breakSpots, deskSpots, drawCheerBubble, drawMate, mateChore, mateTitle } from "./roomCrew.js";
+import type { SceneSpot } from "./roomCrew.js";
 import { drawThemeBackdrop } from "./themeBackdrop.js";
 import { PORT_THEMES, SKETCH_INK, drawPaperTexture } from "./tinyInk.js";
 import type { PortThemeId } from "./tinyInk.js";
@@ -13,6 +21,9 @@ import type { Viewport } from "./ShipRenderer.js";
 import type { Ctx, FrameInfo } from "./types.js";
 
 const SHADOW_GREY = "#EAE5DA";
+/** Study room crewmates are drawn a little smaller than the house crew: they sit further back. */
+const MATE_DESK_SCALE = 1.1;
+const MATE_BREAK_SCALE = 1.2;
 const OUTLINE_GREY = "#A29C93";
 const LINE_GREY = "#DCD6CA";
 
@@ -52,8 +63,8 @@ function sketchOpenBox(ctx: Ctx, x: number, y: number, w: number, h: number, r: 
   paint(ctx, (c) => roundRectPath(c, x, y, w, h, r), fill, { width, stroke: "#8D8D8D" });
 }
 
-/** Draws Pwedo, the cute plump white bird, with optional wing flap & rosy cheeks. */
-function drawPwedoBird(
+/** Draws Pwedo, the cute plump white bird, with optional wing flap & rosy cheeks. Centered on its body. */
+export function drawPwedoBird(
   ctx: Ctx,
   x: number,
   y: number,
@@ -144,6 +155,70 @@ function drawSparkle(ctx: Ctx, x: number, y: number, r: number, color: string): 
   );
 }
 
+// ---- Study Rooms crewmates in the desk and break scenes -------------------------------------
+
+/** Crewmates to show and how many are left over: 2 on narrow screens (under 520 px), else as many as there are spots. */
+function fitCrew(crew: readonly SceneMate[] | undefined, width: number, spots: number): { shown: SceneMate[]; extra: number } {
+  const all = crew ?? [];
+  const shown = all.slice(0, width < 520 ? Math.min(2, spots) : spots);
+  return { shown, extra: all.length - shown.length };
+}
+
+/** Name tags stay about 12 px tall on screen whatever the scene's zoom. */
+const sceneTagScale = (unit: number) => clamp(11.5 / (17 * unit), 0.55, 1.6);
+
+/**
+ * Each crewmate's name tag (over their head, or under their feet with `below`), their cheer over
+ * their head, and a click area that opens Study Rooms. Drawn over the props.
+ */
+function drawMateTags(
+  ctx: Ctx,
+  dpr: number,
+  unit: number,
+  shown: readonly SceneMate[],
+  spots: readonly SceneSpot[],
+  scale: number,
+  extra: { count: number; at: SceneSpot | null },
+  regions: HitRegion[],
+  /** Half the canvas width in scene units, so a tag near the edge slides in instead of being cut off. */
+  halfWidth: number,
+  below = false,
+): void {
+  const s = sceneTagScale(unit);
+  const tagX = (x: number, text: string) => {
+    ctx.save();
+    ctx.font = `700 ${Math.round(17 * s)}px ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif`;
+    const half = (ctx.measureText(text).width + 18 * s) / 2 + 6 * s;
+    ctx.restore();
+    return Math.max(-halfWidth + half, Math.min(halfWidth - half, x));
+  };
+  const row = (spot: SceneSpot) => (spot.tagRow ?? 0) * 30 * s;
+  const tagAt = (spot: SceneSpot) => (below ? spot.y + 18 * s + row(spot) : spot.y - MATE_HEIGHT * scale - 12 * s - row(spot));
+  shown.forEach((mate, i) => {
+    const spot = spots[i];
+    if (!spot) return;
+    const top = spot.y - MATE_HEIGHT * scale;
+    const tagY = tagAt(spot);
+    drawLabel(ctx, mate.label, tagX(spot.x, mate.label), tagY, s, mate.away ? "ghost" : "plain", true);
+    if (mate.cheer !== null) drawCheerBubble(ctx, { x: spot.x, y: below ? top + 2 * scale : tagY - 14 * s }, mate.cheer, s);
+    regions.push(rectRegion(ctx, dpr, `mate:${mate.key}`, mateTitle(mate), spot.x - 30 * scale, top, 60 * scale, spot.y - top));
+  });
+  if (extra.count > 0 && extra.at) {
+    const y = tagAt(extra.at);
+    const x = tagX(extra.at.x, `+${extra.count}`);
+    drawLabel(ctx, `+${extra.count}`, x, y, s, "plain", true);
+    regions.push(rectRegion(ctx, dpr, "mate:more", `${extra.count} more in your study room. Open Study Rooms`, x - 24 * s, y - 13 * s, 48 * s, 26 * s));
+  }
+}
+
+/** Where the "+n" tag goes: the scene's last spot when it's free (furthest from the others), or one row past the last crewmate's tag. */
+function extraSpot(spots: readonly SceneSpot[], all: readonly SceneSpot[], shown: number): SceneSpot | null {
+  const free = all.length > shown ? all[all.length - 1] : undefined;
+  if (free) return free;
+  const last = spots[shown - 1];
+  return last ? { ...last, tagRow: (last.tagRow ?? 0) + 1 } : null;
+}
+
 /**
  * Playful pastel scene shown when the user opens "Pwedo Pomo":
  * Pwedo (the cute bird) hops and flutters joyfully on the active stationery backdrop.
@@ -216,6 +291,7 @@ export function renderPwedoPlayScene(
   drawPaperTexture(ctx, w, h);
 }
 
+/** The focus desk. Returns the click areas of any Study Rooms crewmates drawn behind the desk. */
 export function renderStudyDeskScene(
   ctx: Ctx,
   view: Viewport,
@@ -226,8 +302,10 @@ export function renderStudyDeskScene(
     objective: string | null;
     focusProgress?: number;
     showAffirmations?: boolean;
+    /** Study Rooms crewmates (not me), in the order they came aboard. */
+    crew?: SceneMate[];
   },
-): void {
+): HitRegion[] {
   const { width: w, height: h } = view;
   const activeTheme = opts.theme ?? getKawaiiTheme(null);
   const legacyTheme = (opts.portTheme ? PORT_THEMES[opts.portTheme] : null) ?? PORT_THEMES.classic;
@@ -239,8 +317,15 @@ export function renderStudyDeskScene(
   const cx = w / 2;
   const cy = h * 0.55;
   const m = frame.reducedMotion ? 0 : 1;
+  const regions: HitRegion[] = [];
+  const allSpots = deskSpots(4);
+  const { shown, extra } = fitCrew(opts.crew, w, allSpots.length);
+  const spots = allSpots.slice(0, shown.length);
 
   withTransform(ctx, { x: cx, y: cy, scale: unit }, () => {
+    // 0. Study room crewmates in a smaller row at the back, so the desk tucks them in too.
+    shown.forEach((mate, i) => drawMate(ctx, spots[i]!, mate, frame, MATE_DESK_SCALE));
+
     // 1. Cute pastel crew sitting BEHIND the slanted desk!
     const writeBob = Math.sin(frame.t * 3.4) * 1.5 * m;
 
@@ -333,9 +418,13 @@ export function renderStudyDeskScene(
       const label = opts.objective.length > 42 ? `${opts.objective.slice(0, 41)}…` : opts.objective;
       ctx.fillText(label, 0, -199);
     }
+
+    // 7. Crewmates' name tags and cheers go over the desk and its props.
+    drawMateTags(ctx, view.dpr, unit, shown, spots, MATE_DESK_SCALE, { count: extra, at: extraSpot(spots, allSpots, shown.length) }, regions, w / 2 / unit);
   });
 
   drawPaperTexture(ctx, w, h);
+  return regions;
 }
 
 /**
@@ -346,8 +435,14 @@ export function renderBreakScene(
   ctx: Ctx,
   view: Viewport,
   frame: FrameInfo,
-  opts: { portTheme?: PortThemeId; theme?: KawaiiTheme; showAffirmations?: boolean },
-): void {
+  opts: {
+    portTheme?: PortThemeId;
+    theme?: KawaiiTheme;
+    showAffirmations?: boolean;
+    /** Study Rooms crewmates (not me), in the order they came aboard. Returns their click areas. */
+    crew?: SceneMate[];
+  },
+): HitRegion[] {
   const { width: w, height: h } = view;
   const activeTheme = opts.theme ?? getKawaiiTheme(null);
   const pastel = activeTheme.canvas.pastel;
@@ -358,6 +453,15 @@ export function renderBreakScene(
   const cx = w / 2;
   const cy = h * 0.56;
   const m = frame.reducedMotion ? 0 : 1;
+  const regions: HitRegion[] = [];
+  const allSpots = breakSpots(5);
+  const { shown, extra } = fitCrew(opts.crew, w, allSpots.length);
+  // A crewmate on a break swims in the pool; anyone else at a pool spot waits on its near rim.
+  const spots = allSpots.slice(0, shown.length).map((spot, i) => {
+    const mate = shown[i]!;
+    const swims = spot.swim && mate.state === 2 && !mate.away;
+    return swims || !spot.swim ? spot : { x: spot.x, y: spot.dryY ?? spot.y };
+  });
 
   withTransform(ctx, { x: cx, y: cy, scale: unit }, () => {
     // 1. Soft pastel picnic mat on the left (eating snacks & napping)
@@ -412,6 +516,15 @@ export function renderBreakScene(
     const birdSingBob = Math.sin(frame.t * 4.5) * 3 * m;
     drawPwedoBird(ctx, 64, -36 + birdSingBob, frame, { scale: 1.15, pastelWing: pastel, flap: Math.sin(frame.t * 8) * 0.4 * m });
 
+    // 4. Study room crewmates join the picnic and the pool, in front of the house crew.
+    shown.forEach((mate, i) => {
+      const spot = spots[i]!;
+      const swims = spot.swim && mate.state === 2 && !mate.away;
+      const bob = swims ? Math.sin(frame.t * 2.6 + i * 1.3) * 3 * m : 0;
+      drawMate(ctx, { x: spot.x, y: spot.y + bob }, mate, frame, MATE_BREAK_SCALE, { chore: swims ? "swim" : mateChore(mate.state, mate.away) });
+    });
+    drawMateTags(ctx, view.dpr, unit, shown, spots, MATE_BREAK_SCALE, { count: extra, at: extraSpot(spots, allSpots, shown.length) }, regions, w / 2 / unit, true);
+
     // Subtle header
     ctx.fillStyle = activeTheme.canvas.textInk;
     ctx.font = '400 16px Georgia, "Playfair Display", serif';
@@ -420,4 +533,5 @@ export function renderBreakScene(
   });
 
   drawPaperTexture(ctx, w, h);
+  return regions;
 }

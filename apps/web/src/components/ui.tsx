@@ -84,7 +84,19 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
   );
 }
 
-export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; badge?: number }[]; value: T; onChange: (id: T) => void }) {
+/** `tone="pastel"` gives the Ink & Paper look (a butter-yellow active tab) used by the newer panels. */
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  tone = "kit",
+}: {
+  tabs: { id: T; label: string; badge?: number }[];
+  value: T;
+  onChange: (id: T) => void;
+  tone?: "kit" | "pastel";
+}) {
+  const active = tone === "pastel" ? "bg-[#FFF1B8] text-[#5B460F] shadow-[0_2px_0_#F1E3A0]" : "bg-navy-900 text-cream-50 shadow-sm";
   return (
     <div role="tablist" className="mb-4 flex flex-wrap gap-1.5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-1">
       {tabs.map((t) => (
@@ -95,8 +107,9 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
           className={cx(
-            "flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-display text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
-            value === t.id ? "bg-navy-900 text-cream-50 shadow-sm" : "text-[var(--muted-ink)] hover:bg-[var(--surface-1)] hover:text-[var(--page-ink)]",
+            "flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-display text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+            tone === "pastel" ? "font-normal" : "font-bold",
+            value === t.id ? active : "text-[var(--muted-ink)] hover:bg-[var(--surface-1)] hover:text-[var(--page-ink)]",
           )}
         >
           {t.label}

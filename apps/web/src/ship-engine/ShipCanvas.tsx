@@ -3,12 +3,16 @@
 // the Captain's Quarters, and turns clicks on the ship into actions.
 
 import { useEffect, useRef } from "react";
-import { CABIN_DECOR, ENVIRONMENTS } from "@ship/ship-theme-kit";
+import type { AvatarState, RoomState } from "@ship/shared-types";
+import { CABIN_DECOR, DEFAULT_AVATAR, ENVIRONMENTS } from "@ship/ship-theme-kit";
 import { ringChime } from "../hooks/useAmbiance.js";
+import { sceneMates } from "../lib/roomRules.js";
+import type { SceneMate } from "../lib/roomRules.js";
 import { focusProgress } from "../lib/voyageLogic.js";
 import { myAvatarState, useActivity } from "../stores/activityStore.js";
 import { absentGhosts, ghostStateAt, useCrew } from "../stores/crewStore.js";
 import { useEconomy } from "../stores/economyStore.js";
+import { useRooms } from "../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../stores/settingsStore.js";
 import { resolveActiveShip, resolveAvatar, useCustomizer } from "../stores/shipCustomizer.js";
 import { useUi } from "../stores/uiStore.js";
@@ -48,6 +52,34 @@ interface LoopState {
 }
 
 const approach = (value: number, target: number, rate: number, dt: number) => value + (target - value) * Math.min(1, rate * dt);
+
+const NO_MATES: SceneMate[] = [];
+
+/** The Study Rooms crewmates to draw this frame (not me), or none when not aboard. */
+function roomMates(nowMs: number): SceneMate[] {
+  const rooms = useRooms.getState();
+  if (!rooms.current || !rooms.room || !rooms.myKey) return NO_MATES;
+  return sceneMates(rooms.room, rooms.myKey, nowMs + rooms.serverOffset, rooms.hidden, rooms.muted);
+}
+
+const AVATAR_STATE: Record<RoomState, AvatarState> = { 0: "SHORE_LEAVE_BREAK", 1: "SAILING_FOCUS", 2: "SHORE_LEAVE_BREAK", 3: "DRIFTING_IDLE" };
+
+/** A room crewmate at a galley table: drawn as their house character (the avatar is only a placeholder). */
+function mateOnDeck(m: SceneMate): CrewOnDeck {
+  return {
+    id: m.key,
+    name: m.label,
+    avatar: DEFAULT_AVATAR,
+    state: m.away ? "DRIFTING_IDLE" : AVATAR_STATE[m.state],
+    ghost: false,
+    costume: m.costume,
+    accessory: m.accessory,
+    roomState: m.state,
+    away: m.away,
+    cheer: m.cheer,
+    skipper: m.skipper,
+  };
+}
 
 export function ShipCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -115,6 +147,7 @@ export function ShipCanvas() {
       const avatar = resolveAvatar(custom.avatar, inventory);
       const env = ENVIRONMENTS[ship.environment];
       const nowMs = Date.now();
+      const mates = roomMates(nowMs);
 
       const sailing = voyage.phase === "sailing";
       s.wind = approach(s.wind, sailing ? 1 : voyage.phase === "shore-leave" ? 0.55 : 0.3, 0.6, dt);
@@ -141,22 +174,26 @@ export function ShipCanvas() {
             showAffirmations: settings.showAffirmations,
           });
         } else if (tinyInk && voyage.phase === "sailing") {
-          renderStudyDeskScene(ctx, view, frame, {
+          regions = renderStudyDeskScene(ctx, view, frame, {
             portTheme: settings.portTheme,
             theme: kawaiiTheme,
             objective: voyage.objective,
             focusProgress: focusProgress(voyage, nowMs),
             showAffirmations: settings.showAffirmations,
+            crew: mates,
           });
         } else if (tinyInk && voyage.phase === "shore-leave") {
-          renderBreakScene(ctx, view, frame, {
+          regions = renderBreakScene(ctx, view, frame, {
             portTheme: settings.portTheme,
             theme: kawaiiTheme,
             showAffirmations: settings.showAffirmations,
+            crew: mates,
           });
         } else {
+          // Study room crewmates take the first seats, then the local crew room's sailors and ghosts.
           const others = crew.members.filter((m) => m.peerId !== crew.peerId).sort((a, b) => a.seat - b.seat);
-          const onDeck: CrewOnDeck[] = others.map((m) => ({ id: m.peerId, name: m.name, avatar: m.avatar, state: m.state, ghost: false }));
+          const onDeck: CrewOnDeck[] = mates.map(mateOnDeck);
+          for (const m of others) onDeck.push({ id: m.peerId, name: m.name, avatar: m.avatar, state: m.state, ghost: false });
           for (const g of absentGhosts(crew.ghosts, crew.members)) {
             onDeck.push({ id: g.id, name: g.name, avatar: g.avatar, state: ghostStateAt(g, s.t + g.recordedAt / 1000), ghost: true });
           }
@@ -272,6 +309,7 @@ export function ShipCanvas() {
     else if (id === "bookshelf") ui.openPanel("log");
     else if (id === "porthole") useSettings.getState().set({ view: "deck" });
     else if (id.startsWith("crew:") || id.startsWith("ghost:")) ui.openPanel("crew");
+    else if (id.startsWith("mate:")) ui.openPanel("rooms");
     else if (id === "decor") {
       const shipId = useCustomizer.getState().activeShipId;
       ui.toast(CABIN_DECOR[shipId] ?? "A keepsake from your travels.");
@@ -306,7 +344,7 @@ export function ShipCanvas() {
         ref={canvasRef}
         className="absolute inset-0 block h-full w-full touch-none select-none"
         role="img"
-        aria-label="Your study ship at sea. Click the helm, citrus tree, bell, desk or your sailor to interact."
+        aria-label="Your study ship at sea. Click the helm, citrus tree, bell, desk, your sailor or a study room crewmate to interact."
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         onClick={onClick}

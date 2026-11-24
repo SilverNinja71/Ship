@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOTTLE_LIMITS } from "@ship/shared-types";
-import { bottleNoteMarkdown, checkDraft, cleanShareUrl, cleanTags, personalInfoWarnings, sourceTypeOf, visibleBottles } from "./bottleRules.js";
+import { bottleNoteMarkdown, checkDraft, cleanShareUrl, cleanTags, hasContactDetails, personalInfoWarnings, sourceTypeOf, visibleBottles } from "./bottleRules.js";
 
 describe("cleaning links before they go in a bottle", () => {
   it("removes tracking codes and the code that points back at the sharer", () => {
@@ -32,6 +32,57 @@ describe("spotting personal details", () => {
     expect(personalInfoWarnings(["Hi, my name is Ana Lopez"], null)).toHaveLength(1);
     expect(personalInfoWarnings([], "https://docs.google.com/document/d/abc/edit")).toHaveLength(1);
     expect(personalInfoWarnings(["Cells make ATP in 1953 and 2026"], "https://en.wikipedia.org/wiki/Cell")).toEqual([]);
+  });
+});
+
+describe("spotting contact details (Study Rooms blocks these in a skipper's deck)", () => {
+  const contact = (text: string) => hasContactDetails([text]);
+
+  it("finds social and chat apps, as whole words", () => {
+    for (const text of ["follow my insta", "it's on Instagram", "snapchat me", "my TikTok", "message on WhatsApp"]) expect(contact(text), text).toHaveLength(1);
+    expect(contact("Discordant harmony resolves to a consonance")).toEqual([]);
+    expect(contact("Instantly, the Tiktaalik crawled ashore")).toEqual([]);
+  });
+
+  it("counts everyday words like discord, telegram and snap only when they point at an account", () => {
+    for (const text of ["add my discord", "on Telegram @sunny", "my snap is sunny22", "Discord username: sunny", "join our discord server"]) expect(contact(text).length, text).toBeGreaterThan(0);
+    for (const text of ["The Apple of Discord started the Trojan War", "The Zimmermann Telegram: a 1917 message", "A snap election was called", "Snap is the fourth derivative of position"])
+      expect(contact(text), text).toEqual([]);
+  });
+
+  it("finds requests to get in touch", () => {
+    for (const text of ["add me!", "DM me after class", "text me later"]) expect(contact(text), text).toEqual(["It asks people to get in touch (like \"add me\" or \"DM me\")."]);
+    expect(contact("Add meat to the stew")).toEqual([]);
+  });
+
+  it("finds @usernames, but not the @ in an email or in code", () => {
+    expect(contact("find me @sunny_otter")).toEqual(["It has something that looks like a username (@name)."]);
+    expect(contact("(@pip.draws)")).toHaveLength(1);
+    expect(contact("Write to them at help@example.com")).toEqual([]);
+    expect(contact("What does @Override do? And @staticmethod? @media (max-width: 40em)? @app.route('/')?")).toEqual([]);
+  });
+
+  it("finds invite and profile links", () => {
+    for (const text of ["discord.gg/abc123", "https://discord.com/invite/abc", "https://t.me/sunny", "wa.me/15551234567", "https://chat.whatsapp.com/Ab12", "snapchat.com/add/sunny", "instagram.com/sunny.otter"])
+      expect(contact(text).some((w) => w.includes("invite or profile link")), text).toBe(true);
+    expect(contact("What.me worry?")).toEqual([]);
+  });
+
+  it("finds real emails and phone numbers, but not examples or numbers from a lesson", () => {
+    expect(contact("ana@school.edu")).toEqual(["It has an email address in it."]);
+    expect(contact("Email format: name@example.com")).toEqual([]);
+    for (const text of ["555-123-4567", "(555) 123-4567", "+44 7700 900123", "call me on 5551234567", "07700900123", "555.123.4567"]) expect(contact(text), text).toEqual(["It has something that looks like a phone number."]);
+    for (const text of ["e = 1.602176634 x 10^-19 C", "pi is 3.14159265358979", "Integer.MAX_VALUE is 2147483647", "2^32 = 4294967296", "One billion: 1 000 000 000", "ISBN 978-3-16-148410-0", "Signed 1918 and 1919"])
+      expect(contact(text), text).toEqual([]);
+  });
+
+  it("gives nothing for a clean deck", () => {
+    expect(hasContactDetails(["Mitochondria", "Makes ATP", "Krebs cycle", "In the matrix", "1066", "Battle of Hastings"])).toEqual([]);
+  });
+
+  it("warns about the same things in Bottle Bay, including the link itself", () => {
+    expect(personalInfoWarnings(["add me on discord"], null)).toHaveLength(2);
+    expect(personalInfoWarnings([], "https://discord.gg/abc123")).toEqual(["It has an invite or profile link for a chat or social app."]);
   });
 });
 
