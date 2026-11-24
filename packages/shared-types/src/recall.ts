@@ -55,6 +55,14 @@ export interface Flashcard {
   schedule: ReviewSchedule;
 }
 
+/** One review of one card: when, and how well it was remembered. */
+export interface ReviewLogEntry {
+  cardId: string;
+  /** Epoch ms. */
+  at: number;
+  rating: RecallRating;
+}
+
 /** A key idea pulled out of reference notes for the blurt check. */
 export interface BlurtConcept {
   id: string;
