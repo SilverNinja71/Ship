@@ -35,11 +35,12 @@ export const SYNCED_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   [storageKey("voyage")]: ["records", "tree", "breakReflections", "sessionTasks"],
   [storageKey("economy")]: ["doubloons", "xp", "inventory", "paidRewardIds", "unlockedThemes", "ledger"],
-  [storageKey("recall")]: ["decks", "cards", "reviewLog", "blurts"],
+  [storageKey("recall")]: ["decks", "cards", "reviewLog", "blurts", "matchBest"],
   [storageKey("customizer")]: ["activeShipId", "loadouts", "avatar"],
   [storageKey("fleet")]: ["assignments", "library", "done"],
   [storageKey("settings")]: [
     "scheduler",
+    "newCardsPerDay",
     "visualStyle",
     "portTheme",
     "activeThemeId",

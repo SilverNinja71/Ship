@@ -89,6 +89,18 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <option value="fsrs">FSRS-4.5</option>
             </Select>
           </Field>
+          <div className="mt-3">
+            <Field label="New cards per day" hint="Like Anki: reviews that are due always show, but brand-new cards are let in a few a day so the reviews they bring later don't pile up.">
+              <Select value={s.newCardsPerDay} onChange={(e) => s.set({ newCardsPerDay: Number(e.target.value) })}>
+                {[5, 10, 20, 30, 50, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n} a day
+                  </option>
+                ))}
+                <option value={0}>No limit</option>
+              </Select>
+            </Field>
+          </div>
         </Card>
 
         <GeminiCard />

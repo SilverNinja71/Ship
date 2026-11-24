@@ -30,13 +30,5 @@ export async function gradeLogEntry(blurt: string, notes: string, settings: Grad
   }
 }
 
-/**
- * The question side of a flashcard: the sentence with the concept blanked out.
- * A heading has no sentence around it to ask about, so it makes no card.
- */
-export function clozeFront(concept: string, sentence: string): string | null {
-  const escaped = concept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const front = sentence.replace(new RegExp(escaped, "i"), "_____");
-  if (front === sentence) return `What is “${concept}”?`;
-  return /[\p{L}\p{N}]/u.test(front.replaceAll("_____", "")) ? front : null;
-}
+/** The fill-in-the-blank question for a key idea; it lives in the recall engine now. */
+export { clozeFront } from "@ship/active-recall-engine";
