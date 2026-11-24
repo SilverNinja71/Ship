@@ -1,20 +1,26 @@
 // A sailor's live link to the Study Room they're aboard, from joining until they leave, even while
 // the panel is closed. Shaped like SyncSession in cloudSync.ts, and like it loaded only when needed.
 //
+// - One session per browser (Web Locks): a second Ship tab waits, and takes over when the first closes.
 // - One listener on rooms/{code}; each snapshot goes into roomStore.
-// - The server's clock, worked out from the `seen` time of each own write.
+// - The server's clock, worked out from the `seen` time of each own write (quick round trips only).
+//   Until it's known, the timer's end isn't sent (it would be in this device's time), and waits
+//   are counted from this device's own writes only.
 // - Own writes: merged into one, spaced 15 s apart (the rules refuse closer ones), and carrying
 //   the focus minutes earned since the last write (the Kraken's damage, at no extra writes).
+//   The timer's state goes out when this device's own timer changes (and once on starting), never
+//   in reply to a snapshot, so two devices with the same sailor can't argue back and forth.
 // - A keep-alive 10 minutes after the last own write; the skipper's also refreshes the card.
-// - Sweeping stale sailors, rewards, offers, and noticing when this sailor is no longer aboard
-//   (removal arrives as permission-denied on the listener, or as a snapshot without them).
+// - Sweeping stale sailors (checked against the server first), rewards, offers, and noticing when
+//   this sailor is no longer aboard (removal arrives as permission-denied on the listener, or as a
+//   snapshot without them).
 
 import { ROOM_LIMITS } from "@ship/shared-types";
 import type { Room, RoomMember } from "@ship/shared-types";
 import { tidyPatches } from "@ship/active-recall-engine";
 import { FIGUREHEADS } from "@ship/ship-theme-kit";
 import { useEconomy } from "../stores/economyStore.js";
-import { pickOffer, rememberRoom, useRooms } from "../stores/roomStore.js";
+import { gameDeck, pickOffer, rememberRoom, rereadRooms, useRooms } from "../stores/roomStore.js";
 import type { RoomNotice, RoomOffer } from "../stores/roomStore.js";
 import { useUi } from "../stores/uiStore.js";
 import { onFocusMinutes, useVoyage } from "../stores/voyageStore.js";
@@ -23,6 +29,8 @@ import {
   clearDeadRoom,
   forgetRoom,
   getCard,
+  getRoom,
+  getRoomFromServer,
   leaveRoom,
   removeSailor,
   roomErrorCode,
@@ -30,8 +38,9 @@ import {
   watchRoom,
   writeSelf,
 } from "./rooms.js";
-import { creditableMinutes, estimateOffset, isSkipperGone, memberKey, mergeSelf, roomProblem, roomRewards, roomStateFor, sweepAction } from "./roomRules.js";
-import type { SelfPatch } from "./roomRules.js";
+import { creditableMinutes, estimateOffset, isSkipperGone, memberKey, mergeSelf, mergeTidy, rememberTidy, roomProblem, roomRewards, roomStateFor, sweepAction } from "./roomRules.js";
+import type { SelfPatch, TidyMemo } from "./roomRules.js";
+import { clearSessionKeys } from "./storage.js";
 import { blockEndsAt } from "./voyageLogic.js";
 
 const SECOND = 1000;
@@ -51,12 +60,70 @@ const MAX_REFUSALS = 3;
 const SWEEP_JITTER_MS = 30 * SECOND;
 const OFFER_EVERY_MS = 5 * SECOND;
 const RELISTEN_MS = 30 * SECOND;
+/** A room this app can't read (a newer app changed it) is tried again less and less often: each try is a read. */
+const UNREADABLE_RETRY_MS = [30 * SECOND, 2 * MINUTE, 10 * MINUTE];
 const LIFETIME_MS = ROOM_LIMITS.lifetimeHours * 60 * MINUTE;
+/**
+ * A clock reading is kept only from a write that came back this fast. A write that waited in
+ * the queue while offline lands late, and would put the clock out by half the wait.
+ */
+const MAX_CALIBRATION_RTT_MS = 4 * SECOND;
+/** The Web Lock that keeps one room session per browser. */
+const LOCK_NAME = "ship:room-session";
 
-/** Thrown into a waiting write when the session ends first. */
-class SessionStopped extends Error {
+/** Thrown into a waiting write when the session ends first (named, so the store can stay quiet about it). */
+export class SessionStopped extends Error {
   constructor() {
     super("The room session ended.");
+    this.name = "SessionStopped";
+  }
+}
+
+/** Thrown inside a write that turned out not to be needed, so its queued changes go back in the queue. */
+class NothingToWrite extends Error {}
+
+// Two things survive a reload of this tab (sessionStorage), under the sailor's key in the room
+// (sha256 of account and code), so another account signing in on this tab never picks them up:
+// focus minutes earned and not yet credited, and what this device has seen of the current Tidy
+// the Deck game (sailors who left take their progress out of the room with them). Leaving or
+// losing the room, Start over and deleting the account clear them.
+const ROOM_TAB_PREFIX = "ship:room-";
+const pendingKey = (key: string) => `${ROOM_TAB_PREFIX}pending:${key}`;
+const tidyKey = (key: string) => `${ROOM_TAB_PREFIX}tidy:${key}`;
+
+function tabGet(name: string): string | null {
+  try {
+    return sessionStorage.getItem(name);
+  } catch {
+    return null;
+  }
+}
+function tabSet(name: string, value: string | null): void {
+  try {
+    if (value === null) sessionStorage.removeItem(name);
+    else sessionStorage.setItem(name, value);
+  } catch {
+    // No sessionStorage (private mode, tests): a reload loses these, as before.
+  }
+}
+function readPending(key: string): number {
+  const n = Number(tabGet(pendingKey(key)));
+  return Number.isFinite(n) && n > 0 ? Math.min(n, ROOM_LIMITS.lifetimeHours * 60) : 0;
+}
+function readTidy(key: string): TidyMemo | null {
+  try {
+    const v = JSON.parse(tabGet(tidyKey(key)) ?? "null") as unknown;
+    if (!v || typeof v !== "object") return null;
+    const { seed, seen } = v as { seed?: unknown; seen?: unknown };
+    if (typeof seed !== "number" || !seen || typeof seen !== "object") return null;
+    const clean: TidyMemo["seen"] = {};
+    for (const [k, t] of Object.entries(seen as Record<string, unknown>)) {
+      const x = t as { patches?: unknown; ms?: unknown; mixups?: unknown } | null;
+      if (/^[0-9a-f]{64}$/.test(k) && x && typeof x.patches === "number" && typeof x.ms === "number" && typeof x.mixups === "number") clean[k] = { patches: x.patches, ms: x.ms, mixups: x.mixups };
+    }
+    return { seed, seen: clean };
+  } catch {
+    return null;
   }
 }
 
@@ -85,9 +152,34 @@ export class RoomSession {
   private chain: Promise<unknown> = Promise.resolve();
   /** The last own changes sent, until a snapshot shows them (by my `seen` moving on). */
   private sending: { patch: SelfPatch; before: number | null } | null = null;
+  /** The timer state this session last sent (or found already there on starting); only a change from it is sent. */
+  private lastTimer: { st: number; endsAt: number | null } | null = null;
+  /** The first snapshot after the listener (re)starts compares the timer with the room's copy once. */
+  private firstSnapshot = true;
   private lastAckLocal = 0;
-  /** Focus minutes earned aboard and not yet credited. */
+  /** Focus minutes earned aboard and not yet credited (kept in sessionStorage across a reload). */
   private pendingDmg = 0;
+  /** Whether the last snapshot came straight from the server (the listener skips cached ones). */
+  private live = false;
+  private tidyMemo: TidyMemo | null = null;
+  /** Set once this tab's saved minutes and Tidy memory for the room are cleared (left or lost it): nothing saves them again. */
+  private forgotten = false;
+  /** A flush is already waiting in the chain: it takes whatever is queued when its turn comes. */
+  private flushWaiting = false;
+  /** Whether the last take() found anything queued (a keep-alive counts); minutes alone ride on other writes. */
+  private tookQueue = false;
+  /** A relisten is waiting; and how many times in a row the room couldn't be read by this app. */
+  private relistening = false;
+  private unreadable = 0;
+  /** Set once the clock has been tried (a good reading or a slow one), so the timer isn't held back again. */
+  private clockTried = false;
+  /** A timer change waiting for the clock; `fromRoom`: compare it with the room's copy, as the first snapshot does. */
+  private timerWaits: { fromRoom: boolean } | null = null;
+  /** A slow write left the clock unset, and a keep-alive is waiting to measure it again. */
+  private reprobing = false;
+  /** Released when the session stops, which hands the Web Lock to a waiting tab. */
+  private release: () => void = () => undefined;
+  private readonly abort = typeof AbortController !== "undefined" ? new AbortController() : null;
   /** After a refused write, the next one leaves the minutes out, in case they were the problem. */
   private holdDmg = false;
   private refusals = 0;
@@ -100,7 +192,7 @@ export class RoomSession {
   constructor(
     readonly uid: string,
     readonly code: string,
-    hint?: SessionHint,
+    private readonly hint?: SessionHint,
   ) {
     if (hint) {
       this.probe = { sent: hint.sentAt, ack: hint.ackAt, before: null, seen: null };
@@ -117,8 +209,32 @@ export class RoomSession {
     return Date.now() + this.offset;
   }
 
+  /** The room as last heard from the server; null once the session has stopped (left, removed, or closed). */
   currentRoom(): Room | null {
-    return this.room;
+    return this.stopped ? null : this.room;
+  }
+
+  /** Whether the card's `alive` is due a refresh from this skipper's next write (joiners read it). */
+  cardAliveDue(): boolean {
+    return this.room?.host === this.key && Date.now() - this.cardAliveLocal >= CARD_ALIVE_MS;
+  }
+
+  /** A write just refreshed the card's `alive`. */
+  noteCardAlive(): void {
+    this.cardAliveLocal = Date.now();
+  }
+
+  private addPending(minutes: number): void {
+    this.pendingDmg = Math.max(0, this.pendingDmg + minutes);
+    if (this.key && !this.forgotten) tabSet(pendingKey(this.key), this.pendingDmg > 0 ? String(this.pendingDmg) : null);
+  }
+
+  /** Clears this tab's saved minutes and Tidy memory for the room (left, lost, or the account went). */
+  forget(): void {
+    this.forgotten = true;
+    if (!this.key) return;
+    tabSet(pendingKey(this.key), null);
+    tabSet(tidyKey(this.key), null);
   }
 
   private me(): RoomMember | undefined {
@@ -127,12 +243,15 @@ export class RoomSession {
 
   async begin(): Promise<void> {
     this.key = await memberKey(this.uid, this.code);
-    if (this.stopped) return;
+    if (this.stopped || !(await this.holdLock()) || this.stopped) return;
+    // What this tab saved before a reload (sessionStorage belongs to one tab).
+    this.pendingDmg = readPending(this.key);
+    this.tidyMemo = readTidy(this.key);
     useRooms.setState({ myKey: this.key, status: this.room ? "aboard" : "joining" });
     this.listen();
     this.unsubs.push(
       onFocusMinutes((minutes) => {
-        if (minutes > 0) this.pendingDmg += minutes;
+        if (minutes > 0) this.addPending(minutes);
       }),
       useVoyage.subscribe((s, p) => {
         if (s.phase !== p.phase || s.pausedReason !== p.pausedReason || s.prepEndsAt !== p.prepEndsAt || s.breakEndsAt !== p.breakEndsAt || s.segmentStartedAt !== p.segmentStartedAt || s.focusMinutes !== p.focusMinutes) {
@@ -158,8 +277,43 @@ export class RoomSession {
     this.timers.add(id);
   }
 
+  /**
+   * One room session per browser. Two tabs with the same sailor would each send their own timer,
+   * so a second tab waits (the panel says the room is open in another tab) and takes over when the
+   * first closes or leaves, after checking this browser is still aboard. False if stopped meanwhile.
+   */
+  private async holdLock(): Promise<boolean> {
+    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+    if (!locks?.request) return true;
+    const held = new Promise<void>((resolve) => {
+      this.release = resolve;
+    });
+    const take = (opts: LockOptions) =>
+      new Promise<boolean>((resolve) => {
+        locks
+          .request(LOCK_NAME, opts, (lock) => {
+            resolve(lock !== null);
+            return lock ? held : undefined;
+          })
+          .catch(() => resolve(false));
+      });
+    if (await take({ ifAvailable: true })) return true;
+    if (this.stopped) return false;
+    useRooms.setState({ status: "elsewhere", myKey: null });
+    if (!(await take(this.abort ? { signal: this.abort.signal } : {}))) return false;
+    if (this.stopped) return false;
+    // The other tab may have left (or switched rooms) meanwhile: read this browser's saved room again.
+    await useRooms.persist.rehydrate();
+    if (useRooms.getState().current !== this.code) {
+      this.stop();
+      return false;
+    }
+    return true;
+  }
+
   private listen(): void {
     this.unlisten?.();
+    this.firstSnapshot = true;
     this.unlisten = watchRoom(this.code, {
       room: (r, meta) => this.onRoom(r, meta.fromCache),
       error: (code) => void this.onError(code),
@@ -169,7 +323,9 @@ export class RoomSession {
   // ---- Snapshots --------------------------------------------------------------------------------
 
   private onRoom(next: Room | null, fromCache: boolean): void {
-    if (this.stopped || fromCache) return;
+    if (this.stopped) return;
+    this.live = !fromCache;
+    if (fromCache) return;
     if (!next) {
       void this.lose(null);
       return;
@@ -181,20 +337,33 @@ export class RoomSession {
     }
     const prev = this.room;
     this.room = next;
+    this.unreadable = 0;
     this.calibrate(me);
     if (this.sending && me.seenAt !== this.sending.before) this.sending = null;
-    useRooms.setState({ room: next, myKey: this.key, serverOffset: this.offset, status: "aboard", ...(useRooms.getState().status === "error" ? { error: null } : {}) });
-    rememberRoom(next, next.host === this.key);
+    const tidyBefore = this.tidyMemo;
+    this.tidyMemo = rememberTidy(tidyBefore, next);
+    if (this.tidyMemo !== tidyBefore && !this.forgotten) tabSet(tidyKey(this.key), this.tidyMemo ? JSON.stringify(this.tidyMemo) : null);
+    // A listener problem is over once a snapshot arrives; a dropped write's note stays until dismissed.
+    useRooms.setState({ room: next, myKey: this.key, serverOffset: this.offset, status: "aboard", tidyMemo: this.tidyMemo, ...(useRooms.getState().status === "error" ? { alert: null } : {}) });
+    rememberRoom(next, this.key);
 
-    if (prev) this.pay(prev, next);
-    else this.scheduleKeepAlive();
+    if (prev) this.pay(prev, next, tidyBefore);
+    else {
+      this.scheduleKeepAlive();
+      // Started without a fresh write (a reload, or another device's join): one keep-alive now sets
+      // the clock, rather than up to 10 minutes of guessing with this device's own.
+      if (!this.hint) this.queueSelf({});
+    }
     // The hat just came to me: the card's `alive` is someone else's, so refresh it soon.
     if (prev && next.host === this.key && prev.host !== this.key) {
       this.cardAliveLocal = 0;
       this.queueSelf({});
     }
     this.checkDeck(prev, next);
-    this.voyageChanged();
+    if (this.firstSnapshot) {
+      this.firstSnapshot = false;
+      this.voyageChanged(me);
+    }
     this.refreshOffer();
     if (this.queued) this.schedule();
   }
@@ -207,20 +376,43 @@ export class RoomSession {
       p.seen = me.seenAt;
       return;
     }
-    this.setOffset(estimateOffset(p.sent, p.ack, me.seenAt));
+    this.setOffset(p.sent, p.ack, me.seenAt);
   }
 
-  private setOffset(offset: number): void {
-    this.offset = offset;
-    this.calibrated = true;
+  /**
+   * Sets the clock from one write's round trip, unless the trip was slow (it waited offline): then
+   * the last good reading stays. With no good reading yet, a keep-alive a minute later tries again.
+   */
+  private setOffset(sentAt: number, ackAt: number, serverMs: number): void {
     this.probe = null;
-    useRooms.setState({ serverOffset: offset });
+    this.clockTried = true;
+    if (ackAt - sentAt > MAX_CALIBRATION_RTT_MS) {
+      if (!this.calibrated && !this.reprobing) {
+        this.reprobing = true;
+        this.later(MINUTE, () => {
+          this.reprobing = false;
+          if (!this.calibrated) this.queueSelf({});
+        });
+      }
+    } else {
+      this.offset = estimateOffset(sentAt, ackAt, serverMs);
+      this.calibrated = true;
+      useRooms.setState({ serverOffset: this.offset });
+    }
+    // A timer change held back for the clock goes now (a slow reading leaves the best guess there is).
+    const waiting = this.timerWaits;
+    this.timerWaits = null;
+    if (waiting) this.voyageChanged(waiting.fromRoom ? this.me() : undefined);
   }
 
-  private pay(prev: Room, next: Room): void {
-    const deck = useRooms.getState().deck;
+  private pay(prev: Room, next: Room, tidyBefore: TidyMemo | null): void {
+    const deck = gameDeck(useRooms.getState());
     const g = next.game;
-    const opts = g?.kind === "tidy" && deck ? { tidyPatches: tidyPatches(deck, g.seed, g.seats.length).length } : {};
+    const opts = {
+      tidyBefore,
+      tidyAfter: this.tidyMemo,
+      ...(g?.kind === "tidy" && deck ? { tidyPatches: tidyPatches(deck, g.seed, g.seats.length).length } : {}),
+    };
     for (const reward of roomRewards(prev, next, this.key, opts)) {
       const paid = useEconomy.getState().earnOnce(reward.id, reward.doubloons, reward.xp, reward.reason, { roomCap: true });
       if (!paid) continue;
@@ -237,7 +429,7 @@ export class RoomSession {
   private checkDeck(prev: Room | null, next: Room): void {
     const store = useRooms.getState();
     if (!next.deck) {
-      if (store.deck) useRooms.setState({ deck: null });
+      if (store.deck || store.deckId) useRooms.setState({ deck: null, deckId: null, deckProblem: null });
       return;
     }
     // A new game I'm seated in: read its deck now, so rewards and the board are ready.
@@ -264,8 +456,17 @@ export class RoomSession {
       return;
     }
     console.warn("Ship's study room stopped listening.", code);
-    useRooms.setState({ status: "error", error: roomProblem(code, "load") });
-    this.later(RELISTEN_MS, () => this.listen());
+    this.live = false;
+    useRooms.setState({ status: "error", alert: roomProblem(code, "load") });
+    // The listener has stopped (watchRoom stops it on a room it can't read). One relisten at a time;
+    // a room this app can't read is tried again less and less often.
+    if (this.relistening) return;
+    this.relistening = true;
+    const wait = code === "data-loss" ? UNREADABLE_RETRY_MS[Math.min(this.unreadable++, UNREADABLE_RETRY_MS.length - 1)]! : RELISTEN_MS;
+    this.later(wait, () => {
+      this.relistening = false;
+      this.listen();
+    });
   }
 
   /** No longer aboard. `kind` from a snapshot without me; null when the room went unreadable or missing (the card tells which). */
@@ -274,6 +475,7 @@ export class RoomSession {
     const room = last ?? this.room;
     const serverNow = this.serverNow();
     this.stop();
+    this.forget();
     let notice: RoomNotice = kind ?? "gone";
     if (!kind) {
       const card = await getCard(this.code).catch(() => undefined);
@@ -281,6 +483,8 @@ export class RoomSession {
     }
     void forgetRoom(this.uid, this.code).catch(() => undefined);
     if (current === this) current = null;
+    // Another Ship tab may have left on purpose a moment ago: its choice is saved, and this tab may not have read it yet.
+    await rereadRooms();
     const store = useRooms.getState();
     // Leaving or switching rooms meanwhile already settled things.
     if (store.current !== this.code) return;
@@ -292,6 +496,12 @@ export class RoomSession {
       status: "idle",
       offer: null,
       deck: null,
+      deckId: null,
+      deckProblem: null,
+      tidyMemo: null,
+      busy: false,
+      error: null,
+      alert: null,
       notice,
       noticeRoom: name ? { code: this.code, name: [name[0], name[1]] } : null,
     });
@@ -299,20 +509,35 @@ export class RoomSession {
 
   // ---- The timer --------------------------------------------------------------------------------
 
-  /** Sends my state and when my block ends, from the voyage's phase only (idle pauses and a hidden tab are never sent). */
-  private voyageChanged(): void {
-    const me = this.me();
-    if (!me || this.stopped) return;
+  /**
+   * Sends my state and when my block ends, from the voyage's phase only (idle pauses and a hidden
+   * tab are never sent). It runs when this device's own timer changes, and once on the first
+   * snapshot (`roomCopy`, to correct what the room shows after a reload). It compares with what
+   * this session last sent, never with the room's copy otherwise: a second device with the same
+   * sailor writes there too, and answering it would start an endless back and forth.
+   */
+  private voyageChanged(roomCopy?: RoomMember): void {
+    if (this.stopped || !this.me()) return;
+    // The block's end goes out in server time, which needs the clock. A session that started
+    // without a fresh write sends a keep-alive at once to set it, and the timer follows it.
+    if (!this.calibrated && !this.clockTried) {
+      this.timerWaits = { fromRoom: (this.timerWaits?.fromRoom ?? false) || roomCopy !== undefined };
+      return;
+    }
     const v = useVoyage.getState();
     if (v.phase === "drifting" && v.pausedReason === "idle") return;
     const st = roomStateFor(v.phase, v.prepEndsAt);
     const localEnd = st === 1 || st === 2 ? blockEndsAt(v, Date.now()) : null;
     const endsAt = localEnd === null ? null : Math.round(localEnd + this.offset);
-    const sent = this.sending?.patch;
-    const knownSt = this.queued?.st ?? sent?.st ?? me.state;
-    const knownEnd = this.queued?.endsAt !== undefined ? this.queued.endsAt : sent?.endsAt !== undefined ? sent.endsAt : me.endsAt;
-    const sameEnd = endsAt === null ? knownEnd === null : knownEnd !== null && Math.abs(endsAt - knownEnd) < END_DRIFT_MS;
-    if (knownSt !== st || !sameEnd) this.queueSelf({ st, endsAt }, PHASE_DEBOUNCE_MS);
+    const q = this.queued;
+    const known = q?.st !== undefined ? { st: q.st, endsAt: q.endsAt ?? null } : roomCopy ? { st: roomCopy.state, endsAt: roomCopy.endsAt } : this.lastTimer;
+    const sameEnd = (a: number | null, b: number | null) => (a === null ? b === null : b !== null && Math.abs(a - b) < END_DRIFT_MS);
+    if (known && known.st === st && sameEnd(endsAt, known.endsAt)) {
+      this.lastTimer ??= { st, endsAt };
+      return;
+    }
+    this.lastTimer = { st, endsAt };
+    this.queueSelf({ st, endsAt }, PHASE_DEBOUNCE_MS);
   }
 
   // ---- Own writes -------------------------------------------------------------------------------
@@ -321,17 +546,22 @@ export class RoomSession {
   queueSelf(patch: SelfPatch, debounceMs = 0): void {
     if (this.stopped) return;
     const { addDmg, ...rest } = patch;
-    if (addDmg && addDmg > 0) this.pendingDmg += addDmg;
+    if (addDmg && addDmg > 0) this.addPending(addDmg);
     this.queued = this.queued ? mergeSelf(this.queued, rest) : rest;
     this.sendNotBefore = Math.max(this.sendNotBefore, Date.now() + debounceMs);
     this.schedule();
   }
 
-  /** A cleared Tidy the Deck patch, added to what this game's progress already says. */
+  /**
+   * A cleared Tidy the Deck patch, added to everything this game's progress already holds: the
+   * room's copy, a write still on its way (the room shows it only once it lands), and the queue.
+   * The database stores plain values, so a write built from less would erase a patch.
+   */
   queueTidy(seed: number, patch: number, ms: number, mixups: number): void {
     const me = this.me();
-    const q = this.queued?.tidy;
-    const base = q?.gid === seed ? q : me?.tidy.gid === seed ? { gid: seed, g: me.tidy.patches, gt: me.tidy.ms, gp: me.tidy.mixups } : { gid: seed, g: 0, gt: 0, gp: 0 };
+    const fromRoom = me?.tidy.gid === seed ? { gid: seed, g: me.tidy.patches, gt: me.tidy.ms, gp: me.tidy.mixups } : undefined;
+    const same = (t: SelfPatch["tidy"]) => (t?.gid === seed ? t : undefined);
+    const base = mergeTidy(mergeTidy(fromRoom, same(this.sending?.patch.tidy)), same(this.queued?.tidy)) ?? { gid: seed, g: 0, gt: 0, gp: 0 };
     const { maxMs, maxPatches } = ROOM_LIMITS.tidy;
     this.queueSelf({
       tidy: {
@@ -343,10 +573,19 @@ export class RoomSession {
     });
   }
 
-  /** When (local ms) the rules will next accept an own write. */
+  /**
+   * When (local ms) the rules will next accept an own write. Until the clock is set, `seen` (a
+   * server time) can't be turned into this device's time, so only this device's own writes count:
+   * a write that goes too early is refused and tried again a gap later, and that sets the clock.
+   */
   private gapAt(): number {
     const me = this.me();
-    return Math.max(this.lastAckLocal ? this.lastAckLocal + GAP_MS : 0, me ? me.seenAt - this.offset + GAP_MS : 0);
+    return Math.max(this.lastAckLocal ? this.lastAckLocal + GAP_MS : 0, me && this.calibrated ? me.seenAt - this.offset + GAP_MS : 0);
+  }
+
+  /** The write itself starts now: a skipper write whose builder read the database first keeps that read out of the clock's round trip. */
+  sendingNow(): void {
+    if (this.probe && this.probe.ack === null) this.probe.sent = Date.now();
   }
 
   /** Resolves when an own (or skipper) write may go; the panel can count down to it. */
@@ -382,6 +621,7 @@ export class RoomSession {
       const self = this.take();
       const sent = Date.now();
       const before = this.me()?.seenAt ?? null;
+      const earlier = { probe: this.probe, sending: this.sending };
       this.probe = { sent, ack: null, before, seen: null };
       this.sending = { patch: self, before };
       try {
@@ -389,9 +629,12 @@ export class RoomSession {
         this.acked();
         return out;
       } catch (e) {
-        this.probe = null;
-        this.sending = null;
+        // Nothing was sent: an earlier write's clock reading (still waiting for its snapshot) stays.
+        const unsent = e instanceof NothingToWrite;
+        this.probe = unsent ? earlier.probe : null;
+        this.sending = unsent ? earlier.sending : null;
         this.putBack(self);
+        if (unsent) return undefined as T;
         throw e;
       }
     });
@@ -402,6 +645,8 @@ export class RoomSession {
   /** Takes the queued changes for a write, adding the minutes the rules will accept now. */
   private take(): SelfPatch {
     const self: SelfPatch = { ...(this.queued ?? {}) };
+    this.tookQueue = this.queued !== null;
+    this.flushWaiting = false;
     this.queued = null;
     this.sendNotBefore = 0;
     if (this.sendTimer) clearTimeout(this.sendTimer);
@@ -411,7 +656,7 @@ export class RoomSession {
       const add = Math.min(Math.floor(this.pendingDmg), creditableMinutes(me, this.serverNow() - CLOCK_MARGIN_MS));
       if (add > 0) {
         self.addDmg = add;
-        this.pendingDmg -= add;
+        this.addPending(-add);
       }
     }
     return self;
@@ -419,7 +664,8 @@ export class RoomSession {
 
   private putBack(self: SelfPatch): void {
     const { addDmg, ...rest } = self;
-    this.pendingDmg += addDmg ?? 0;
+    this.addPending(addDmg ?? 0);
+    // mergeSelf joins Tidy progress up, so a refused write and a newer one never lose a patch between them.
     if (Object.keys(rest).length) this.queued = this.queued ? mergeSelf(rest, this.queued) : rest;
     if (this.queued) this.schedule();
   }
@@ -432,7 +678,7 @@ export class RoomSession {
     const p = this.probe;
     if (p) {
       p.ack = now;
-      if (p.seen !== null) this.setOffset(estimateOffset(p.sent, p.ack, p.seen));
+      if (p.seen !== null) this.setOffset(p.sent, p.ack, p.seen);
     }
     this.scheduleKeepAlive();
   }
@@ -448,9 +694,13 @@ export class RoomSession {
   }
 
   private flush(): void {
-    if (!this.queued || this.stopped) return;
+    // One flush waits in the chain at a time; it takes everything queued when its turn comes.
+    if (!this.queued || this.stopped || this.flushWaiting) return;
+    this.flushWaiting = true;
     this.ownWrite(async (self) => {
-      const alive = this.room?.host === this.key && Date.now() - this.cardAliveLocal >= CARD_ALIVE_MS;
+      // Another write (a skipper's) took the queue first: nothing is left to send.
+      if (!this.tookQueue) throw new NothingToWrite();
+      const alive = this.cardAliveDue();
       await writeSelf(this.code, this.key, self, { cardAlive: alive });
       if (alive) this.cardAliveLocal = Date.now();
     }).catch((e: unknown) => this.writeFailed(e));
@@ -469,14 +719,26 @@ export class RoomSession {
     }
     this.refusals = 0;
     this.queued = null;
-    useRooms.setState({ error: roomProblem(code, "write") });
+    // What the room shows of my timer is unknown now, so the next change of it goes out.
+    this.lastTimer = null;
+    // A timer change held back for the clock waits no longer: the best guess goes with the next write.
+    if (!this.clockTried) {
+      this.clockTried = true;
+      const waiting = this.timerWaits;
+      this.timerWaits = null;
+      if (waiting) this.voyageChanged(waiting.fromRoom ? this.me() : undefined);
+    }
+    useRooms.setState({
+      alert: code === "permission-denied" ? "The room turned down your last update (a cheer, game progress or your timer), so it was dropped. Your focus minutes wait for the next one." : roomProblem(code, "write"),
+    });
   }
 
   private scheduleKeepAlive(): void {
     if (this.stopped) return;
     if (this.keepAliveTimer) clearTimeout(this.keepAliveTimer);
     const me = this.me();
-    const last = Math.max(this.lastAckLocal, me ? me.seenAt - this.offset : 0);
+    // Before the clock is set, only own writes count (a slow clock would otherwise put the keep-alive off for good).
+    const last = Math.max(this.lastAckLocal, me && this.calibrated ? me.seenAt - this.offset : 0);
     this.keepAliveTimer = setTimeout(
       () => {
         this.keepAliveTimer = null;
@@ -488,7 +750,12 @@ export class RoomSession {
 
   // ---- Tidying up -------------------------------------------------------------------------------
 
-  /** Each minute: a room past 12 hours is cleared; the skipper sweeps a sailor gone 25 minutes; with no skipper, one sailor takes the hat. A lost race fails harmlessly. */
+  /**
+   * Each minute: a room past 12 hours is cleared; the skipper sweeps a sailor gone 25 minutes;
+   * with no skipper, one sailor takes the hat. A lost race fails harmlessly. Nothing is swept from
+   * a copy that may be old (after a laptop sleeps, say): only with the clock set and the listener
+   * live, and only if the server's copy, read just then, still shows the sailor gone.
+   */
   private async tidyUp(): Promise<void> {
     const room = this.room;
     if (!room || this.stopped) return;
@@ -500,14 +767,30 @@ export class RoomSession {
       }
       const action = sweepAction(room, this.key, now);
       if (action?.kind === "take-hat") {
+        let took = false;
         await this.ownWrite(async (self) => {
           const fresh = this.room;
-          if (fresh && fresh.host !== this.key) await takeHat(fresh, this.key, self);
+          if (!fresh) throw new NothingToWrite();
+          if (fresh.host === this.key) {
+            // The hat came another way meanwhile: the queued changes still go, with the card's `alive` now this skipper's.
+            const alive = this.cardAliveDue();
+            await writeSelf(this.code, this.key, self, { cardAlive: alive });
+            if (alive) this.noteCardAlive();
+            return;
+          }
+          await takeHat(fresh, this.key, self);
+          took = true;
         });
-        this.cardAliveLocal = Date.now();
-      } else if (action?.kind === "sweep") await removeSailor(room, this.key, action.key, { ban: false });
+        if (took) this.noteCardAlive();
+      } else if (action?.kind === "sweep") {
+        if (!this.calibrated || !this.live) return;
+        const fresh = await getRoomFromServer(this.code);
+        if (!fresh || this.stopped) return;
+        const again = sweepAction(fresh, this.key, this.serverNow());
+        if (again?.kind === "sweep" && again.key === action.key) await removeSailor(fresh, this.key, action.key, { ban: false });
+      }
     } catch {
-      // Another sailor got there first, or the rules say not yet.
+      // Another sailor got there first, the rules say not yet, or the server can't be reached.
     }
   }
 
@@ -526,8 +809,14 @@ export class RoomSession {
 
   /** Leaves by myself: my minutes stay with the crew, plus the ones since my last credit. */
   async leave(): Promise<void> {
-    const room = await this.settle();
-    if (room) await leaveRoom(this.uid, room, this.key, this.pendingDmg, this.serverNow());
+    const key = this.key || (await memberKey(this.uid, this.code));
+    this.key = key;
+    // A tab that was waiting for another tab's session hasn't read them yet.
+    const pending = this.pendingDmg || readPending(key);
+    this.forget();
+    // A tab that was waiting for another tab's session has no copy of the room yet: read it.
+    const room = (await this.settle()) ?? (await getRoom(this.code).catch(() => null));
+    if (room?.members.some((m) => m.key === key)) await leaveRoom(this.uid, room, key, pending, this.serverNow());
     else await forgetRoom(this.uid, this.code);
   }
 
@@ -539,6 +828,8 @@ export class RoomSession {
 
   stop(): void {
     this.stopped = true;
+    this.release();
+    this.abort?.abort();
     this.unlisten?.();
     this.unlisten = null;
     for (const un of this.unsubs) un();
@@ -568,15 +859,19 @@ export function startRoomSession(uid: string, code: string, hint?: SessionHint):
   session.begin().catch((e: unknown) => {
     if (current !== session) return;
     console.warn("Ship's study room couldn't start.", e);
-    useRooms.setState({ status: "error", error: roomProblem(roomErrorCode(e), "load") });
+    useRooms.setState({ status: "error", alert: roomProblem(roomErrorCode(e), "load") });
   });
 }
 
-/** Stops the session. `forget` also lets go of the room on this device (account deletion). */
+/** Stops the session. `forget` also lets go of the room on this device, and this tab's saved minutes and Tidy memory (account deletion). */
 export function stopRoomSession(opts: { forget?: boolean } = {}): void {
+  if (opts.forget) current?.forget();
   current?.stop();
   current = null;
-  if (opts.forget) useRooms.setState({ current: null, room: null, myKey: null, status: "idle", offer: null, deck: null });
+  if (opts.forget) {
+    clearSessionKeys(ROOM_TAB_PREFIX);
+    useRooms.setState({ current: null, room: null, myKey: null, status: "idle", offer: null, alert: null, deck: null, deckId: null, deckProblem: null, tidyMemo: null });
+  }
 }
 
 export function roomSession(): RoomSession | null {

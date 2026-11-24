@@ -8,6 +8,7 @@ import {
   bottleOver,
   bottleStep,
   canTakeHelm,
+  cardTextId,
   creditableMinutes,
   creditedDamage,
   deadCards,
@@ -21,7 +22,11 @@ import {
   listedAfterReport,
   liveDamage,
   memberKey,
+  legStartedAt,
   mergeSelf,
+  mergeTidy,
+  rememberTidy,
+  SAIL_ON_WINDOW,
   newMemberFields,
   newRoomCode,
   nextPresentSeat,
@@ -106,7 +111,7 @@ function card(code: string, extra: Partial<RoomCard> = {}): RoomCard {
 }
 
 function bottle(extra: Partial<BottleGame> = {}): BottleGame {
-  return { kind: "bottle", v: 1, seed: 99, at: T0, seats: [A, B, C], turn: 0, holder: A, turnAt: T0, card: 0, delivered: 0, buoys: 5, rescue: false, goal: 6, end: 0, ...extra };
+  return { kind: "bottle", v: 1, seed: 99, at: T0, seats: [A, B, C], cards: 12, turn: 0, holder: A, turnAt: T0, card: 0, delivered: 0, buoys: 5, rescue: false, goal: 6, end: 0, ...extra };
 }
 
 describe("privacy", () => {
@@ -235,6 +240,17 @@ describe("own writes", () => {
   });
 });
 
+describe("kept cards", () => {
+  it("names a kept card by its two sides: the same card the same, any other card differently", () => {
+    expect(cardTextId("ATP?", "Energy")).toBe(cardTextId(" ATP? ", "Energy "));
+    const ids = new Set(Array.from({ length: 2000 }, (_, i) => cardTextId(`Question ${i}`, `Answer ${i % 7}`)));
+    expect(ids.size).toBe(2000);
+    // A second deck in the same room, with cards in the same places, never reuses the first deck's ids.
+    expect(cardTextId("Mitosis?", "Cell division")).not.toBe(cardTextId("Covalent bond?", "Shared electrons"));
+    expect(cardTextId("a", "bc")).not.toBe(cardTextId("ab", "c"));
+  });
+});
+
 describe("reading a room back", () => {
   const ts = (ms: number) => ({ toMillis: () => ms });
   const entry = (joined: number, extra: Record<string, unknown> = {}) => ({
@@ -243,7 +259,7 @@ describe("reading a room back", () => {
   const data = () => ({
     v: 1, mode: "open", name: [3, 4], subj: 5, at: ts(T0), host: B, listed: true, locked: false, ban: [C], rep: [], why: { spam: 1 }, banked: 10, last: null,
     sail: { at: ts(T0), f: 25, b: 5, c: 2 }, deck: { b: "BOTTLE1", n: 12 },
-    game: { kind: "bottle", v: 1, seed: 9, at: ts(T0), seats: [B, A], turn: 2, holder: A, tAt: ts(T0 + MIN), card: 1, del: 1, buoys: 5, res: true, goal: 6, end: 0 },
+    game: { kind: "bottle", v: 1, seed: 9, at: ts(T0), seats: [B, A], n: 11, turn: 2, holder: A, tAt: ts(T0 + MIN), card: 1, del: 1, buoys: 5, res: true, goal: 6, end: 0 },
     m: { [A]: entry(T0 + MIN), [B]: entry(T0), [D]: { ...entry(T0), n: [1, 2, 69] } },
   });
 
@@ -252,7 +268,7 @@ describe("reading a room back", () => {
     expect(r).toMatchObject({ code: CODE, mode: "open", name: [3, 4], subject: 5, at: T0, host: B, banned: [C], banked: 10, why: { spam: 1, unkind: 0, personal: 0, off: 0 } });
     expect(r.sail).toEqual({ at: T0, focus: 25, brk: 5, cycles: 2 });
     expect(r.deck).toEqual({ bottleId: "BOTTLE1", cards: 12 });
-    expect(r.game).toMatchObject({ kind: "bottle", turnAt: T0 + MIN, delivered: 1, rescue: true, holder: A });
+    expect(r.game).toMatchObject({ kind: "bottle", cards: 11, turnAt: T0 + MIN, delivered: 1, rescue: true, holder: A });
     // D's nickname number is one nobody gets, so that entry is left out.
     expect(r.members.map((m) => m.key)).toEqual([B, A]);
     expect(r.members[1]).toMatchObject({ nick: [1, 2, 3], costume: 1, accessory: 2, state: 1, endsAt: T0 + 20 * MIN, dmg: 4, say: 25, tidy: { gid: 7, patches: 3, ms: 1000, mixups: 2 } });
@@ -390,7 +406,7 @@ describe("sailing together", () => {
     expect(sailOffer(null, docked, T0)).toBeNull();
     expect(sailOffer(sail, docked, T0 + 30 * SEC)).toEqual({ kind: "sail-with", prepUntilServer: T0 + MIN });
     expect(sailOffer(sail, docked, T0 + MIN + 20 * SEC)).toEqual({ kind: "sail-on", focusMinutes: 25, breakMinutes: 5, cycles: 2, fromLeg: 1 });
-    expect(sailOffer(sail, docked, T0 + 10 * MIN + 20 * SEC)).toEqual({ kind: "hop-aboard", focusMinutes: 16, breakMinutes: 5 });
+    expect(sailOffer(sail, docked, T0 + 10 * MIN + 20 * SEC)).toEqual({ kind: "hop-aboard", focusMinutes: 16, breakMinutes: 5, leg: 1 });
     expect(sailOffer(sail, docked, T0 + 27 * MIN)).toBeNull();
     expect(sailOffer(sail, docked, T0 + 31 * MIN + 20 * SEC)).toEqual({ kind: "sail-on", focusMinutes: 25, breakMinutes: 5, cycles: 1, fromLeg: 2 });
     expect(sailOffer(sail, docked, T0 + 62 * MIN)).toBeNull();
@@ -398,13 +414,26 @@ describe("sailing together", () => {
 
   it("hops aboard only with 2 minutes or more left, and sails on only in a leg's first half minute while docked", () => {
     // Joining 40 s into a leg: hop aboard, so the break still starts with the crew's.
-    expect(sailOffer(sail, docked, T0 + MIN + 40 * SEC)).toEqual({ kind: "hop-aboard", focusMinutes: 24, breakMinutes: 5 });
-    expect(sailOffer(sail, docked, T0 + 31 * MIN + 40 * SEC)).toEqual({ kind: "hop-aboard", focusMinutes: 24, breakMinutes: 5 });
-    expect(sailOffer(sail, docked, T0 + 24 * MIN)).toEqual({ kind: "hop-aboard", focusMinutes: 2, breakMinutes: 5 });
+    expect(sailOffer(sail, docked, T0 + MIN + 40 * SEC)).toEqual({ kind: "hop-aboard", focusMinutes: 24, breakMinutes: 5, leg: 1 });
+    expect(sailOffer(sail, docked, T0 + 31 * MIN + 40 * SEC)).toEqual({ kind: "hop-aboard", focusMinutes: 24, breakMinutes: 5, leg: 2 });
+    expect(sailOffer(sail, docked, T0 + 24 * MIN)).toEqual({ kind: "hop-aboard", focusMinutes: 2, breakMinutes: 5, leg: 1 });
     expect(sailOffer(sail, docked, T0 + 24 * MIN + SEC)).toBeNull();
     expect(sailOffer(sail, docked, T0 + 3 * MIN)).toMatchObject({ kind: "hop-aboard" });
     expect(sailOffer(sail, sailing, T0 + 2 * MIN)).toMatchObject({ kind: "hop-aboard" });
     expect(sailOffer(sail, { phase: "docked", prepEndsAt: T0 }, T0 + 2 * MIN)).toMatchObject({ kind: "hop-aboard" });
+    // Inside a leg's first half minute, only a docked sailor is asked to sail on: one whose timer runs (or is getting ready) is offered hop aboard.
+    expect(sailOffer(sail, sailing, T0 + MIN + 10 * SEC)).toMatchObject({ kind: "hop-aboard" });
+    expect(sailOffer(sail, { phase: "docked", prepEndsAt: T0 + 2 * MIN }, T0 + MIN + 10 * SEC)).toMatchObject({ kind: "hop-aboard" });
+    expect(sailOffer(sail, { phase: "shore-leave", prepEndsAt: null }, T0 + 31 * MIN + 10 * SEC)).toMatchObject({ kind: "hop-aboard", leg: 2 });
+    expect(sailOffer(sail, docked, T0 + MIN + SAIL_ON_WINDOW - 1)).toMatchObject({ kind: "sail-on" });
+    expect(sailOffer(sail, docked, T0 + MIN + SAIL_ON_WINDOW)).toMatchObject({ kind: "hop-aboard" });
+  });
+
+  it("knows when the crew's current leg began", () => {
+    expect(legStartedAt(sail, T0 + 30 * SEC)).toBeNull();
+    expect(legStartedAt(sail, T0 + 10 * MIN)).toBe(T0 + MIN);
+    expect(legStartedAt(sail, T0 + 27 * MIN)).toBeNull();
+    expect(legStartedAt(sail, T0 + 32 * MIN)).toBe(T0 + 31 * MIN);
   });
 });
 
@@ -487,27 +516,27 @@ describe("Pass the Bottle", () => {
 
   it("delivers on a right or close answer and passes to the next seat", () => {
     for (const outcome of ["right", "close"] as const)
-      expect(bottleStep(bottle(), outcome, crew(), 12, now)).toEqual({ turn: 1, holder: B, card: 1, delivered: 1, buoys: 5, rescue: false, end: 0 });
+      expect(bottleStep(bottle(), outcome, crew(), now)).toEqual({ turn: 1, holder: B, card: 1, delivered: 1, buoys: 5, rescue: false, end: 0 });
   });
 
   it("sends a first miss to the next sailor as a rescue of the same card", () => {
     for (const outcome of ["miss", "timeout"] as const)
-      expect(bottleStep(bottle(), outcome, crew(), 12, now)).toEqual({ turn: 1, holder: B, card: 0, delivered: 0, buoys: 5, rescue: true, end: 0 });
+      expect(bottleStep(bottle(), outcome, crew(), now)).toEqual({ turn: 1, holder: B, card: 0, delivered: 0, buoys: 5, rescue: true, end: 0 });
   });
 
   it("counts a saved rescue as delivered, and a lost one as a lifebuoy gone", () => {
     const rescue = bottle({ turn: 1, holder: B, rescue: true });
-    expect(bottleStep(rescue, "right", crew(), 12, now)).toEqual({ turn: 2, holder: C, card: 1, delivered: 1, buoys: 5, rescue: false, end: 0 });
-    expect(bottleStep(rescue, "miss", crew(), 12, now)).toEqual({ turn: 2, holder: C, card: 1, delivered: 0, buoys: 4, rescue: false, end: 0 });
+    expect(bottleStep(rescue, "right", crew(), now)).toEqual({ turn: 2, holder: C, card: 1, delivered: 1, buoys: 5, rescue: false, end: 0 });
+    expect(bottleStep(rescue, "miss", crew(), now)).toEqual({ turn: 2, holder: C, card: 1, delivered: 0, buoys: 4, rescue: false, end: 0 });
   });
 
   it("ends at the island, or when the tide turns (no buoys, or no cards)", () => {
-    expect(bottleStep(bottle({ delivered: 5, goal: 6 }), "right", crew(), 12, now).end).toBe(1);
-    expect(bottleStep(bottle({ buoys: 1, rescue: true }), "miss", crew(), 12, now)).toMatchObject({ buoys: 0, end: 2 });
-    expect(bottleStep(bottle({ card: 11 }), "right", crew(), 12, now)).toMatchObject({ card: 12, end: 2 });
-    // "Out of cards" is the room's stored deck size, as the rules see it.
-    expect(bottleStep(bottle({ card: 9 }), "right", crew(), 10, now).end).toBe(0);
-    expect(bottleStep(bottle({ card: 9 }), "right", crew({ deck: null }), 10, now).end).toBe(2);
+    expect(bottleStep(bottle({ delivered: 5, goal: 6 }), "right", crew(), now).end).toBe(1);
+    expect(bottleStep(bottle({ buoys: 1, rescue: true }), "miss", crew(), now)).toMatchObject({ buoys: 0, end: 2 });
+    expect(bottleStep(bottle({ card: 11 }), "right", crew(), now)).toMatchObject({ card: 12, end: 2 });
+    // "Out of cards" is the game's own count of the cards it deals (a deck's playable cards), as the rules see it.
+    expect(bottleStep(bottle({ card: 9, cards: 12 }), "right", crew(), now).end).toBe(0);
+    expect(bottleStep(bottle({ card: 9, cards: 10 }), "right", crew(), now).end).toBe(2);
   });
 
   it("only ever makes a turn the rules accept", () => {
@@ -517,7 +546,7 @@ describe("Pass the Bottle", () => {
       let g = bottle({ goal: 3 + Math.floor(rng() * 18) });
       const r = crew();
       while (bottleOver(g) === 0) {
-        const h = bottleStep(g, outcomes[Math.floor(rng() * 4)]!, r, 12, now);
+        const h = bottleStep(g, outcomes[Math.floor(rng() * 4)]!, r, now);
         // The rules' turn check, field by field.
         expect(h.turn).toBe(g.turn + 1);
         expect(h.turn).toBeLessThanOrEqual(ROOM_LIMITS.bottle.maxTurns);
@@ -528,7 +557,7 @@ describe("Pass the Bottle", () => {
         expect(g.buoys - h.buoys).toBeLessThanOrEqual(1);
         expect(h.card - g.card).toBeGreaterThanOrEqual(0);
         expect(h.card - g.card).toBeLessThanOrEqual(1);
-        expect(h.end).toBe(h.delivered >= g.goal ? 1 : h.buoys === 0 || h.card >= r.deck!.cards ? 2 : 0);
+        expect(h.end).toBe(h.delivered >= g.goal ? 1 : h.buoys === 0 || h.card >= g.cards ? 2 : 0);
         g = { ...g, ...h, turnAt: g.turnAt + 3 * SEC };
       }
     }
@@ -561,6 +590,15 @@ describe("Pass the Bottle", () => {
     expect([bottleGoal(1), bottleGoal(3), bottleGoal(4), bottleGoal(6)]).toEqual([6, 6, 8, 8]);
   });
 
+  it("never sets the island further than the cards dealt, so a small deck can still win", () => {
+    expect([bottleGoal(2, 4), bottleGoal(2, 5), bottleGoal(5, 7), bottleGoal(5, 30)]).toEqual([4, 5, 7, 8]);
+    // Every card right on a 5-card deck with 2 sailors reaches the island.
+    let g = bottle({ seats: [A, B], cards: 5, goal: bottleGoal(2, 5) });
+    const r = crew();
+    while (bottleOver(g) === 0) g = { ...g, ...bottleStep(g, "right", r, now) };
+    expect(g).toMatchObject({ end: 1, delivered: 5 });
+  });
+
   it("seats sailors who are here and not focusing, in the order they came aboard", () => {
     const r = room([
       member(A, { seenAt: now, joinedAt: T0 }),
@@ -586,6 +624,30 @@ describe("Tidy the Deck", () => {
     expect(tidyStatus(r, game, 3, T0 + 2 * MIN)).toEqual({ cleared: 2, covered: 0b101, done: false, crewMs: null, timedOut: false, open: [1] });
     const finished = crew([...r.members.slice(0, 2), member(C, { tidy: { gid: 42, patches: 0b011, ms: 90 * SEC, mixups: 0 } })]);
     expect(tidyStatus(finished, game, 3, T0 + 2 * MIN)).toEqual({ cleared: 3, covered: 0b111, done: true, crewMs: 90 * SEC + 3 * SEC, timedOut: false, open: [] });
+  });
+
+  it("remembers patches cleared by a sailor who then left, so a finished game stays finished", () => {
+    const all = crew([
+      member(A, { tidy: { gid: 42, patches: 0b001, ms: 40 * SEC, mixups: 1 } }),
+      member(B, { tidy: { gid: 42, patches: 0b010, ms: 60 * SEC, mixups: 0 } }),
+      member(C, { tidy: { gid: 42, patches: 0b100, ms: 80 * SEC, mixups: 2 } }),
+    ]);
+    const memo = rememberTidy(null, all);
+    expect(tidyStatus(all, game, 3, T0 + 2 * MIN, memo)).toMatchObject({ done: true, crewMs: 80 * SEC + 3 * SEC });
+    // C leaves: their entry (and patch 3) is gone from the room, but not from this device's memory.
+    const left = crew(all.members.slice(0, 2));
+    const after = rememberTidy(memo, left);
+    expect(tidyStatus(left, game, 3, T0 + 6 * MIN)).toMatchObject({ done: false, open: [2] });
+    expect(tidyStatus(left, game, 3, T0 + 6 * MIN, after)).toEqual({ cleared: 3, covered: 0b111, done: true, crewMs: 80 * SEC + 3 * SEC, timedOut: false, open: [] });
+    // A new game starts a new memory; a snapshot with no change keeps the same one.
+    expect(rememberTidy(after, left)).toBe(after);
+    expect(rememberTidy(after, room(left.members, { game: { ...game, seed: 43 } }))?.seed).toBe(43);
+  });
+
+  it("joins two writes' progress for the same game, never losing a patch", () => {
+    expect(mergeTidy({ gid: 42, g: 0b001, gt: 40_000, gp: 1 }, { gid: 42, g: 0b100, gt: 30_000, gp: 3 })).toEqual({ gid: 42, g: 0b101, gt: 40_000, gp: 3 });
+    expect(mergeTidy({ gid: 41, g: 0b001, gt: 40_000, gp: 1 }, { gid: 42, g: 0b100, gt: 30_000, gp: 0 })).toEqual({ gid: 42, g: 0b100, gt: 30_000, gp: 0 });
+    expect(mergeSelf({ tidy: { gid: 42, g: 0b010, gt: 5, gp: 0 } }, { st: 2, tidy: { gid: 42, g: 0b001, gt: 9, gp: 2 } })).toEqual({ st: 2, tidy: { gid: 42, g: 0b011, gt: 9, gp: 2 } });
   });
 
   it("times out after 5 minutes, waiting a little for patches sent just before the bell", () => {
@@ -633,5 +695,8 @@ describe("messages", () => {
     expect(roomProblem("resource-exhausted", "write")).toBe("Rooms are out of free database use for today. Your own timer keeps going; the crew catches up tomorrow.");
     expect(roomProblem("unavailable", "open")).toBe("Couldn't reach the room. Check your connection.");
     expect(roomProblem("permission-denied", "game")).toBe("Someone else took that turn.");
+    // A skipper's game start or door change refused: the room moved on, not a turn or a message.
+    expect(roomProblem("permission-denied", "skipper")).toBe("The room changed just now. Try again.");
+    expect(roomProblem("permission-denied", "report")).toBe("Couldn't send the report just now. Try again in a moment.");
   });
 });

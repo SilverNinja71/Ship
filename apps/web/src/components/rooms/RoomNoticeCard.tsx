@@ -3,8 +3,8 @@
 // there is one.
 
 import { useState } from "react";
-import { randomLook, roomNameText, roomProblem } from "../../lib/roomRules.js";
-import { useRooms } from "../../stores/roomStore.js";
+import { roomNameText, roomProblem } from "../../lib/roomRules.js";
+import { lookFor, useRooms } from "../../stores/roomStore.js";
 import type { RoomNotice } from "../../stores/roomStore.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
 import { ROOM_FOCUS_RING, SEAFOAM_BUTTON, YELLOW_BUTTON, roomAction } from "./roomStyle.js";
@@ -35,8 +35,8 @@ export function RoomNoticeCard({ notice, onStart, onRejoin }: { notice: RoomNoti
     const code = room.code;
     setBusy(true);
     const rooms = useRooms.getState();
-    // Joining clears the notice at once; the same made-up look comes back with the sailor.
-    const problem = await roomAction(() => rooms.joinRoom(code, rooms.myLook ?? randomLook(Math.random)), "join");
+    // Joining clears the notice at once; the nickname this sailor had in this room comes back with them.
+    const problem = await roomAction(() => rooms.joinRoom(code, lookFor(code)), "join");
     setBusy(false);
     if (problem || useRooms.getState().current !== code) onRejoin(code, problem ?? roomProblem("permission-denied", "join"));
   };

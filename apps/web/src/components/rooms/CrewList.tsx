@@ -2,7 +2,7 @@
 // and the minutes they've given the crew. Each crewmate's ⋯ menu hides their cheers on this
 // device; the skipper's adds passing the hat and asking someone to leave.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ROOM_LIMITS } from "@ship/shared-types";
 import type { Room } from "@ship/shared-types";
 import { nickText, statusLine } from "../../lib/roomRules.js";
@@ -10,7 +10,7 @@ import { useRooms } from "../../stores/roomStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
 import { cx } from "../ui.js";
-import { COSTUME_PASTELS, PAPER_CARD, ROOM_FOCUS_RING, accessoryOf, costumeOf, memberStatus, roomAction } from "./roomStyle.js";
+import { COSTUME_PASTELS, PAPER_CARD, PAPER_SHADOW, ROOM_FOCUS_RING, accessoryOf, costumeOf, memberStatus, skipperAction, usePopoverDismiss } from "./roomStyle.js";
 
 export interface MoreMenuItem {
   label: string;
@@ -22,21 +22,8 @@ export interface MoreMenuItem {
 export function MoreMenu({ label, items, ink }: { label: string; items: MoreMenuItem[]; ink?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", key, true);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", key, true);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  usePopoverDismiss(open, ref, close);
   if (!items.length) return null;
   return (
     <div ref={ref} className="relative shrink-0">
@@ -56,7 +43,7 @@ export function MoreMenu({ label, items, ink }: { label: string; items: MoreMenu
         </svg>
       </button>
       {open && (
-        <div role="menu" className="popover-enter absolute right-0 top-full z-20 mt-1 w-56 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-1 text-[var(--page-ink)] shadow-[3px_3px_0_#EAE5DA]">
+        <div role="menu" className={cx("popover-enter absolute right-0 top-full z-20 mt-1 w-56 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-1 text-[var(--page-ink)]", PAPER_SHADOW)}>
           {items.map((item) => (
             <button
               key={item.label}
@@ -66,7 +53,12 @@ export function MoreMenu({ label, items, ink }: { label: string; items: MoreMenu
                 setOpen(false);
                 item.onSelect();
               }}
-              className={cx("block w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-[var(--surface-2)]", ROOM_FOCUS_RING, item.danger && "text-[#8A3B31]")}
+              className={cx(
+                "block w-full rounded-xl px-3 py-2 text-left text-sm",
+                ROOM_FOCUS_RING,
+                // The danger item carries its own coral fill, so it reads on every theme's menu color.
+                item.danger ? "mt-0.5 bg-[#FDE8E4] text-[#8A3B31] hover:bg-[#FAD9D2]" : "hover:bg-[var(--surface-2)]",
+              )}
             >
               {item.label}
             </button>
@@ -86,10 +78,10 @@ export function CrewList({ room, myKey, now }: { room: Room; myKey: string; now:
 
   const act = async (run: () => Promise<void>, done: string) => {
     setBusy(true);
-    const problem = await roomAction(run, "write");
-    toast(problem ?? done, problem ? "warning" : "info");
+    const problem = await skipperAction(run);
     setBusy(false);
     setConfirm(null);
+    if (problem !== undefined) toast(problem ?? done, problem ? "warning" : "info");
   };
 
   return (

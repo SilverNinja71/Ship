@@ -10,6 +10,7 @@ import { isHostedSite } from "../../lib/hosting.js";
 import { signOutGoogle } from "../../lib/firebase.js";
 import { browserFetch } from "../../lib/network.js";
 import { clearNotes, saveNotes } from "../../lib/noteVault.js";
+import { clearSessionKeys } from "../../lib/storage.js";
 import { forgetVaultHandle } from "../../lib/obsidianVault.js";
 import { useFleet } from "../../stores/fleetStore.js";
 import { useRooms } from "../../stores/roomStore.js";
@@ -49,6 +50,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     // Signed in, the cloud copy would come straight back after the reload. Signing out first makes this browser start fresh; the account keeps its copy.
     if (signedIn) await signOutGoogle().catch((e: unknown) => console.warn("Ship couldn't sign out.", e));
     for (const key of Object.keys(localStorage)) if (key.startsWith("ship:")) localStorage.removeItem(key);
+    clearSessionKeys();
     await clearNotes().catch((e: unknown) => console.warn("Ship couldn't erase its saved notes.", e));
     await forgetVaultHandle().catch(() => undefined);
     location.reload();

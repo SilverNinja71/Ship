@@ -1,17 +1,21 @@
-// One study room message at a time, in a pill just under the top bar (and under the crew row on
-// a phone), so it's seen in every scene: Captain Banan calling the crew's sail, Pwedo bringing
-// the bottle or a game starting, and Lumi when you've left a room without meaning to. Nothing
+// One study room message at a time, in a pill just under the top bar (and under the crew row, and
+// any cheer bubbles hanging from it, on a phone), so it's seen in every scene: Captain Banan
+// calling the crew's sail, Pwedo bringing the bottle or a game starting, and Lumi when you've left
+// a room without meaning to. When the page has scrolled the scene out of view (as it does to the
+// reflection box after a focus block), it pins itself to the top of the window instead. Nothing
 // happens until it's tapped. It hides while the Study Rooms panel is open, which says the same.
+// Screen readers hear each message once; a countdown in it isn't read out every second.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { Room } from "@ship/shared-types";
-import { randomLook, roomNameText } from "../../lib/roomRules.js";
-import { useRooms } from "../../stores/roomStore.js";
+import { roomNameText } from "../../lib/roomRules.js";
+import { lookFor, useRooms } from "../../stores/roomStore.js";
 import type { RoomNotice, RoomOffer } from "../../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { cx } from "../ui.js";
-import { STRIP_ROW_HEIGHT, useTopBarHeight, useWideScreen } from "./CrewStrip.js";
+import { BUBBLE_ROW, STRIP_ROW_HEIGHT, stripBubbles, useTopBarHeight, useWideScreen } from "./CrewStrip.js";
 import { MinionPortrait } from "./MinionPortrait.js";
 import { QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, clockText, roomAction, useTicker } from "./roomStyle.js";
 
@@ -27,17 +31,47 @@ const LOOK: Record<Who, { fill: string; line: string; ink: string; circle: strin
 
 export function RoomBanner() {
   const anchor = useRef<HTMLSpanElement>(null);
+  const sentinel = useRef<HTMLSpanElement>(null);
   const top = useTopBarHeight(anchor);
-  const offer = useRooms((s) => s.offer);
+  // An offer belongs to the room this device is in: none shows once it has left (from another tab, say).
+  const offer = useRooms((s) => (s.current !== null ? s.offer : null));
   const notice = useRooms((s) => s.notice);
+  const noticeRoom = useRooms((s) => s.noticeRoom);
   const panelOpen = useUi((s) => s.panel === "rooms");
   const show = !panelOpen && (notice !== null || offer !== null);
+  const sceneShowing = useInView(sentinel);
   return (
     <>
       <span ref={anchor} hidden />
-      {show && <Banner top={top} />}
+      {/* Where the banner sits in the scene; once this has scrolled out of view, the banner pins to the window. */}
+      <span ref={sentinel} aria-hidden="true" className="pointer-events-none absolute left-0 h-px w-px" style={{ top: top + 40 }} />
+      {show && <Banner top={top} pinned={!sceneShowing} />}
+      <span className="sr-only" role="status" aria-live="polite">
+        {show ? spokenText(offer, notice, noticeRoom ? roomNameText(noticeRoom.name) : "the room") : ""}
+      </span>
     </>
   );
+}
+
+/** Whether `el` is on screen (true until the browser says otherwise). */
+function useInView(el: RefObject<HTMLElement | null>): boolean {
+  const [inView, setInView] = useState(true);
+  useEffect(() => {
+    const node = el.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setInView(entry?.isIntersecting ?? true));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [el]);
+  return inView;
+}
+
+/** What a screen reader hears, once per message: the same words, without a ticking countdown. */
+function spokenText(offer: RoomOffer | null, notice: RoomNotice | null, roomName: string): string {
+  const message = notice ? noticeMessage(notice, roomName, { dismiss: () => undefined, open: () => undefined, hopBack: null }) : offer ? offerMessage(offer, null, 0) : null;
+  if (!message) return "";
+  const text = offer?.kind === "sail-with" && !notice ? "Your crew sets sail in a minute!" : message.text;
+  return `${LOOK[message.who].name}: ${text}`;
 }
 
 interface Message {
@@ -49,12 +83,15 @@ interface Message {
   later: { label: string; run: () => void };
 }
 
-function Banner({ top }: { top: number }) {
-  const offer = useRooms((s) => s.offer);
+function Banner({ top, pinned }: { top: number; pinned: boolean }) {
+  const offer = useRooms((s) => (s.current !== null ? s.offer : null));
   const notice = useRooms((s) => s.notice);
   const noticeRoom = useRooms((s) => s.noticeRoom);
   const room = useRooms((s) => s.room);
   const aboard = useRooms((s) => s.current !== null && s.room !== null);
+  const myKey = useRooms((s) => s.myKey);
+  const hidden = useRooms((s) => s.hidden);
+  const muted = useRooms((s) => s.muted);
   const serverOffset = useRooms((s) => s.serverOffset);
   const motion = useSettings((s) => s.motion);
   const openPanel = useUi((s) => s.openPanel);
@@ -73,8 +110,8 @@ function Banner({ top }: { top: number }) {
               const rooms = useRooms.getState();
               const code = noticeRoom.code;
               setBusy(true);
-              // The same made-up look comes back with the sailor; joining clears the notice.
-              const problem = await roomAction(() => rooms.joinRoom(code, rooms.myLook ?? randomLook(Math.random)), "join");
+              // The nickname this sailor had in this room comes back with them; joining clears the notice.
+              const problem = await roomAction(() => rooms.joinRoom(code, lookFor(code)), "join");
               setBusy(false);
               if (problem || useRooms.getState().current !== code) {
                 if (problem) toast(problem, "warning");
@@ -89,14 +126,16 @@ function Banner({ top }: { top: number }) {
   if (!message) return null;
 
   const look = LOOK[message.who];
-  // On a phone the crew's badge row sits under the top bar; the banner goes under that.
-  const y = top + (aboard && !wide ? STRIP_ROW_HEIGHT + 6 : 4);
+  // On a phone the crew's badge row sits under the top bar, with any cheer bubbles hanging under it; the banner goes under those.
+  const bubbleRows = aboard && !wide && room && myKey ? stripBubbles(room, myKey, now, hidden, muted).length : 0;
+  const y = top + (aboard && !wide ? STRIP_ROW_HEIGHT + 6 + bubbleRows * BUBBLE_ROW : 4);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3" style={{ top: y }}>
+    <div
+      className={cx("pointer-events-none inset-x-0 z-20 flex justify-center px-3", pinned ? "fixed" : "absolute")}
+      style={{ top: pinned ? "calc(env(safe-area-inset-top, 0px) + 8px)" : y }}
+    >
       <div
-        role="status"
-        aria-live="polite"
         className={cx(
           "pointer-events-auto flex max-w-xl flex-wrap items-center gap-x-3 gap-y-2 rounded-3xl border py-1.5 pr-2 pl-1.5 shadow-[3px_3px_0_#EAE5DA] sm:flex-nowrap sm:rounded-full [[data-visual-style=storybook]_&]:shadow-none",
           !prefersReducedMotion(motion) && "sticker-pop",
@@ -150,7 +189,7 @@ function offerMessage(offer: RoomOffer, room: Room | null, now: number): Message
       // The minutes the timer will run (the crew's time left, rounded), as the Sail together card says.
       return {
         who: "captain",
-        text: `Hop aboard: ${offer.focusMinutes} min left with the crew`,
+        text: offer.leg > 1 ? `Next leg is starting: hop aboard for ${offer.focusMinutes} min?` : `Hop aboard: ${offer.focusMinutes} min left with the crew`,
         action: { label: "Hop aboard", run: take, tone: "seafoam" },
         later: later("Not this time"),
       };
@@ -158,8 +197,9 @@ function offerMessage(offer: RoomOffer, room: Room | null, now: number): Message
     case "sail-on":
       return {
         who: "captain",
-        text: "Next leg is starting: sail on?",
-        action: { label: "Sail on", run: take, tone: "seafoam" },
+        // Leg 1 is offered to a sailor who missed the countdown (never to one who said "Not this time").
+        text: offer.fromLeg === 1 ? "Your crew just set sail: sail with them?" : "Next leg is starting: sail on?",
+        action: { label: offer.fromLeg === 1 ? "Sail with them" : "Sail on", run: take, tone: "seafoam" },
         later: later("Not this time"),
       };
     case "game":

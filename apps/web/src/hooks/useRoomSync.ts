@@ -1,8 +1,11 @@
 // Keeps the Study Room session running while a sailor is signed in and aboard, and stops it when
 // they sign out. Like useCloudSync, the room code (and Firestore with it) loads only when needed.
+// The room preferences on this browser belong to one account: another account signing in starts
+// fresh. Other Ship tabs' changes to them (leaving, joining) are picked up here too.
 
 import { useEffect } from "react";
 import { subscribeAuthUser } from "../lib/firebase.js";
+import { storageKey } from "../lib/storage.js";
 import { useRooms } from "../stores/roomStore.js";
 import { useUi } from "../stores/uiStore.js";
 
@@ -27,7 +30,13 @@ export function useRoomSync(): void {
       }
       if (loaded) void loaded.then((m) => m.stopRoomSession());
       // Signed out while aboard: the room stays remembered (logging back in picks it up), but nothing live shows.
-      if (!who && useRooms.getState().room) useRooms.setState({ room: null, myKey: null, status: "idle", offer: null, deck: null });
+      // Signed in with no room (it was left from another Ship tab): nothing of the old room's live state may linger either,
+      // or its banner and offers would still show here.
+      const s = useRooms.getState();
+      const live = s.room !== null || s.myKey !== null || s.offer !== null || s.alert !== null || s.deck !== null || s.tidyMemo !== null || s.status === "aboard" || s.status === "elsewhere" || s.status === "error";
+      if (live) {
+        useRooms.setState({ room: null, myKey: null, status: "idle", offer: null, alert: null, deck: null, deckId: null, deckProblem: null, tidyMemo: null });
+      }
     };
 
     const tidy = () => {
@@ -42,6 +51,8 @@ export function useRoomSync(): void {
     const unAuth = subscribeAuthUser((user) => {
       const was = uid;
       uid = user?.uid ?? null;
+      // Someone else's 13+ answer, room, nicknames and hidden sailors never carry over to this account.
+      if (uid) useRooms.getState().forAccount(uid);
       // Someone who logged in to answer an invite goes straight back to it (never joined by itself).
       if (uid && !was && useUi.getState().roomInvite) {
         useUi.getState().setLoginOpen(false);
@@ -56,10 +67,17 @@ export function useRoomSync(): void {
     const unUi = useUi.subscribe((s, prev) => {
       if (s.panel === "rooms" && prev.panel !== "rooms") tidy();
     });
+    // Another tab left, joined or switched rooms: read the saved preferences again (only one tab runs the room).
+    const roomsKey = storageKey("rooms");
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === roomsKey) void useRooms.persist.rehydrate();
+    };
+    window.addEventListener("storage", onStorage);
     return () => {
       unAuth();
       unRooms();
       unUi();
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 }

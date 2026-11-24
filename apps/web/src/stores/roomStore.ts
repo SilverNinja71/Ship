@@ -3,23 +3,25 @@
 // lib/roomSession.ts with import(), so visitors who never open a room never download them.
 //
 // Saved as ship:rooms on this device only. It isn't synced or backed up, because recent room
-// codes work as invite keys.
+// codes work as invite keys. The saved preferences belong to one account (`uid`): when someone
+// else signs in on the same browser they start fresh, and the 13+ answer is always the account's
+// own (users/{uid}/meta/rooms), never this browser's.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { ROOM_LIMITS, ROOM_RULES_VERSION, BOTTLE_LIMITS } from "@ship/shared-types";
 import type { BottleCard, Room, RoomCard, RoomLook, RoomMode, RoomReportReason, VoyagePhase } from "@ship/shared-types";
 import type { PracticeCard } from "@ship/active-recall-engine";
-import { ROOM_DECK_CONTACT_PROBLEM, hasContactDetails } from "../lib/bottleRules.js";
-import { bottleGoal, bottleOver, bottleStep, deadCards, gameSeats, joinProblem, memberKey, presetFor, roomProblem, sailOffer } from "../lib/roomRules.js";
-import type { BottleOutcome, JoinProblem, RoomAction, SailOffer } from "../lib/roomRules.js";
+import { DECK_HIDDEN_TEXT, DECK_LOCKED_TEXT, NEXT_LEG_CALL_MS, bottleGoal, bottleOver, bottleStep, deadCards, gameSeats, joinProblem, legStartedAt, memberKey, presetFor, randomNick, roomProblem, sailOffer } from "../lib/roomRules.js";
+import type { BottleOutcome, JoinProblem, RoomAction, SailOffer, TidyMemo } from "../lib/roomRules.js";
 import type { SkipperChange } from "../lib/rooms.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
 import { useRecall } from "./recallStore.js";
 import { useUi } from "./uiStore.js";
 import { useVoyage } from "./voyageStore.js";
 
-export type RoomStatus = "idle" | "joining" | "aboard" | "error";
+/** `elsewhere`: another Ship tab in this browser runs the room; this one waits and takes over when it closes. */
+export type RoomStatus = "idle" | "joining" | "aboard" | "error" | "elsewhere";
 export type RoomNotice = "removed" | "drifted" | "gone" | "closed" | "ended";
 export type RoomOffer = SailOffer | { kind: "game"; game: "tidy" | "bottle"; seed: number } | { kind: "your-turn"; seed: number; turn: number };
 
@@ -28,9 +30,13 @@ export interface RecentRoom {
   name: [number, number];
   at: number;
   skipper: boolean;
+  /** The nickname used in this room, so Hop back in keeps it (every other room gets a new one). */
+  nick?: [number, number, number];
 }
 
 export interface RoomPrefs {
+  /** The account these preferences belong to (null before the first sign-in). */
+  uid: string | null;
   current: string | null;
   /** Up to 10, kept 12 hours (a room never lasts longer). */
   recent: RecentRoom[];
@@ -39,9 +45,11 @@ export interface RoomPrefs {
   /** Room codes hidden from this device's open list. */
   hiddenRooms: string[];
   muted: boolean;
-  /** The room rules version accepted on this device (0 = not yet). */
+  /** The room rules version this account accepted (0 = not yet), as last read from the account. */
   rulesOk: number;
+  /** This account's own 13+ answer, as last read from it (never set for it by the app). */
   over13: boolean;
+  /** The character and accessory last chosen. Its nickname isn't reused: each room gets a new one. */
   myLook: RoomLook | null;
   reported: string[];
   /** The newest sail plan whose "sail with us" offer was answered, so it doesn't pop up again. */
@@ -54,19 +62,32 @@ export interface RoomStoreState extends RoomPrefs {
   myKey: string | null;
   /** Server clock minus this device's, in ms. */
   serverOffset: number;
-  /** The current game's cards, dealt the same way on every device (playable cards in deck order). */
+  /** The cards last read for a game, dealt the same way on every device (playable cards in deck order). Use gameDeck(): it checks they're this room's deck. */
   deck: PracticeCard[] | null;
+  /** Which deck `deck` holds (deckIdentity), so a deck the skipper has since changed is never dealt from. */
+  deckId: string | null;
+  /** Why the game's cards couldn't be read, for a Try again. */
+  deckProblem: string | null;
+  /** Everything this device has seen of the current Tidy the Deck game, so a sailor leaving never undoes a patch. */
+  tidyMemo: TidyMemo | null;
   offer: RoomOffer | null;
   notice: RoomNotice | null;
   /** Which room a notice is about (its name for the words, its code for Hop back in and Report). */
   noticeRoom: { code: string; name: [number, number] } | null;
+  /** What the last action couldn't do, in plain words (the action's own card or toast shows it). */
   error: string | null;
+  /** A problem from the room's background work (listener, keep-alive, cheers): the panel shows it while aboard. */
+  alert: string | null;
   busy: boolean;
   /** The open list from the last load (null before the first). */
   openList: { cards: RoomCard[]; at: number } | null;
   /** The public card behind an invite link or a typed code (uiStore.roomInvite), for the Join card. card null = no such room. */
   preview: { code: string; card: RoomCard | null; problem: JoinProblem | null } | null;
 
+  /** Starts fresh when a different account signs in on this browser (their rules answer, nicknames and hidden lists aren't this one's). */
+  forAccount(uid: string): void;
+  /** Reads this account's room rules answer (version and 13+ tick) into rulesOk and over13. */
+  syncRules(): Promise<void>;
   acceptRules(over13: boolean): Promise<void>;
   openRoom(draft: { mode: RoomMode; name: [number, number]; subject: number; look: RoomLook }): Promise<void>;
   joinRoom(code: string, look: RoomLook): Promise<void>;
@@ -101,7 +122,7 @@ export interface RoomStoreState extends RoomPrefs {
   setMuted(muted: boolean): void;
   dismissNotice(): void;
   dismissOffer(): void;
-  /** Takes an offer (the waiting one, or the one the Sail together card shows): sail-with, hop-aboard and sail-on start Pwedo Pomo; a game opens the panel. */
+  /** Takes an offer (the waiting one, or the one the Sail together card shows): sail-with, hop-aboard and sail-on start Pwedo Pomo; a game opens the panel at the game. */
   acceptOffer(offer?: RoomOffer): void;
 }
 
@@ -127,6 +148,9 @@ const OVER13_ONLY = "Open rooms are for sailors 13 and older.";
 /** A problem to show as it is, not a database error. */
 class RoomActionError extends Error {}
 
+/** A session that ended while an action waited (the sailor left or was removed): nothing to tell them. */
+const stoppedSession = (e: unknown) => e instanceof Error && e.name === "SessionStopped";
+
 type RoomsModule = typeof import("../lib/rooms.js");
 type SessionModule = typeof import("../lib/roomSession.js");
 let roomsLoaded: Promise<RoomsModule> | null = null;
@@ -143,6 +167,9 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 /** When this page last opened or joined a room: the rules want 10 s between joins. */
 let lastJoinAt = 0;
+
+/** This account's rules answer as last read on this page (reads once per page and account). */
+let rulesRead: { uid: string; rules: number; over13: boolean } | null = null;
 const waitJoinCooldown = () => sleep(lastJoinAt + (ROOM_LIMITS.joinCooldownSeconds + 0.5) * SECOND - Date.now());
 
 // ---- Offers ---------------------------------------------------------------------------------
@@ -163,7 +190,7 @@ export function offerKey(offer: RoomOffer, room: Room | null): string {
     case "sail-with":
       return `sail:${sailAt}:with`;
     case "hop-aboard":
-      return `sail:${sailAt}:hop`;
+      return `sail:${sailAt}:hop:${offer.leg}`;
     case "sail-on":
       return `sail:${sailAt}:on:${offer.fromLeg}`;
     case "game":
@@ -199,7 +226,11 @@ export function pickOffer(room: Room, myKey: string, voyage: { phase: VoyagePhas
   const docked = voyage.phase === "docked" && voyage.prepEndsAt === null;
   const o = sailOffer(sail, voyage, serverNow);
   if (!o || !docked) return null;
-  if (o.kind !== "sail-on" && (sail.at <= lastSailSeen || serverNow - sail.at >= ROOM_LIMITS.sailOfferMinutes * MINUTE)) return null;
+  // A later leg's start calls everyone who's docked (sail on, then hop aboard), even after "Not this time" to the plan.
+  // The first leg isn't a "next" leg: a sailor who turned the plan down isn't asked again as it starts.
+  const legStart = legStartedAt(sail, serverNow);
+  const nextLeg = o.kind === "sail-on" ? o.fromLeg > 1 : o.kind === "hop-aboard" && o.leg > 1 && legStart !== null && serverNow - legStart < NEXT_LEG_CALL_MS;
+  if (!nextLeg && (sail.at <= lastSailSeen || serverNow - sail.at >= ROOM_LIMITS.sailOfferMinutes * MINUTE)) return null;
   return fresh(o);
 }
 
@@ -212,20 +243,66 @@ function withRecent(recent: readonly RecentRoom[], entry: RecentRoom, now: numbe
   return [entry, ...others].slice(0, RECENT_MAX);
 }
 
-/** Notes a room in `recent` (the session calls this on each snapshot, so the name and skipper flag stay right). */
-export function rememberRoom(room: Room, skipper: boolean): void {
+/** Notes a room in `recent` with my nickname there (the session calls this on each snapshot, so the name and skipper flag stay right). */
+export function rememberRoom(room: Room, myKey: string): void {
   const s = useRooms.getState();
+  const me = room.members.find((m) => m.key === myKey);
+  const skipper = room.host === myKey;
   const old = s.recent.find((r) => r.code === room.code);
-  if (old && old.skipper === skipper && old.name[0] === room.name[0] && old.name[1] === room.name[1]) return;
-  useRooms.setState({ recent: withRecent(s.recent, { code: room.code, name: [room.name[0], room.name[1]], at: room.at, skipper }, Date.now()) });
+  const nick = me ? me.nick : old?.nick;
+  const sameNick = (old?.nick ?? null)?.join() === (nick ?? null)?.join();
+  if (old && old.skipper === skipper && old.name[0] === room.name[0] && old.name[1] === room.name[1] && sameNick) return;
+  const entry: RecentRoom = { code: room.code, name: [room.name[0], room.name[1]], at: room.at, skipper, ...(nick ? { nick: [nick[0], nick[1], nick[2]] } : {}) };
+  useRooms.setState({ recent: withRecent(s.recent, entry, Date.now()) });
 }
 
-const deckKey = (room: Room) => (room.deck ? `${room.code}:${room.deck.bottleId ?? "own"}:${room.deck.cards}:${room.game?.seed ?? "-"}` : null);
+/**
+ * The made-up look for coming aboard `code`: the nickname this sailor had there before (Hop back
+ * in), else a brand-new one, so nobody can follow a sailor from room to room by their name. The
+ * character and accessory last chosen come along.
+ */
+export function lookFor(code: string | null): RoomLook {
+  const s = useRooms.getState();
+  const kept = code ? s.recent.find((r) => r.code === code)?.nick : undefined;
+  const base = s.myLook;
+  return {
+    nick: kept ? [kept[0], kept[1], kept[2]] : randomNick(Math.random),
+    costume: base?.costume ?? Math.min(3, Math.floor(Math.random() * 4)),
+    accessory: base?.accessory ?? 0,
+  };
+}
+
+/**
+ * Which deck a room's games deal from. A Bottle Bay deck never changes once afloat; a skipper's
+ * own deck can be swapped for another of the same size, so each game reads it afresh.
+ */
+export function deckIdentity(room: Room | null): string | null {
+  const d = room?.deck;
+  if (!room || !d) return null;
+  return d.bottleId !== null ? `${room.code}:bottle:${d.bottleId}:${d.cards}` : `${room.code}:own:${d.cards}:${room.game?.seed ?? "-"}`;
+}
+
+/** The game's cards, only when they're the room's current deck (null while the right ones load). */
+export function gameDeck(s: Pick<RoomStoreState, "room" | "deck" | "deckId">): PracticeCard[] | null {
+  return s.deck && s.deckId !== null && s.deckId === deckIdentity(s.room) ? s.deck : null;
+}
+
 let deckLoading: string | null = null;
-let deckLoaded: string | null = null;
 
 /** Clears everything about the live room on this device (not the preferences). */
-const LEFT = { current: null, room: null, myKey: null, status: "idle", offer: null, deck: null } as const;
+const LEFT = { current: null, room: null, myKey: null, status: "idle", offer: null, deck: null, deckId: null, deckProblem: null, tidyMemo: null, alert: null } as const;
+
+/** Reads the saved room preferences again (another Ship tab may have just left or joined). Does nothing where storage is missing. */
+export async function rereadRooms(): Promise<void> {
+  try {
+    await useRooms.persist?.rehydrate();
+  } catch {
+    // Unreadable storage: this tab's copy stands.
+  }
+}
+
+/** Preferences as they are for an account seen on this browser for the first time. */
+const FRESH_PREFS: Omit<RoomPrefs, "uid"> = { current: null, recent: [], hidden: [], hiddenRooms: [], muted: false, rulesOk: 0, over13: false, myLook: null, reported: [], lastSailSeen: 0 };
 
 /** Plain words for a failed action. A refusal on opening, joining or loading checks whether the rules are published or rooms are switched off. */
 async function explain(e: unknown, action: RoomAction, extra: { mode?: RoomMode; join?: JoinProblem | null } = {}): Promise<string> {
@@ -256,8 +333,16 @@ const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x
 export const useRooms = create<RoomStoreState>()(
   persist(
     (set, get) => {
-      /** Runs a skipper write once the 15 s gap allows, with the queued own changes riding along. */
-      const skipper = async (action: RoomAction, change: SkipperChange | ((room: Room, serverNow: number) => SkipperChange | Promise<SkipperChange>)): Promise<boolean> => {
+      /**
+       * Runs a skipper write once the 15 s gap allows, with the queued own changes riding along
+       * (and the card's `alive` when it's due). A refusal is worded by `refused` from the room as it
+       * is now (a sailor left, the deck was hidden…), else "The room changed just now". A session
+       * that ended meanwhile (leaving, removal) says nothing.
+       */
+      const skipper = async (
+        change: SkipperChange | ((room: Room, serverNow: number) => SkipperChange | Promise<SkipperChange>),
+        refused?: (room: Room | null) => string | null,
+      ): Promise<boolean> => {
         const [rooms, sessions] = await Promise.all([roomsModule(), sessionModule()]);
         const s = sessions.roomSession();
         if (!s) {
@@ -270,15 +355,42 @@ export const useRooms = create<RoomStoreState>()(
             const room = s.currentRoom();
             if (!room) throw new RoomActionError(NOT_ABOARD);
             if (room.host !== s.key) throw new RoomActionError(ONLY_SKIPPER);
-            await rooms.skipperWrite(room, s.key, typeof change === "function" ? await change(room, s.serverNow()) : change, self);
+            const ch = typeof change === "function" ? await change(room, s.serverNow()) : change;
+            // The room may have moved on while the change was worked out (it can read the database).
+            const now = s.currentRoom() ?? room;
+            const passing = ch.host !== undefined && ch.host !== now.host;
+            const alive = !passing && s.cardAliveDue();
+            s.sendingNow();
+            await rooms.skipperWrite(now, s.key, ch, self, { cardAlive: alive });
+            if (alive) s.noteCardAlive();
           });
           return true;
         } catch (e) {
-          set({ error: await explain(e, action) });
+          if (stoppedSession(e)) return false;
+          const code = e instanceof RoomActionError ? "" : rooms.roomErrorCode(e);
+          set({ error: code === "permission-denied" ? (refused?.(s.currentRoom()) ?? roomProblem(code, "skipper")) : await explain(e, "skipper") });
           return false;
         } finally {
-          set({ busy: false });
+          if (!s.isStopped) set({ busy: false });
         }
+      };
+
+      /** This account's rules answer, read once per page (acceptRules keeps it current). A missing or older one puts the rules card back. */
+      const accountRules = async (uid: string): Promise<{ rules: number; over13: boolean }> => {
+        if (rulesRead?.uid !== uid) {
+          const stamp = await (await roomsModule()).readRulesStamp(uid);
+          rulesRead = { uid, ...stamp };
+        }
+        const { rules, over13 } = rulesRead;
+        if (get().rulesOk !== rules || get().over13 !== over13) set({ rulesOk: rules, over13 });
+        return { rules, over13 };
+      };
+
+      /** Opening, joining and listing need the room rules accepted by this account, and open rooms its 13+ tick. */
+      const requireRules = async (uid: string, needOver13: boolean): Promise<void> => {
+        const stamp = await accountRules(uid);
+        if (stamp.rules < ROOM_RULES_VERSION) throw new RoomActionError("Read Lumi's room rules first.");
+        if (needOver13 && !stamp.over13) throw new RoomActionError(OVER13_ONLY);
       };
 
       /** Queues an own change through the live session (cheers, Tidy progress). */
@@ -291,36 +403,53 @@ export const useRooms = create<RoomStoreState>()(
       };
 
       return {
-        current: null,
-        recent: [],
-        hidden: [],
-        hiddenRooms: [],
-        muted: false,
-        rulesOk: 0,
-        over13: false,
-        myLook: null,
-        reported: [],
-        lastSailSeen: 0,
+        uid: null,
+        ...FRESH_PREFS,
 
         status: "idle",
         room: null,
         myKey: null,
         serverOffset: 0,
         deck: null,
+        deckId: null,
+        deckProblem: null,
+        tidyMemo: null,
         offer: null,
         notice: null,
         noticeRoom: null,
         error: null,
+        alert: null,
         busy: false,
         openList: null,
         preview: null,
 
+        forAccount: (uid) => {
+          if (get().uid === uid) return;
+          // Someone else's room, recent codes, nicknames, hidden sailors and 13+ answer stay theirs.
+          set({ ...FRESH_PREFS, ...LEFT, uid, notice: null, noticeRoom: null, openList: null, preview: null, error: null });
+          dismissedOffers.clear();
+        },
+
+        syncRules: async () => {
+          const uid = await signedInUid();
+          if (!uid) return;
+          get().forAccount(uid);
+          try {
+            await accountRules(uid);
+          } catch {
+            // Unreadable (offline, or the rules aren't published): the card stays as it is; acting says why.
+          }
+        },
+
         acceptRules: async (over13) => {
           const uid = await signedInUid();
           if (!uid) return void set({ error: LOG_IN });
+          get().forAccount(uid);
           set({ busy: true, error: null });
           try {
-            await (await roomsModule()).ensureRulesStamp(uid, over13);
+            // Exactly what the sailor ticked on the card: nothing else ever writes the 13+ answer.
+            await (await roomsModule()).acceptRoomRules(uid, over13);
+            rulesRead = { uid, rules: ROOM_RULES_VERSION, over13 };
             set({ rulesOk: ROOM_RULES_VERSION, over13 });
           } catch (e) {
             set({ error: await explain(e, "load") });
@@ -332,22 +461,37 @@ export const useRooms = create<RoomStoreState>()(
         openRoom: async (draft) => {
           const uid = await signedInUid();
           if (!uid) return void set({ error: LOG_IN });
-          if (draft.mode === "open" && !get().over13) return void set({ error: OVER13_ONLY });
+          get().forAccount(uid);
+          try {
+            await requireRules(uid, draft.mode === "open");
+          } catch (e) {
+            return void set({ error: await explain(e, "open", { mode: draft.mode }) });
+          }
           if (get().current) await get().leaveRoom();
           set({ busy: true, error: null, notice: null, noticeRoom: null });
+          const rooms = await roomsModule();
           try {
-            const [rooms, sessions] = await Promise.all([roomsModule(), sessionModule()]);
-            await rooms.ensureRulesStamp(uid, get().over13);
+            const sessions = await sessionModule();
             await waitJoinCooldown();
             const sentAt = Date.now();
             const { code, key } = await rooms.openRoom(uid, draft);
             const ackAt = Date.now();
             lastJoinAt = ackAt;
             sessions.startRoomSession(uid, code, { sentAt, ackAt, skipper: true });
-            set({ ...LEFT, current: code, myKey: key, status: "joining", myLook: draft.look, preview: null });
+            set({
+              ...LEFT,
+              current: code,
+              myKey: key,
+              status: "joining",
+              myLook: draft.look,
+              preview: null,
+              recent: withRecent(get().recent, { code, name: draft.name, at: Date.now(), skipper: true, nick: draft.look.nick }, Date.now()),
+            });
             useUi.getState().setRoomInvite(null);
           } catch (e) {
-            set({ error: await explain(e, "open", { mode: draft.mode }) });
+            // An open room is refused while this account still skippers its last one.
+            const still = draft.mode === "open" && rooms.roomErrorCode(e) === "permission-denied" ? await rooms.skipperingOpenRoom(uid).catch(() => null) : null;
+            set({ error: still ? `You're still the skipper of ${still}, an open room. Close it or pass the hat before you open another.` : await explain(e, "open", { mode: draft.mode }) });
           } finally {
             set({ busy: false });
           }
@@ -356,12 +500,17 @@ export const useRooms = create<RoomStoreState>()(
         joinRoom: async (code, look) => {
           const uid = await signedInUid();
           if (!uid) return void set({ error: LOG_IN });
+          get().forAccount(uid);
           if (get().current === code && get().room) return;
+          try {
+            await requireRules(uid, false);
+          } catch (e) {
+            return void set({ error: await explain(e, "join") });
+          }
           if (get().current) await get().leaveRoom();
           set({ busy: true, error: null, notice: null, noticeRoom: null, status: "joining" });
           const [rooms, sessions] = await Promise.all([roomsModule(), sessionModule()]);
           try {
-            await rooms.ensureRulesStamp(uid, get().over13);
             await waitJoinCooldown();
             const sentAt = Date.now();
             let key: string;
@@ -378,13 +527,25 @@ export const useRooms = create<RoomStoreState>()(
               if (!room?.members.some((m) => m.key === key)) {
                 const card = await rooms.getCard(code).catch(() => null);
                 const problem = joinProblem(card, Date.now());
-                const words = !problem && card?.mode === "open" && !get().over13 ? OVER13_ONLY : await explain(e, "join", { mode: card?.mode, join: problem });
+                const over13 = await accountRules(uid).then((r) => r.over13).catch(() => get().over13);
+                const words = !problem && card?.mode === "open" && !over13 ? OVER13_ONLY : await explain(e, "join", { mode: card?.mode, join: problem });
                 set({ ...LEFT, error: words, preview: { code, card, problem } });
                 return;
               }
             }
             sessions.startRoomSession(uid, code, hint);
-            set({ ...LEFT, current: code, myKey: key, status: "joining", myLook: look, preview: null });
+            const kept = get().recent.find((r) => r.code === code);
+            const name = kept?.name ?? get().preview?.card?.name ?? get().openList?.cards.find((c) => c.code === code)?.name ?? null;
+            set({
+              ...LEFT,
+              current: code,
+              myKey: key,
+              status: "joining",
+              myLook: look,
+              preview: null,
+              // The nickname is kept with this room only, for Hop back in.
+              recent: name ? withRecent(get().recent, { code, name, at: kept?.at ?? Date.now(), skipper: false, nick: look.nick }, Date.now()) : get().recent,
+            });
             useUi.getState().setRoomInvite(null);
           } catch (e) {
             set({ ...LEFT, error: await explain(e, "join") });
@@ -436,7 +597,7 @@ export const useRooms = create<RoomStoreState>()(
         },
 
         lock: async (locked) => {
-          await skipper("write", { locked });
+          await skipper({ locked });
         },
 
         removeSailor: async (key) => {
@@ -449,17 +610,31 @@ export const useRooms = create<RoomStoreState>()(
           try {
             await rooms.removeSailor(room, s.key, key, { ban: true });
           } catch (e) {
-            set({ error: roomProblem(rooms.roomErrorCode(e), "write") });
+            const code = rooms.roomErrorCode(e);
+            const now = s.currentRoom();
+            const why =
+              code !== "permission-denied"
+                ? roomProblem(code, "skipper")
+                : now && !now.members.some((m) => m.key === key)
+                  ? "That sailor has already left."
+                  : now && now.banned.length >= ROOM_LIMITS.maxBans
+                    ? `This room has asked ${ROOM_LIMITS.maxBans} sailors to leave, the most it can.`
+                    : now && now.host !== s.key
+                      ? ONLY_SKIPPER
+                      : roomProblem(code, "skipper");
+            set({ error: why });
           } finally {
             set({ busy: false });
           }
         },
 
         passHat: async (key) => {
-          await skipper("write", (room) => {
-            if (!room.members.some((m) => m.key === key)) throw new RoomActionError("That sailor isn't aboard any more.");
+          const gone = (room: Room | null) => (room && !room.members.some((m) => m.key === key) ? "That sailor isn't aboard any more." : null);
+          await skipper((room) => {
+            const left = gone(room);
+            if (left) throw new RoomActionError(left);
             return { host: key };
-          });
+          }, gone);
         },
 
         takeHat: async () => {
@@ -473,10 +648,11 @@ export const useRooms = create<RoomStoreState>()(
               if (!room) throw new RoomActionError(NOT_ABOARD);
               await rooms.takeHat(room, s.key, self);
             });
+            s.noteCardAlive();
           } catch (e) {
-            set({ error: e instanceof RoomActionError ? e.message : roomProblem(rooms.roomErrorCode(e), "write") });
+            if (!stoppedSession(e)) set({ error: e instanceof RoomActionError ? e.message : roomProblem(rooms.roomErrorCode(e), "skipper") });
           } finally {
-            set({ busy: false });
+            if (!s.isStopped) set({ busy: false });
           }
         },
 
@@ -488,19 +664,29 @@ export const useRooms = create<RoomStoreState>()(
               return void set({ error: `Focus can be ${f.min}–${f.max} minutes, a break ${b.min}–${b.max}, and ${c.min}–${c.max} legs.` });
             }
           }
-          await skipper("write", { sail: plan });
+          await skipper({ sail: plan });
         },
 
         pickBottleDeck: async (bottleId, cards) => {
           const { min, max } = ROOM_LIMITS.deckCards;
           if (!Number.isInteger(cards) || cards < min || cards > max) return void set({ error: `Room decks need ${min} to ${max} cards.` });
-          await skipper("write", { deck: { bottleId, cards } });
+          // Checked against the room as it is when the write goes (a game may have started meanwhile); the rules refuse it too.
+          const ok = await skipper(
+            (r) => {
+              if (r.game) throw new RoomActionError(DECK_LOCKED_TEXT);
+              return { deck: { bottleId, cards } };
+            },
+            (r) => (r?.game ? DECK_LOCKED_TEXT : "That deck can't be used right now: Bottle Bay may have hidden it after reports, or its sharer took it back. Pick another one."),
+          );
+          // Cards read for the old deck are never dealt for this one.
+          if (ok) set({ deck: null, deckId: null, deckProblem: null });
         },
 
         pickOwnDeck: async (deckId) => {
           const room = get().room;
           if (!room) throw new Error(NOT_ABOARD);
           if (room.mode !== "invite") throw new Error("Open rooms use Bottle Bay decks only.");
+          if (room.game) throw new Error(DECK_LOCKED_TEXT);
           const cards: BottleCard[] = useRecall
             .getState()
             .cards.filter((c) => c.deckId === deckId)
@@ -511,25 +697,49 @@ export const useRooms = create<RoomStoreState>()(
           if (cards.some((c) => c.f.length > BOTTLE_LIMITS.cardSide || c.b.length > BOTTLE_LIMITS.cardSide)) {
             throw new Error(`Cards in a room deck can have up to ${BOTTLE_LIMITS.cardSide} characters a side.`);
           }
+          // The contact checks load only here (the deck picker has them already), so they stay out of the first download.
+          const { ROOM_DECK_CONTACT_PROBLEM, hasContactDetails } = await import("../lib/bottleRules.js");
           if (hasContactDetails(cards.flatMap((c) => [c.f, c.b])).length) throw new Error(ROOM_DECK_CONTACT_PROBLEM);
-          await skipper("write", { deck: { own: cards } });
+          const ok = await skipper(
+            (r) => {
+              if (r.game) throw new RoomActionError(DECK_LOCKED_TEXT);
+              return { deck: { own: cards } };
+            },
+            (r) => (r?.game ? DECK_LOCKED_TEXT : null),
+          );
+          // A deck of the same size looks the same in the room, so cards read for the old one must go.
+          if (ok) set({ deck: null, deckId: null, deckProblem: null });
         },
 
         startGame: async (kind) => {
           const room = get().room;
           if (!room?.deck) return void set({ error: "Pick a deck first." });
-          await get().loadDeck();
-          if ((get().deck?.length ?? 0) < 4) return void set({ error: "This deck needs at least 4 cards with different answers." });
-          await skipper("game", (r, serverNow) => {
-            if (!r.deck) throw new RoomActionError("Pick a deck first.");
-            const seats = gameSeats(r, serverNow);
-            if (!seats.length) throw new RoomActionError("Everyone's focusing. Games are for breaks.");
-            return { game: kind === "tidy" ? { kind } : { kind, goal: bottleGoal(seats.length) }, seats };
-          });
+          const rooms = await roomsModule();
+          await skipper(
+            async (r, serverNow) => {
+              if (!r.deck) throw new RoomActionError("Pick a deck first.");
+              const seats = gameSeats(r, serverNow);
+              if (!seats.length) throw new RoomActionError("Everyone's focusing. Games are for breaks.");
+              // Read the deck as the room has it now, after any deck change queued before this: a
+              // game is never dealt from an older deck, even one of the same size.
+              let deck: PracticeCard[];
+              try {
+                deck = await rooms.readGameDeck(r);
+              } catch (e) {
+                const code = rooms.roomErrorCode(e);
+                throw new RoomActionError(code === "deck-hidden" ? DECK_HIDDEN_TEXT : `Couldn't read the deck's cards. ${roomProblem(code, "load")}`);
+              }
+              if (deck.length < ROOM_LIMITS.deckCards.min) throw new RoomActionError("This deck needs at least 4 cards with different answers.");
+              // Pass the Bottle deals the deck's playable cards, and its island is never further than those.
+              const cards = Math.min(deck.length, r.deck.cards);
+              return { game: kind === "tidy" ? { kind } : { kind, goal: bottleGoal(seats.length, cards), cards }, seats };
+            },
+            (r) => (r && gameSeats(r, Date.now() + get().serverOffset).length === 0 ? "Everyone's focusing now. Games are for breaks." : null),
+          );
         },
 
         endGame: async () => {
-          await skipper("game", { game: null });
+          await skipper({ game: null });
         },
 
         playTurn: async (outcome) => {
@@ -541,15 +751,18 @@ export const useRooms = create<RoomStoreState>()(
           const turnId = `${start.seed}:${start.turn}`;
           if (turnSending === turnId) return;
           turnSending = turnId;
+          // Left or removed while waiting: the turn isn't ours to send any more, and there's nothing to say.
+          const gone = () => s.isStopped || sessions.roomSession() !== s;
           const send = async (): Promise<boolean> => {
             const room = s.currentRoom();
             const game = room?.game;
             if (!room || game?.kind !== "bottle" || game.seed !== start.seed || game.turn !== start.turn) return false;
-            await rooms.playTurn(room.code, bottleStep(game, outcome, room, room.deck?.cards ?? get().deck?.length ?? 0, s.serverNow()));
+            await rooms.playTurn(room.code, bottleStep(game, outcome, room, s.serverNow()));
             return true;
           };
           try {
             await sleep(start.turnAt + TURN_PACE_MS - s.serverNow());
+            if (gone()) return;
             let sent: boolean;
             try {
               sent = await send();
@@ -557,11 +770,12 @@ export const useRooms = create<RoomStoreState>()(
               if (rooms.roomErrorCode(e) !== "permission-denied") throw e;
               // Refused: someone else answered (the turn moves on), or this device's clock ran a little early. Try once more.
               await sleep(TURN_RETRY_MS);
+              if (gone()) return;
               sent = await send();
             }
-            if (!sent) set({ error: roomProblem("permission-denied", "game") });
+            if (!sent && !gone()) set({ error: roomProblem("permission-denied", "game") });
           } catch (e) {
-            set({ error: roomProblem(rooms.roomErrorCode(e), "game") });
+            if (!gone()) set({ error: roomProblem(rooms.roomErrorCode(e), "game") });
           } finally {
             if (turnSending === turnId) turnSending = null;
           }
@@ -590,7 +804,11 @@ export const useRooms = create<RoomStoreState>()(
             await rooms.reportRoom(uid, code, reason, room?.code === code ? room : null);
             set({ reported: uniq([...get().reported, code], 50) });
           } catch (e) {
-            set({ error: roomProblem(rooms.roomErrorCode(e), "report") });
+            const errorCode = rooms.roomErrorCode(e);
+            if (errorCode === "already-reported") set({ error: "You've already reported this room.", reported: uniq([...get().reported, code], 50) });
+            // Refused twice from outside the room (removed sailors can't read it): this device may know it already reported.
+            else if (errorCode === "permission-denied" && get().reported.includes(code)) set({ error: "You've already reported this room." });
+            else set({ error: roomProblem(errorCode, "report") });
           } finally {
             set({ busy: false });
           }
@@ -598,38 +816,36 @@ export const useRooms = create<RoomStoreState>()(
 
         loadDeck: async () => {
           const room = get().room;
-          const key = room && deckKey(room);
-          if (!room || !key) {
-            if (get().deck) set({ deck: null });
-            deckLoaded = null;
+          const id = deckIdentity(room);
+          if (!room || !id) {
+            if (get().deck || get().deckId) set({ deck: null, deckId: null, deckProblem: null });
             return;
           }
-          if ((key === deckLoaded && get().deck) || key === deckLoading) return;
-          deckLoading = key;
+          if ((id === get().deckId && get().deck) || id === deckLoading) return;
+          deckLoading = id;
+          // Never show the last deck's cards as this one's while the new ones load.
+          if (get().deckId !== id) set({ deck: null, deckId: null, deckProblem: null });
           const rooms = await roomsModule();
           try {
             const cards = await rooms.readGameDeck(room);
-            const now = get().room;
-            if (now && deckKey(now) === key) {
-              deckLoaded = key;
-              set({ deck: cards });
-            }
+            if (deckIdentity(get().room) === id) set({ deck: cards, deckId: id, deckProblem: null });
           } catch (e) {
-            set({ error: roomProblem(rooms.roomErrorCode(e), "load") });
+            const code = rooms.roomErrorCode(e);
+            if (deckIdentity(get().room) === id) set({ deckProblem: code === "deck-hidden" ? DECK_HIDDEN_TEXT : roomProblem(code, "load") });
           } finally {
-            if (deckLoading === key) deckLoading = null;
+            if (deckLoading === id) deckLoading = null;
           }
         },
 
         loadOpenRooms: async () => {
-          if (!get().over13) return void set({ error: OVER13_ONLY });
           const uid = await signedInUid();
           if (!uid) return void set({ error: LOG_IN });
+          get().forAccount(uid);
           const rooms = await roomsModule();
           set({ busy: true, error: null });
           try {
-            // The list's rule reads the 13+ tick from the account, so it has to be there first.
-            await rooms.ensureRulesStamp(uid, true);
+            // The list's rule reads the 13+ tick from the account: it's the account's own answer, never assumed here.
+            await requireRules(uid, true);
             const cards = await rooms.listOpenCards();
             const now = Date.now() + get().serverOffset;
             set({ openList: { cards, at: now } });
@@ -702,7 +918,8 @@ export const useRooms = create<RoomStoreState>()(
               break;
             case "game":
             case "your-turn":
-              useUi.getState().openPanel("rooms");
+              // The panel opens at the game itself, not at the top of the room.
+              useUi.getState().showRoomGame();
               break;
           }
           // Taken is answered: it doesn't pop up again, here or in the banner.
@@ -721,7 +938,8 @@ export const useRooms = create<RoomStoreState>()(
       name: storageKey("rooms"),
       storage: shipStorage,
       version: 1,
-      partialize: ({ current, recent, hidden, hiddenRooms, muted, rulesOk, over13, myLook, reported, lastSailSeen }) => ({
+      partialize: ({ uid, current, recent, hidden, hiddenRooms, muted, rulesOk, over13, myLook, reported, lastSailSeen }) => ({
+        uid,
         current,
         recent,
         hidden,
@@ -743,10 +961,15 @@ export const useRooms = create<RoomStoreState>()(
                 !!r && typeof r.code === "string" && CODE_PATTERN.test(r.code) && Array.isArray(r.name) && r.name.length === 2 && typeof r.at === "number" && now - r.at < RECENT_KEEP_MS,
             )
           : [];
+        const nick = (v: unknown): [number, number, number] | undefined => (Array.isArray(v) && v.length === 3 && v.every(Number.isInteger) ? [v[0], v[1], v[2]] : undefined);
         return {
           ...state,
+          uid: typeof p.uid === "string" && p.uid ? p.uid : null,
           current: typeof p.current === "string" && CODE_PATTERN.test(p.current) ? p.current : null,
-          recent: recent.slice(0, RECENT_MAX).map((r) => ({ ...r, skipper: Boolean(r.skipper) })),
+          recent: recent.slice(0, RECENT_MAX).map((r) => {
+            const n = nick(r.nick);
+            return { code: r.code, name: [r.name[0], r.name[1]], at: r.at, skipper: Boolean(r.skipper), ...(n ? { nick: n } : {}) };
+          }),
           hidden: strings(p.hidden, 100),
           hiddenRooms: strings(p.hiddenRooms, 100),
           muted: p.muted === true,

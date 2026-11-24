@@ -5,7 +5,7 @@ import { myAvatarState } from "./activityStore.js";
 import { absentGhosts, ghostStateAt } from "./crewStore.js";
 import { useEconomy } from "./economyStore.js";
 import { useRecall } from "./recallStore.js";
-import { useRooms } from "./roomStore.js";
+import { lookFor, useRooms } from "./roomStore.js";
 import { resolveActiveShip } from "./shipCustomizer.js";
 import { useUi } from "./uiStore.js";
 import { useVoyage } from "./voyageStore.js";
@@ -116,8 +116,27 @@ describe("study rooms store", () => {
     expect(options.name).toBe("ship:rooms");
     const saved = options.partialize!(useRooms.getState()) as Record<string, unknown>;
     expect(Object.keys(saved).sort()).toEqual(
-      ["current", "hidden", "hiddenRooms", "lastSailSeen", "muted", "myLook", "over13", "recent", "reported", "rulesOk"].sort(),
+      ["current", "hidden", "hiddenRooms", "lastSailSeen", "muted", "myLook", "over13", "recent", "reported", "rulesOk", "uid"].sort(),
     );
+  });
+
+  it("starts fresh when another account signs in on this browser: no 13+ answer, rules, nicknames or hidden sailors carry over", () => {
+    const look = { nick: [1, 2, 42] as [number, number, number], costume: 3, accessory: 5 };
+    const recent = [{ code: "K7MP2QXA", name: [1, 2] as [number, number], at: Date.now(), skipper: false, nick: look.nick }];
+    useRooms.setState({ uid: "older-sibling", rulesOk: 1, over13: true, myLook: look, hidden: ["k"], reported: ["K7MP2QXA"], recent, current: "K7MP2QXA" });
+    useRooms.getState().forAccount("older-sibling");
+    expect(useRooms.getState()).toMatchObject({ over13: true, rulesOk: 1, current: "K7MP2QXA" });
+    useRooms.getState().forAccount("younger-sibling");
+    expect(useRooms.getState()).toMatchObject({ uid: "younger-sibling", rulesOk: 0, over13: false, myLook: null, hidden: [], reported: [], recent: [], current: null });
+  });
+
+  it("gives every new room a new nickname, and keeps one only to hop back into the same room", () => {
+    const nick: [number, number, number] = [1, 2, 42];
+    useRooms.setState({ myLook: { nick, costume: 3, accessory: 5 }, recent: [{ code: "K7MP2QXA", name: [1, 2], at: Date.now(), skipper: false, nick }] });
+    expect(lookFor("K7MP2QXA")).toEqual({ nick, costume: 3, accessory: 5 });
+    const fresh = Array.from({ length: 20 }, () => lookFor("BEACHZZZ"));
+    expect(fresh.every((l) => l.costume === 3 && l.accessory === 5)).toBe(true);
+    expect(fresh.some((l) => l.nick.join() !== nick.join())).toBe(true);
   });
 });
 

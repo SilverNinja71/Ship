@@ -65,11 +65,14 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
   const tick = useTicker(250);
   const now = tick + serverOffset;
 
-  const order = useMemo(() => (deck?.length ? bottleOrder(deck.length, game.seed) : null), [deck, game.seed]);
+  // The game deals game.cards cards (the deck's playable ones, fixed when it started), so every
+  // device asks the same card at the same step, and the game ends when they run out, never repeating one.
+  const dealt = useMemo(() => (deck && deck.length >= game.cards ? deck.slice(0, game.cards) : null), [deck, game.cards]);
+  const order = useMemo(() => (dealt?.length ? bottleOrder(dealt.length, game.seed) : null), [dealt, game.seed]);
   const over = bottleOver(game);
   const question = useMemo(
-    () => (deck?.length && order && over === 0 ? bottleQuestion(deck, order, game.card, game.seed, game.turn) : null),
-    [deck, order, over, game.card, game.seed, game.turn],
+    () => (dealt?.length && order && over === 0 ? bottleQuestion(dealt, order, game.card, game.seed, game.turn) : null),
+    [dealt, order, over, game.card, game.seed, game.turn],
   );
   const turnId = `${game.seed}:${game.turn}`;
   const iHold = game.holder === myKey;
@@ -83,11 +86,11 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
   useEffect(() => {
     const before = seen.current;
     seen.current = game;
-    if (!before || before.seed !== game.seed || game.turn !== before.turn + 1 || !deck?.length || !order) return;
-    const asked = bottleQuestion(deck, order, before.card, game.seed, before.turn).card;
+    if (!before || before.seed !== game.seed || game.turn !== before.turn + 1 || !dealt?.length || !order) return;
+    const asked = bottleQuestion(dealt, order, before.card, game.seed, before.turn).card;
     const kind: RevealKind = game.delivered > before.delivered ? (before.rescue ? "saved" : "delivered") : game.rescue ? "rescue" : "lost";
     setReveal({ turn: game.turn, kind, front: asked.front, answer: asked.back, until: Date.now() + REVEAL_MS });
-  }, [game, deck, order]);
+  }, [game, dealt, order]);
   const revealing = reveal !== null && reveal.turn === game.turn && tick < reveal.until;
 
   // The holder's 30 s start once the reveal is over (the first turn has none).
@@ -152,7 +155,7 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
   let body: ReactNode;
   if (!deck) {
     body = <Note costume="pwedo" text="Pwedo is fetching the cards…" />;
-  } else if (!deck.length) {
+  } else if (!dealt?.length) {
     body = <Note costume="pwedo" text="Couldn't read this deck's cards. It may have been taken back from Bottle Bay. The skipper can end the game and pick another." />;
   } else if (over !== 0) {
     body =
@@ -274,6 +277,10 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
 
       <SeaRoute goal={game.goal} delivered={game.delivered} reduced={reduced} />
       <Seats room={room} game={game} myKey={myKey} />
+      {/* Screen readers hear when the bottle reaches this sailor (it goes quiet while the last card's answer shows). */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {iHold && over === 0 && !!question && !revealing ? `Your turn: Pwedo brought you the bottle.${game.rescue ? " It's a rescue." : ""}` : ""}
+      </span>
 
       {body}
 
@@ -336,7 +343,7 @@ function Seats({ room, game, myKey }: { room: Room; game: BottleGame; myKey: str
         const holds = k === game.holder;
         const name = m ? `${nickText(m.nick)}${k === myKey ? " (you)" : ""}` : "Left the room";
         return (
-          <li key={k} className={cx("flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs", holds ? "bg-[#FFF9DC] text-[#4B3A0B] ring-2 ring-[#E8C64A]" : "bg-[var(--surface-2)] text-[var(--muted-ink)]", !m && "opacity-50")}>
+          <li key={k} className={cx("relative flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs", holds ? "bg-[#FFF9DC] text-[#4B3A0B] ring-2 ring-[#E8C64A]" : "bg-[var(--surface-2)] text-[var(--muted-ink)]", !m && "opacity-50")}>
             {m ? <PastelMinionBadge costume={costumeOf(m.costume)} accessory={accessoryOf(m.accessory)} size={26} /> : <span className="size-[26px]" aria-hidden="true" />}
             <span>{name}</span>
             {holds && <span className="sr-only">(has the bottle)</span>}

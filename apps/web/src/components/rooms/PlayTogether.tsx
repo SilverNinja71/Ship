@@ -9,9 +9,10 @@ import { tidyPatches } from "@ship/active-recall-engine";
 import type { PracticeCard } from "@ship/active-recall-engine";
 import { ROOM_LIMITS, newReviewSchedule } from "@ship/shared-types";
 import type { DeckSource, Room, RoomGame } from "@ship/shared-types";
-import { bottleOver, gameSeats, roomNameText, roomStateFor, subjectText, tidyStatus } from "../../lib/roomRules.js";
+import { DECK_HIDDEN_TEXT, bottleOver, cardTextId, gameSeats, roomNameText, roomStateFor, subjectText, tidyStatus } from "../../lib/roomRules.js";
+import type { TidyMemo } from "../../lib/roomRules.js";
 import { useRecall } from "../../stores/recallStore.js";
-import { useRooms } from "../../stores/roomStore.js";
+import { gameDeck, useRooms } from "../../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { useVoyage } from "../../stores/voyageStore.js";
@@ -20,7 +21,7 @@ import { cx } from "../ui.js";
 import { DeckPicker, bottleInfo, knownBottleTitle } from "./DeckPicker.js";
 import { PassTheBottle } from "./games/PassTheBottle.js";
 import { TidyTheDeck } from "./games/TidyTheDeck.js";
-import { PAPER_CARD, QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, roomAction, useTicker } from "./roomStyle.js";
+import { PAPER_CARD, QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, skipperAction, useTicker } from "./roomStyle.js";
 
 type GameKind = RoomGame["kind"];
 
@@ -61,13 +62,25 @@ const GAMES: readonly GameInfo[] = [
   },
 ];
 
-/** Games this device has already scrolled into view, so reopening the panel doesn't jump again. */
+/** Games this device has already scrolled into view by itself, so reopening the panel doesn't jump again ("Answer" in the banner always does). */
 const scrolledTo = new Set<number>();
+
+/**
+ * Brings `el` into view inside the panel's own scrolling body only. scrollIntoView would also
+ * scroll every clipped box around it, pushing the panel's title and Close button out of sight.
+ */
+function scrollIntoPanel(el: HTMLElement, smooth: boolean): void {
+  const scroller = el.closest<HTMLElement>(".overflow-y-auto");
+  if (!scroller) return;
+  const top = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 16;
+  scroller.scrollTo({ top: Math.max(0, top), behavior: smooth ? "smooth" : "auto" });
+}
 
 export function PlayTogether() {
   const room = useRooms((s) => s.room);
   const myKey = useRooms((s) => s.myKey);
-  const deck = useRooms((s) => s.deck);
+  // Only the room's current deck: one the skipper has since changed is never dealt from.
+  const deck = useRooms(gameDeck);
   const serverOffset = useRooms((s) => s.serverOffset);
   const phase = useVoyage((s) => s.phase);
   const prepEndsAt = useVoyage((s) => s.prepEndsAt);
@@ -89,10 +102,10 @@ function FocusLine({ gameOn }: { gameOn: boolean }) {
   );
 }
 
-/** Whether the game in the room has finished (it stays on show until the skipper puts it away). */
-function gameOver(room: Room, game: RoomGame, deck: PracticeCard[] | null, now: number): boolean {
+/** Whether the game in the room has finished (it stays on show until the skipper puts it away). A sailor leaving never unfinishes Tidy the Deck (memo). */
+function gameOver(room: Room, game: RoomGame, deck: PracticeCard[] | null, now: number, memo: TidyMemo | null): boolean {
   if (game.kind === "bottle") return bottleOver(game) !== 0;
-  const s = tidyStatus(room, game, deck ? tidyPatches(deck, game.seed, game.seats.length).length : 0, now);
+  const s = tidyStatus(room, game, deck ? tidyPatches(deck, game.seed, game.seats.length).length : 0, now, memo);
   return s.done || s.timedOut;
 }
 
@@ -100,13 +113,20 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
   const iSkipper = room.host === myKey;
   const game = room.game;
   const motion = useSettings((s) => s.motion);
-  const [picking, setPicking] = useState(() => !room.deck);
+  const tidyMemo = useRooms((s) => s.tidyMemo);
+  const deckProblem = useRooms((s) => s.deckProblem);
+  const deckHidden = deckProblem === DECK_HIDDEN_TEXT;
+  // A skipper change is on its way (they wait for the room's 15 s gap): no second one until it lands.
+  const sending = useRooms((s) => s.busy);
+  const gameWanted = useUi((s) => s.roomGameWanted);
+  // The deck list reads Bottle Bay, so it opens only when the skipper asks for it.
+  const [picking, setPicking] = useState(false);
   const [hidden, setHidden] = useState<number | null>(null);
   const [busy, setBusy] = useState<"tidy" | "bottle" | "end" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const area = useRef<HTMLDivElement>(null);
 
-  const over = game ? gameOver(room, game, deck, now) : false;
+  const over = game ? gameOver(room, game, deck, now, tidyMemo) : false;
   const live = game !== null && !over;
   const seats = gameSeats(room, now);
   const startProblem = !room.deck ? "Pick a deck first." : !seats.length ? "Everyone's focusing. Games are for breaks." : null;
@@ -118,17 +138,33 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
     if (game && deckCards) void useRooms.getState().loadDeck();
   }, [game?.seed, deckBottle, deckCards]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A new game you're seated in comes into view once (handy after "Open the game" in the banner).
+  // A new game you're seated in comes into view by itself once.
   useEffect(() => {
-    if (!game || over || !game.seats.includes(myKey) || scrolledTo.has(game.seed)) return;
+    if (!game || over || !game.seats.includes(myKey) || scrolledTo.has(game.seed) || !area.current) return;
     scrolledTo.add(game.seed);
-    area.current?.scrollIntoView({ behavior: prefersReducedMotion(motion) ? "auto" : "smooth", block: "start" });
+    scrollIntoPanel(area.current, !prefersReducedMotion(motion));
   }, [game?.seed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Answer" or "Open the game" in the banner: straight to the game, every time, with the keyboard there too.
+  useEffect(() => {
+    if (!gameWanted) return;
+    useUi.getState().roomGameShown();
+    if (!game) return;
+    setHidden(null);
+    // After the game's box has rendered (it may have been hidden).
+    requestAnimationFrame(() => {
+      if (!area.current) return;
+      scrollIntoPanel(area.current, !prefersReducedMotion(motion));
+      area.current.focus({ preventScroll: true });
+    });
+  }, [gameWanted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = async (kind: GameKind) => {
     setBusy(kind);
+    setPicking(false);
     setProblem(null);
-    const err = await roomAction(() => useRooms.getState().startGame(kind), "game");
+    const err = await skipperAction(() => useRooms.getState().startGame(kind));
+    if (err === undefined) return;
     setBusy(null);
     if (err) setProblem(err);
     else setHidden(null);
@@ -137,7 +173,8 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
   const end = async () => {
     setBusy("end");
     setProblem(null);
-    const err = await roomAction(() => useRooms.getState().endGame(), "game");
+    const err = await skipperAction(() => useRooms.getState().endGame());
+    if (err === undefined) return;
     setBusy(null);
     if (err) setProblem(err);
   };
@@ -161,13 +198,13 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
         <span className="text-xs tracking-[0.18em] text-[var(--muted-ink)] uppercase">Deck</span>
         <span>{deckLabel}</span>
         {iSkipper && !game && !picking && (
-          <button type="button" onClick={() => setPicking(true)} className={QUIET_BUTTON}>
+          <button type="button" disabled={busy !== null} onClick={() => setPicking(true)} className={QUIET_BUTTON}>
             {room.deck ? "Change deck" : "Pick a deck"}
           </button>
         )}
       </div>
       {!room.deck && !iSkipper && <p className="mt-1 text-xs text-[var(--muted-ink)]">The skipper picks the cards for the games.</p>}
-      {iSkipper && picking && !game && <DeckPicker room={room} onDone={() => setPicking(false)} />}
+      {iSkipper && picking && !game && busy === null && <DeckPicker room={room} onDone={() => setPicking(false)} />}
 
       <ul className="mt-3 grid gap-3 sm:grid-cols-2">
         {GAMES.map((g) => {
@@ -188,7 +225,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
               <p className="text-sm">{g.blurb}</p>
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
                 {iSkipper && !(isThis && live) && (
-                  <button type="button" disabled={!!startProblem || live || busy !== null} onClick={() => void start(g.kind)} className={cx(YELLOW_BUTTON, "text-sm")}>
+                  <button type="button" disabled={!!startProblem || live || busy !== null || sending} onClick={() => void start(g.kind)} className={cx(YELLOW_BUTTON, "text-sm")}>
                     {busy === g.kind ? "Starting…" : isThis ? "Play again" : "Start"}
                   </button>
                 )}
@@ -219,9 +256,19 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
           {problem}
         </p>
       )}
+      {game && !deck && deckProblem && (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-1.5 text-sm text-[#8A3B31]">
+          <span className="min-w-0 flex-1">{deckHidden ? deckProblem : `Couldn't fetch the game's cards. ${deckProblem}`}</span>
+          {!deckHidden && (
+            <button type="button" onClick={() => void useRooms.getState().loadDeck()} className="shrink-0 rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-semibold hover:bg-white">
+              Try again
+            </button>
+          )}
+        </div>
+      )}
 
       {game && hidden !== game.seed && (
-        <div ref={area} className="mt-3 scroll-mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3.5">
+        <div ref={area} tabIndex={-1} aria-label={game.kind === "tidy" ? "Tidy the Deck" : "Pass the Bottle"} className="mt-3 scroll-mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3.5 outline-none">
           {game.kind === "tidy" ? (
             <TidyTheDeck key={game.seed} room={room} game={game} myKey={myKey} deck={deck} endExtra={keep} />
           ) : (
@@ -244,12 +291,16 @@ const pairKey = (front: string, back: string) => `${front.trim()}\u0000${back.tr
 
 /**
  * "Keep these cards": adds the game's cards to this sailor's flashcards. A Bottle Bay deck keeps
- * Bottle Bay's ids (bottle:<id>), a skipper's own deck gets room:<code>:<at>. Cards already there
- * are left exactly as they are, so no review progress is ever reset.
+ * Bottle Bay's ids (bottle:<id>), and one hidden after reports can't be kept. A skipper's own
+ * decks go into one deck per room (room:<code>:<at>), each card named by its two sides, so a
+ * second deck played in the same room adds its own cards. Cards already there are left exactly
+ * as they are, so no review progress is ever reset.
  */
 function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) {
   const cards = useRecall((s) => s.cards);
+  const hidden = useRooms((s) => s.deckProblem === DECK_HIDDEN_TEXT);
   const [busy, setBusy] = useState(false);
+  const [refused, setRefused] = useState(false);
   const fresh = useMemo(() => {
     if (!deck) return [];
     const have = new Set(cards.map((c) => pairKey(c.front, c.back)));
@@ -257,6 +308,7 @@ function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) 
   }, [cards, deck]);
   const ref = room.deck;
   if (!ref || !deck?.length) return null;
+  if (hidden || refused) return <p className="text-xs opacity-80">Bottle Bay hid this deck after reports, so its cards can't be kept.</p>;
   if (!fresh.length) return <p className="text-xs opacity-80">These cards are already in your flashcards.</p>;
 
   const keep = async () => {
@@ -269,6 +321,19 @@ function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) 
     if (ref.bottleId) {
       deckId = `bottle:${ref.bottleId}`;
       source = "bottle";
+      // Read fresh: a deck reported out of Bottle Bay since the game began isn't handed out any more.
+      const { bottleStillShared } = await import("../../lib/bottleBay.js");
+      const shared = await bottleStillShared(ref.bottleId).catch(() => null);
+      if (shared === false) {
+        setBusy(false);
+        setRefused(true);
+        return;
+      }
+      if (shared === null) {
+        setBusy(false);
+        useUi.getState().toast("Couldn't reach Bottle Bay to keep these cards. Try again in a moment.", "warning");
+        return;
+      }
       const info = await bottleInfo(ref.bottleId).catch(() => null);
       if (info) {
         name = info.title;
@@ -283,7 +348,7 @@ function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) 
     const created = Date.now();
     const add = deck
       .filter((c) => !have.has(pairKey(c.front, c.back)))
-      .map((c) => ({ id: `${deckId}#${c.id}`, deckId, front: c.front, back: c.back, created, schedule: newReviewSchedule() }))
+      .map((c) => ({ id: `${deckId}#${ref.bottleId ? c.id : cardTextId(c.front, c.back)}`, deckId, front: c.front, back: c.back, created, schedule: newReviewSchedule() }))
       .filter((c) => !ids.has(c.id));
     const known = recall.decks.some((d) => d.id === deckId);
     recall.importCards({ decks: known ? [] : [{ id: deckId, name, subject, created, source }], cards: add });

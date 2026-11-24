@@ -77,6 +77,12 @@ const DEFAULT_BOUNDS = { left: -560, right: 600, top: -640, bottom: 170 };
 const CREW_SCALE = 0.82;
 /** A crewmate character at a galley table: about a seated sailor's size, sitting on the chair behind it. */
 const MATE_DECK_SCALE = 1.55;
+/** Pwedo's bird is drawn a quarter bigger than the costumes, so a pigeon crewmate gets a smaller scale to match the house Pwedo. */
+const MATE_DECK_SCALE_PWEDO = 1.1;
+/** How far either side of a galley table its two seated crewmates reach, in ship units. */
+const TABLE_REACH = 95;
+/** Half a standing house character's width, plus a little air. */
+const HOUSE_HALF_WIDTH = 36;
 const MATE_SEAT_Y = -28;
 /** Below this camera zoom (ship units to px), room crewmates on deck go without name tags. */
 const MATE_TAG_MIN_UNIT = 0.5;
@@ -146,7 +152,7 @@ export function renderDeck(ctx: Ctx, view: Viewport, frame: FrameInfo, rawScene:
   ctx.scale(u, u);
 
   if (tiny) {
-    drawTinyInkShip(ctx, layout, frame, (l) => {
+    drawTinyInkShip(ctx, layout, frame, houseSpots(layout, scene.crew, true), (l) => {
       drawDeckLife(ctx, view.dpr, frame, scene, l, regions, u);
       treeAt = toScreen(ctx, { x: l.citrusTree.x, y: l.citrusTree.y - 130 }, view.dpr);
     });
@@ -242,31 +248,35 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
   }
 
   // The house crew stand on the deck. With crew seated, they're drawn after the galley tables,
-  // so the tables (which stand where they do on some ships) never hide them.
+  // so the tables (which stand where they do on some ships) never hide them, and they step aside
+  // from any table with study room crewmates, so they never stand in front of them.
   const drawHouseCrew = () => {
     // Cute companion pigeon & pastel costume minions grounded directly on the deck!
     const birdAt = tiny ? { x: l.deck.to - 46, y: 0 } : { x: l.bow.x - 16, y: l.bow.y - 4 };
-    const pipPos = { x: l.desk.x + 125, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 125) };
-    const mochiPos = { x: l.desk.x + 215, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 215) };
-    const lumiPos = { x: l.deck.to - 145, y: tiny ? 0 : surfaceYAt(l, l.deck.to - 145) };
+    const { pip: pipX, mochi: mochiX, lumi: lumiX } = houseSpots(l, scene.crew, tiny);
+    const pipPos = pipX === null ? null : { x: pipX, y: tiny ? 0 : surfaceYAt(l, pipX) };
+    const mochiPos = mochiX === null ? null : { x: mochiX, y: tiny ? 0 : surfaceYAt(l, mochiX) };
+    const lumiPos = { x: lumiX, y: tiny ? 0 : surfaceYAt(l, lumiX) };
 
     drawDeckCritters(ctx, birdAt, { x: l.desk.x + 86, y: tiny ? 0 : surfaceYAt(l, l.desk.x + 86) }, frame);
-    drawPastelMinion(ctx, pipPos, "banana", frame, {
-      scale: 1.32,
-      seed: 1,
-      chore: "sweep",
-      cheering: Boolean(scene.preparing),
-      shadow: !tiny,
-      accessory: acc,
-    });
-    drawPastelMinion(ctx, mochiPos, "teddy", frame, {
-      scale: 1.28,
-      seed: 2,
-      chore: scene.preparing ? "mop" : "none",
-      cheering: Boolean(scene.preparing),
-      shadow: !tiny,
-      accessory: acc,
-    });
+    if (pipPos)
+      drawPastelMinion(ctx, pipPos, "banana", frame, {
+        scale: 1.32,
+        seed: 1,
+        chore: "sweep",
+        cheering: Boolean(scene.preparing),
+        shadow: !tiny,
+        accessory: acc,
+      });
+    if (mochiPos)
+      drawPastelMinion(ctx, mochiPos, "teddy", frame, {
+        scale: 1.28,
+        seed: 2,
+        chore: scene.preparing ? "mop" : "none",
+        cheering: Boolean(scene.preparing),
+        shadow: !tiny,
+        accessory: acc,
+      });
     drawPastelMinion(ctx, lumiPos, "bunny", frame, {
       scale: 1.24,
       seed: 3,
@@ -278,8 +288,8 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
 
     if (tiny) {
       regions.push(rectRegion(ctx, dpr, "minion:captain", "Captain Banan — Steers the ship & keeps everyone calm", helmPos.x - 6, -62, 56, 72));
-      regions.push(rectRegion(ctx, dpr, "minion:banana", "Pip — Banana-wrapped helper who sweeps away distractions", pipPos.x - 28, -68, 56, 78));
-      regions.push(rectRegion(ctx, dpr, "minion:teddy", "Mochi — Cozy teddy buddy who cheers you on during study sprints", mochiPos.x - 28, -68, 56, 78));
+      if (pipPos) regions.push(rectRegion(ctx, dpr, "minion:banana", "Pip — Banana-wrapped helper who sweeps away distractions", pipPos.x - 28, -68, 56, 78));
+      if (mochiPos) regions.push(rectRegion(ctx, dpr, "minion:teddy", "Mochi — Cozy teddy buddy who cheers you on during study sprints", mochiPos.x - 28, -68, 56, 78));
       regions.push(rectRegion(ctx, dpr, "minion:bunny", "Lumi — Bunny lookout keeping watch for off-task tabs", lumiPos.x - 28, -74, 56, 84));
       regions.push(rectRegion(ctx, dpr, "minion:pigeon", "Pwedo — Tiny deck pigeon who loves quiet Pomodoro mornings", birdAt.x - 22, -32, 44, 42));
     }
@@ -311,13 +321,13 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
       ctx.beginPath();
       ctx.rect(x - 90, tableTop - 400, 180, 400);
       ctx.clip();
-      drawMate(ctx, { x, y: table.y + MATE_SEAT_Y }, deckMate(c), frame, MATE_DECK_SCALE);
+      drawMate(ctx, { x, y: table.y + MATE_SEAT_Y }, deckMate(c), frame, c.costume === "pwedo" ? MATE_DECK_SCALE_PWEDO : MATE_DECK_SCALE);
       ctx.restore();
     });
     pair.forEach((c, side) => {
       if (!c) return;
       const x = table.x + (side === 0 ? -GALLEY_SEAT_X : GALLEY_SEAT_X) * CREW_SCALE;
-      const top = c.costume ? table.y + MATE_SEAT_Y - MATE_HEIGHT * MATE_DECK_SCALE : table.y + HEAD_TOP * GALLEY_SEAT_SCALE * CREW_SCALE;
+      const top = c.costume ? table.y + MATE_SEAT_Y - MATE_HEIGHT * (c.costume === "pwedo" ? MATE_DECK_SCALE_PWEDO : MATE_DECK_SCALE) : table.y + HEAD_TOP * GALLEY_SEAT_SCALE * CREW_SCALE;
       // Neighbours' tags are staggered so long names don't overlap; a ghost's tag is pale.
       // A zoomed-out deck (a phone) leaves room crewmates' tags and cheers to the crew strip.
       const tagY = top - 18 * tagScale - side * 30 * tagScale;
@@ -335,6 +345,48 @@ function drawDeckLife(ctx: Ctx, dpr: number, frame: FrameInfo, scene: DeckScene,
     });
   });
   if (crew.length > 0) drawHouseCrew();
+}
+
+/**
+ * Where the house crew stand on deck (x in ship units): Lumi by the bow, and Pip and Mochi by the
+ * desk, unless study room crewmates sit at a galley table there: then they step along to the
+ * nearest free spots, so they never stand in front of a crewmate (null: no room on deck).
+ */
+function houseSpots(l: HullLayout, allCrew: readonly CrewOnDeck[], tiny: boolean): { pip: number | null; mochi: number | null; lumi: number } {
+  const crew = allCrew.slice(0, l.tables.length * 2);
+  const lumi = l.deck.to - 145;
+  const bird = l.deck.to - 46;
+  const busy = l.tables.filter((_, i) => crew[i * 2]?.costume || crew[i * 2 + 1]?.costume);
+  // With no crewmates at the tables, everyone keeps their usual spot on every ship.
+  if (!busy.length) return { pip: l.desk.x + 125, mochi: l.desk.x + 215, lumi };
+  const taken: [number, number][] = [
+    ...busy.map((t): [number, number] => [t.x - TABLE_REACH, t.x + TABLE_REACH]),
+    [l.helm.x - 30, l.helm.x + 60],
+    [lumi - 30, lumi + 30],
+    [bird - 26, bird + 26],
+  ];
+  // Ink & Paper draws no desk or sailor of your own on deck, so that spot is free there.
+  if (!tiny) taken.push([l.desk.x - 70, l.desk.x + 70]);
+  const pip = freeDeckSpot(l.desk.x + 125, taken, l.deck);
+  if (pip !== null) taken.push([pip - 30, pip + 30]);
+  const mochi = freeDeckSpot(l.desk.x + 215, taken, l.deck);
+  return { pip, mochi, lumi };
+}
+
+/**
+ * Where a house character can stand near `preferred` without covering anything in `taken`
+ * (seated crewmates, the desk, the helm, the others), trying ever further either way along the
+ * deck; null when the deck is full, and then they stay below deck for now.
+ */
+function freeDeckSpot(preferred: number, taken: readonly [number, number][], deck: { from: number; to: number }): number | null {
+  const lo = deck.from + HOUSE_HALF_WIDTH;
+  const hi = deck.to - HOUSE_HALF_WIDTH;
+  const clear = (x: number) => x >= lo && x <= hi && taken.every(([a, b]) => x + HOUSE_HALF_WIDTH <= a || x - HOUSE_HALF_WIDTH >= b);
+  for (let step = 0; step <= 600; step += 15) {
+    if (clear(preferred + step)) return preferred + step;
+    if (step && clear(preferred - step)) return preferred - step;
+  }
+  return null;
 }
 
 /** A room crewmate on deck, in the shape roomCrew.ts draws. */
@@ -423,7 +475,7 @@ function sketchOpenRoundedBox(
 }
 
 /** Ultra-minimal stationery studio boat: hand-sketched cream silhouette, imperfect strokes & open corners. */
-function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, onDeck: (layout: HullLayout) => void): void {
+function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, spots: { pip: number | null; mochi: number | null; lumi: number }, onDeck: (layout: HullLayout) => void): void {
   const { deck, masts, flag, helm, surfaces } = layout;
   const { sternX, bowX, hullTopY, hullBottomY } = tinyInkHullMetrics(layout);
 
@@ -528,9 +580,10 @@ function drawTinyInkShip(ctx: Ctx, layout: HullLayout, frame: FrameInfo, onDeck:
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillText("Captain Banan", capX(helm.x + 22), 14);
-  ctx.fillText("Pip", capX(layout.desk.x + 125), 14);
-  ctx.fillText("Mochi", capX(layout.desk.x + 215), 14);
-  ctx.fillText("Lumi", capX(deck.to - 145), 14);
+  // Names follow the characters when they've stepped aside for study room crewmates.
+  if (spots.pip !== null) ctx.fillText("Pip", capX(spots.pip), 14);
+  if (spots.mochi !== null) ctx.fillText("Mochi", capX(spots.mochi), 14);
+  ctx.fillText("Lumi", capX(spots.lumi), 14);
   ctx.fillText("Pwedo", capX(deck.to - 46), 14);
   ctx.restore();
 }

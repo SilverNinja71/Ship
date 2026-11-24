@@ -1,7 +1,8 @@
 // The skipper picks the cards for the break games. Open rooms use Bottle Bay decks only; invite
 // rooms may also use one of the skipper's own decks, checked first: contact details block it,
-// other personal details show as warnings, and the skipper ticks that everyone aboard may see it.
-// Bottle Bay's code (and Firestore) loads only when this opens.
+// other personal details show as warnings, and the skipper ticks that everyone aboard may see it
+// (and keep a copy). Bottle Bay's code (and Firestore) loads only when this opens, and each
+// subject's list is read once per visit to the page.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BOTTLE_LIMITS, ROOM_LIMITS } from "@ship/shared-types";
@@ -14,7 +15,7 @@ import { useRooms } from "../../stores/roomStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
 import { cx } from "../ui.js";
-import { ROOM_FOCUS_RING, SEAFOAM_BUTTON, chipClass, roomAction } from "./roomStyle.js";
+import { ROOM_FOCUS_RING, SEAFOAM_BUTTON, chipClass, skipperAction } from "./roomStyle.js";
 
 const { min: MIN_CARDS, max: MAX_CARDS } = ROOM_LIMITS.deckCards;
 
@@ -40,6 +41,9 @@ export async function bottleInfo(id: string): Promise<{ title: string; subject: 
 export function knownBottleTitle(id: string): string | null {
   return bottleTitles.get(id)?.title ?? null;
 }
+
+/** Decks already fished out on this page, by subject ("" = the newest), so opening the picker again reads nothing. */
+const fished = new Map<string, { decks: Bottle[]; cursor: BottlePage["cursor"] }>();
 
 // ---- The picker ---------------------------------------------------------------------------------
 
@@ -90,14 +94,25 @@ function BayDecks({ room, onDone }: { room: Room; onDone: () => void }) {
 
   const load = async (more: boolean) => {
     const id = ++request.current;
+    const cacheKey = subject ?? "";
+    const cached = more ? undefined : fished.get(cacheKey);
+    if (cached) {
+      setDecks(cached.decks);
+      setCursor(cached.cursor);
+      return;
+    }
     setLoading(true);
     setProblem(null);
     const bay = await import("../../lib/bottleBay.js");
     try {
-      const page = await bay.listBottles(subject ? { subjectKey: subjectKey(subject) } : { after: more ? cursor : null });
+      // A subject asks Bottle Bay for decks only; the newest list holds links too (sorting by time and kind would need a database index).
+      const page = await bay.listBottles(subject ? { subjectKey: subjectKey(subject), kind: "deck" } : { after: more ? cursor : null });
       if (id !== request.current) return;
       const found = visibleBottles(page.bottles.filter((b) => b.kind === "deck"));
-      setDecks((old) => (more && old ? [...old, ...found.filter((b) => !old.some((o) => o.id === b.id))] : found));
+      const old = more ? (fished.get(cacheKey)?.decks ?? decks ?? []) : [];
+      const list = more ? [...old, ...found.filter((b) => !old.some((o) => o.id === b.id))] : found;
+      fished.set(cacheKey, { decks: list, cursor: page.cursor });
+      setDecks(list);
       setCursor(page.cursor);
     } catch (e) {
       if (id === request.current) setProblem(bay.bayProblem(e, "load"));
@@ -118,7 +133,8 @@ function BayDecks({ room, onDone }: { room: Room; onDone: () => void }) {
     setSending(b.id);
     setProblem(null);
     bottleTitles.set(b.id, { title: b.title, subject: b.subject });
-    const err = await roomAction(() => useRooms.getState().pickBottleDeck(b.id, b.cardCount), "write");
+    const err = await skipperAction(() => useRooms.getState().pickBottleDeck(b.id, b.cardCount));
+    if (err === undefined) return;
     setSending(null);
     if (err) return setProblem(err);
     useUi.getState().toast(`Deck ready: ${b.title}`, "info");
@@ -254,7 +270,8 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
     if (!pick) return;
     setSending(true);
     setProblem(null);
-    const err = await roomAction(() => useRooms.getState().pickOwnDeck(pick.deck.id), "write");
+    const err = await skipperAction(() => useRooms.getState().pickOwnDeck(pick.deck.id));
+    if (err === undefined) return;
     setSending(false);
     if (err) return setProblem(err);
     useUi.getState().toast(`Deck ready: ${pick.deck.name}`, "info");
@@ -297,8 +314,10 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
           <p className="text-sm">
             <span className="font-display">{pick.deck.name}</span> <span aria-hidden="true">·</span> {pick.count} {pick.count === 1 ? "card" : "cards"}
           </p>
-          <p className="text-xs text-[var(--muted-ink)]">Everyone in {room.mode === "invite" ? "this invite room" : "this room"} will see these cards while the room is open. They go away when it closes.</p>
-          {sizeProblem && <p className="text-sm text-[#8A3B31]">{sizeProblem}</p>}
+          <p className="text-xs text-[var(--muted-ink)]">
+            Everyone in {room.mode === "invite" ? "this invite room" : "this room"} will see these cards, and can keep a copy in their own flashcards. The room's copy goes away when it closes; theirs stay.
+          </p>
+          {sizeProblem && <p className="rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-1.5 text-sm text-[#8A3B31]">{sizeProblem}</p>}
           {blocked.length > 0 ? (
             <div role="alert" className="rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">
               <p>{ROOM_DECK_CONTACT_PROBLEM}</p>
@@ -322,12 +341,12 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
               )}
               <label className="flex cursor-pointer items-start gap-2 text-sm">
                 <input type="checkbox" checked={okToShare} onChange={(e) => setOkToShare(e.target.checked)} className="mt-0.5 size-4 accent-[#7FC8B2]" />
-                Okay for everyone in this room to see
+                Okay for everyone in this room to see and keep
               </label>
             </>
           )}
           {problem && (
-            <p role="alert" className="text-sm text-[#8A3B31]">
+            <p role="alert" className="rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-1.5 text-sm text-[#8A3B31]">
               {problem}
             </p>
           )}

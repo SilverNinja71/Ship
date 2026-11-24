@@ -202,15 +202,28 @@ export interface SelfPatch {
   tidy?: { gid: number; g: number; gt: number; gp: number };
 }
 
-/** Two queued changes as one write: the later wins, and focus minutes add up. */
+/**
+ * Tidy the Deck progress from two writes for the same game, as one: every cleared patch (the
+ * bits are OR-ed), the latest clear and the most mix-ups. The database stores these as plain
+ * values, so a later write that forgot an earlier patch would erase it. A different game wins whole.
+ */
+export function mergeTidy(a: SelfPatch["tidy"], b: SelfPatch["tidy"]): SelfPatch["tidy"] {
+  if (!a) return b && { ...b };
+  if (!b) return { ...a };
+  if (a.gid !== b.gid) return { ...b };
+  return { gid: b.gid, g: a.g | b.g, gt: Math.max(a.gt, b.gt), gp: Math.max(a.gp, b.gp) };
+}
+
+/** Two queued changes as one write: the later wins, focus minutes add up, and Tidy progress joins up (mergeTidy). */
 export function mergeSelf(a: SelfPatch, b: SelfPatch): SelfPatch {
   const out: SelfPatch = {};
   for (const p of [a, b]) {
     if (p.st !== undefined) out.st = p.st;
     if (p.endsAt !== undefined) out.endsAt = p.endsAt;
     if (p.say !== undefined) out.say = p.say;
-    if (p.tidy !== undefined) out.tidy = { ...p.tidy };
   }
+  const tidy = mergeTidy(a.tidy, b.tidy);
+  if (tidy) out.tidy = tidy;
   if (a.addDmg !== undefined || b.addDmg !== undefined) out.addDmg = (a.addDmg ?? 0) + (b.addDmg ?? 0);
   return out;
 }
@@ -320,7 +333,8 @@ function toGame(v: unknown): RoomGame | null {
   if (v.kind !== "bottle") return null;
   const b = ROOM_LIMITS.bottle;
   const turnAt = timeOf(v.tAt);
-  if (turnAt === undefined || !isInt(v.turn, 0, b.maxTurns) || typeof v.holder !== "string" || !isInt(v.card, 0) || !isInt(v.del, 0)) return null;
+  if (turnAt === undefined || !isInt(v.n, ROOM_LIMITS.deckCards.min, ROOM_LIMITS.deckCards.max)) return null;
+  if (!isInt(v.turn, 0, b.maxTurns) || typeof v.holder !== "string" || !isInt(v.card, 0) || !isInt(v.del, 0)) return null;
   if (!isInt(v.buoys, 0, b.buoys) || typeof v.res !== "boolean" || !isInt(v.goal, b.goal.min, b.goal.max) || !isInt(v.end, 0, 2)) return null;
   return {
     kind: "bottle",
@@ -328,6 +342,7 @@ function toGame(v: unknown): RoomGame | null {
     seed: v.seed,
     at,
     seats,
+    cards: v.n,
     turn: v.turn,
     holder: v.holder,
     turnAt,
@@ -390,6 +405,21 @@ export function toCard(code: string, data: unknown): RoomCard | null {
 /** A shared deck's cards for the practice engine. Ids are the card's place in the deck, so every device agrees. */
 export function toPracticeCards(cards: readonly BottleCard[]): PracticeCard[] {
   return cards.map((c, i) => ({ id: String(i), front: c.f, back: c.b }));
+}
+
+/** A short id from a card's two sides (53-bit cyrb53 hash), so different cards never share an id, whatever order they came in. */
+export function cardTextId(front: string, back: string): string {
+  const text = `${front.trim()}\u0000${back.trim()}`;
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
 // ---- Time and presence ----------------------------------------------------------------------
@@ -535,7 +565,7 @@ export function sailStatus(sail: RoomSail, serverNow: number): SailStatus {
 
 export type SailOffer =
   | { kind: "sail-with"; prepUntilServer: number }
-  | { kind: "hop-aboard"; focusMinutes: number; breakMinutes: number }
+  | { kind: "hop-aboard"; focusMinutes: number; breakMinutes: number; leg: number }
   | { kind: "sail-on"; focusMinutes: number; breakMinutes: number; cycles: number; fromLeg: number };
 
 /** Hop aboard needs at least this much of the crew's focus block left. */
@@ -543,9 +573,22 @@ const HOP_MIN_LEFT = 2 * MINUTE;
 /**
  * Sail on (a whole leg, and the legs after it) is offered only in a leg's first half minute, so a
  * sailor's breaks stay within half a minute of the crew's, as hop aboard's rounding does. Later
- * in the leg, hop aboard fits the minutes that are left.
+ * in the leg, hop aboard fits the minutes that are left. (The build spec said 2 minutes; half a
+ * minute was chosen so sailing on never puts a sailor's breaks more out of step than hopping aboard.)
  */
-const SAIL_ON_WINDOW = 30 * SECOND;
+export const SAIL_ON_WINDOW = 30 * SECOND;
+/**
+ * A later leg calls "Next leg is starting" for this long: sail on in its first half minute, then
+ * hop aboard. A sailor who hopped aboard can come off their break up to half a minute after the
+ * crew's next leg began (rounding), plus a moment, so they still get the call.
+ */
+export const NEXT_LEG_CALL_MS = 2 * MINUTE;
+
+/** When the crew's current leg began (server ms), or null outside a focus block. */
+export function legStartedAt(sail: RoomSail, serverNow: number): number | null {
+  const status = sailStatus(sail, serverNow);
+  return status.phase === "focus" ? status.endsAt - sail.focus * MINUTE : null;
+}
 
 /**
  * How to join the crew's sail plan right now. Sail with them while they get ready; sail on at
@@ -566,7 +609,7 @@ export function sailOffer(sail: RoomSail | null, voyage: { phase: VoyagePhase; p
   const left = status.endsAt - serverNow;
   if (left < HOP_MIN_LEFT) return null;
   // Whole minutes (the timer rounds them), the nearest, so the break starts within half a minute of the crew's.
-  return { kind: "hop-aboard", focusMinutes: Math.round(left / MINUTE), breakMinutes: sail.brk };
+  return { kind: "hop-aboard", focusMinutes: Math.round(left / MINUTE), breakMinutes: sail.brk, leg: status.leg };
 }
 
 // ---- Kraken Watch ---------------------------------------------------------------------------
@@ -613,12 +656,12 @@ function estimatedTidyPatches(room: Room, game: TidyGame): number {
   return Math.min(game.seats.length, Math.floor(usable / 4), ROOM_LIMITS.tidy.maxPatches);
 }
 
-function tidyEarned(room: Room, myKey: string, patches: number): TidyGame | null {
+function tidyEarned(room: Room, myKey: string, patches: number, memo: TidyMemo | null): TidyGame | null {
   const game = room.game;
   if (game?.kind !== "tidy") return null;
   const me = memberOf(room, myKey);
   if (!me || me.tidy.gid !== game.seed || popcount(me.tidy.patches & ((1 << patches) - 1)) === 0) return null;
-  return tidyStatus(room, game, patches, game.at).done ? game : null;
+  return tidyStatus(room, game, patches, game.at, memo).done ? game : null;
 }
 
 function bottleEarned(room: Room, myKey: string): BottleGame | null {
@@ -634,8 +677,15 @@ const beastReason = (name: string) => `The crew beat ${name.replace(/^The /, "th
  * the room; Tidy the Deck once the crew finishes, if I cleared a patch; Pass the Bottle once
  * the game ends, if I had a seat. `tidyPatches` is the game's real patch count when the deck
  * is loaded (tidyPatches(...).length); without it, it's worked out from the deck's size.
+ * `tidyBefore` and `tidyAfter` are the device's Tidy memory before and after this snapshot, so
+ * a patch cleared by a sailor who then left still counts.
  */
-export function roomRewards(prev: Room | null, next: Room, myKey: string, opts: { tidyPatches?: number } = {}): RoomReward[] {
+export function roomRewards(
+  prev: Room | null,
+  next: Room,
+  myKey: string,
+  opts: { tidyPatches?: number; tidyBefore?: TidyMemo | null; tidyAfter?: TidyMemo | null } = {},
+): RoomReward[] {
   if (!prev || prev.code !== next.code || prev.at !== next.at) return [];
   const me = memberOf(next, myKey);
   if (!me) return [];
@@ -652,8 +702,8 @@ export function roomRewards(prev: Room | null, next: Room, myKey: string, opts: 
   if (next.game?.kind === "tidy") {
     const game = next.game;
     const patches = opts.tidyPatches ?? estimatedTidyPatches(next, game);
-    const before = prev.game?.kind === "tidy" && prev.game.seed === game.seed ? tidyEarned(prev, myKey, patches) : null;
-    if (!before && tidyEarned(next, myKey, patches)) rewards.push({ id: `${base}:tidy:${game.seed}`, ...TIDY_REWARD, reason: "Tidy the Deck: ship shape!" });
+    const before = prev.game?.kind === "tidy" && prev.game.seed === game.seed ? tidyEarned(prev, myKey, patches, opts.tidyBefore ?? null) : null;
+    if (!before && tidyEarned(next, myKey, patches, opts.tidyAfter ?? null)) rewards.push({ id: `${base}:tidy:${game.seed}`, ...TIDY_REWARD, reason: "Tidy the Deck: ship shape!" });
   }
 
   const bottle = bottleEarned(next, myKey);
@@ -680,9 +730,10 @@ export function gameSeats(room: Room, serverNow: number): string[] {
     .map((m) => m.key);
 }
 
-/** Bottles to deliver to reach the island: 6 for 1–3 sailors, 8 for 4–6. */
-export function bottleGoal(seats: number): number {
-  return seats >= 4 ? 8 : 6;
+/** Bottles to deliver to reach the island: 6 for 1–3 sailors, 8 for 4–6, but never more than the cards dealt, so the island can always be reached. */
+export function bottleGoal(seats: number, cards: number = Infinity): number {
+  const { min } = ROOM_LIMITS.bottle.goal;
+  return Math.max(min, Math.min(seats >= 4 ? 8 : 6, Math.floor(cards)));
 }
 
 /** The next seat after the holder who can answer (aboard, here and not focusing); the holder when nobody else can. */
@@ -705,11 +756,10 @@ export type BottleTurnPatch = Pick<BottleGame, "turn" | "holder" | "card" | "del
  * One Pass the Bottle turn, exactly as the rules check it. Right (or close) delivers the bottle
  * and moves to the next card; a first miss sends the same card to the next sailor as a rescue;
  * a missed rescue loses a lifebuoy and moves on. Taking the helm counts as a miss. The game ends
- * at the goal (island) or with no buoys or cards left (tide). "Out of cards" uses the room's
- * stored deck size, as the rules do, so pass room.deck.cards as `deckSize` (it's used only when
- * the room has no deck).
+ * at the goal (island) or with no buoys or cards left (tide); "out of cards" is the game's own
+ * count of the cards it deals (game.cards), as the rules check it.
  */
-export function bottleStep(game: BottleGame, outcome: BottleOutcome, room: Room, deckSize: number, serverNow: number): BottleTurnPatch {
+export function bottleStep(game: BottleGame, outcome: BottleOutcome, room: Room, serverNow: number): BottleTurnPatch {
   const holder = nextPresentSeat(game, room, serverNow);
   const right = outcome === "right" || outcome === "close";
   let { card, delivered, buoys } = game;
@@ -723,8 +773,7 @@ export function bottleStep(game: BottleGame, outcome: BottleOutcome, room: Room,
     buoys = Math.max(0, buoys - 1);
     card += 1;
   }
-  const cards = room.deck ? room.deck.cards : deckSize;
-  const end: 0 | 1 | 2 = delivered >= game.goal ? 1 : buoys === 0 || card >= cards ? 2 : 0;
+  const end: 0 | 1 | 2 = delivered >= game.goal ? 1 : buoys === 0 || card >= game.cards ? 2 : 0;
   return { turn: game.turn + 1, holder, card, delivered, buoys, rescue, end };
 }
 
@@ -750,27 +799,70 @@ export function bottleOver(game: BottleGame): 0 | 1 | 2 {
  */
 const TIDY_LATE_WRITE_MS = (ROOM_LIMITS.writeGapSeconds + 5) * SECOND;
 
+/** One sailor's Tidy the Deck progress, as this device last saw it. */
+export interface TidySeen {
+  patches: number;
+  ms: number;
+  mixups: number;
+}
+
 /**
- * Tidy the Deck for the whole crew, from each sailor's progress for this game (gid == seed):
- * `covered` is every cleared patch as bits, crew time is the latest clear plus 1 s per mix-up,
- * and `open` lists patches nobody has cleared yet (for "Help a crewmate").
+ * Everything this device has seen of one Tidy the Deck game, sailor by sailor, including sailors
+ * who have since left: leaving deletes a sailor's entry from the room, and with it the patches
+ * they cleared, so without this a finished game would turn back into an unfinished one.
+ */
+export interface TidyMemo {
+  seed: number;
+  seen: Record<string, TidySeen>;
+}
+
+/** What a sailor's entry adds to what was seen of their progress for game `seed` (progress only grows). */
+function seenWith(old: TidySeen | undefined, m: RoomMember): TidySeen {
+  return old ? { patches: old.patches | m.tidy.patches, ms: Math.max(old.ms, m.tidy.ms), mixups: Math.max(old.mixups, m.tidy.mixups) } : { patches: m.tidy.patches, ms: m.tidy.ms, mixups: m.tidy.mixups };
+}
+
+/** Every sailor's progress for this game: the memo's (sailors who left included), joined with the room's. */
+function seenFor(room: Room, seed: number, memo: TidyMemo | null): Record<string, TidySeen> {
+  const seen: Record<string, TidySeen> = memo?.seed === seed ? { ...memo.seen } : {};
+  for (const m of room.members) if (m.tidy.gid === seed && m.tidy.patches) seen[m.key] = seenWith(seen[m.key], m);
+  return seen;
+}
+
+/** Folds a snapshot's Tidy progress into the memo (a new game starts a new one); the same memo back when nothing changed. */
+export function rememberTidy(memo: TidyMemo | null, room: Room): TidyMemo | null {
+  const game = room.game;
+  if (game?.kind !== "tidy") return memo;
+  const seen = seenFor(room, game.seed, memo);
+  const same = memo?.seed === game.seed && Object.keys(seen).length === Object.keys(memo.seen).length && Object.entries(seen).every(([k, v]) => {
+    const old = memo.seen[k];
+    return old && old.patches === v.patches && old.ms === v.ms && old.mixups === v.mixups;
+  });
+  return same && memo ? memo : { seed: game.seed, seen };
+}
+
+/**
+ * Tidy the Deck for the whole crew, from each sailor's progress for this game (gid == seed), plus
+ * what `memo` remembers of sailors who left: `covered` is every cleared patch as bits, crew time
+ * is the latest clear plus 1 s per mix-up, and `open` lists patches nobody has cleared yet (for
+ * "Help a crewmate").
  */
 export function tidyStatus(
   room: Room,
   game: TidyGame,
   patches: number,
   serverNow: number,
+  memo: TidyMemo | null = null,
 ): { cleared: number; covered: number; done: boolean; crewMs: number | null; timedOut: boolean; open: number[] } {
   const count = Math.max(0, Math.min(Math.floor(patches), ROOM_LIMITS.tidy.maxPatches));
   const mask = (1 << count) - 1;
+  const seen = seenFor(room, game.seed, memo);
   let covered = 0;
   let latest = 0;
   let mixups = 0;
-  for (const m of room.members) {
-    if (m.tidy.gid !== game.seed || !m.tidy.patches) continue;
-    covered |= m.tidy.patches & mask;
-    latest = Math.max(latest, m.tidy.ms);
-    mixups += m.tidy.mixups;
+  for (const t of Object.values(seen)) {
+    covered |= t.patches & mask;
+    latest = Math.max(latest, t.ms);
+    mixups += t.mixups;
   }
   const cleared = popcount(covered);
   const done = count > 0 && cleared === count;
@@ -817,7 +909,13 @@ export function sceneMates(room: Room, myKey: string, serverNow: number, hidden:
 
 // ---- Messages -------------------------------------------------------------------------------
 
-export type RoomAction = "load" | "open" | "join" | "write" | "leave" | "report" | "game";
+/** When Bottle Bay has hidden the room's deck after reports (or its sharer took it back). */
+export const DECK_HIDDEN_TEXT = "Bottle Bay hid this deck after reports, or its sharer took it back, so it can't be played any more. The skipper can pick another one.";
+/** Asking for a deck change while a game is on. */
+export const DECK_LOCKED_TEXT = "End this game to change the deck.";
+
+/** What was being tried, for the words: `game` is a Pass the Bottle turn, `skipper` any skipper tool (door, sail plan, deck, games, the hat). */
+export type RoomAction = "load" | "open" | "join" | "write" | "leave" | "report" | "game" | "skipper";
 
 const JOIN_TEXT: Record<JoinProblem, string> = {
   gone: "Couldn't find a room with that code. It may have closed.",
@@ -834,8 +932,9 @@ const REFUSED_TEXT: Record<RoomAction, string> = {
   join: JOIN_TEXT.refused,
   write: "Wait a few seconds between messages.",
   leave: "Couldn't leave the room just now. Try again in a few seconds.",
-  report: "You've already reported this room.",
+  report: "Couldn't send the report just now. Try again in a moment.",
   game: "Someone else took that turn.",
+  skipper: "The room changed just now. Try again.",
 };
 
 /**
@@ -848,6 +947,8 @@ export function roomProblem(errorCode: string, action: RoomAction, join?: JoinPr
   const code = errorCode.toLowerCase();
   if (code.includes("resource-exhausted")) return "Rooms are out of free database use for today. Your own timer keeps going; the crew catches up tomorrow.";
   if (code.includes("paused")) return "Open rooms are resting for now. Invite rooms still work.";
+  // The room holds something this app doesn't know yet (a newer Ship changed it).
+  if (code.includes("data-loss")) return "This room was changed by a newer version of Ship. Reload the page to keep studying with your crew.";
   if (/unavailable|deadline-exceeded|network|offline/.test(code)) return "Couldn't reach the room. Check your connection.";
   if (code.includes("not-found")) return action === "join" || action === "load" ? JOIN_TEXT.gone : "This room has ended.";
   if (code.includes("permission-denied")) return REFUSED_TEXT[action];

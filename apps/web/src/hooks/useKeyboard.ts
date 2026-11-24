@@ -45,6 +45,8 @@ export function toggleVoyage(): void {
 export function useKeyboard(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A dialog or popover over the panel (the rules, the tutorial, a menu) has already used this key.
+      if (e.defaultPrevented) return;
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       const ui = useUi.getState();
       if (e.key === "Escape") {

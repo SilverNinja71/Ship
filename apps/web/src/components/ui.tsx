@@ -77,7 +77,8 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
               <IconClose />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+          {/* relative: anything positioned inside stays inside the scrolling body, not the clipped dialog around it. */}
+          <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
         </div>
       </div>
     </div>

@@ -9,8 +9,7 @@ import { useEffect, useState } from "react";
 import { ROOM_RULES_VERSION } from "@ship/shared-types";
 import type { RoomCard, RoomLook } from "@ship/shared-types";
 import { useAuthUser } from "../../hooks/useAuthUser.js";
-import { randomLook } from "../../lib/roomRules.js";
-import { useRooms } from "../../stores/roomStore.js";
+import { lookFor, useRooms } from "../../stores/roomStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { IconCrew } from "../icons.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
@@ -30,6 +29,7 @@ export function RoomsPanel({ onClose }: { onClose: () => void }) {
   const user = useAuthUser();
   const invite = useUi((s) => s.roomInvite);
   const notice = useRooms((s) => s.notice);
+  const prefsUid = useRooms((s) => s.uid);
   const rulesOk = useRooms((s) => s.rulesOk);
   const current = useRooms((s) => s.current);
   const joining = useRooms((s) => s.status === "joining");
@@ -40,9 +40,19 @@ export function RoomsPanel({ onClose }: { onClose: () => void }) {
   const over13 = useRooms((s) => s.over13);
   const [picked, setTab] = useState<RoomsTab | null>(null);
   const tab = picked ?? (over13 ? "open" : "code");
-  // The look last used in a room comes back (the store saves it on opening or joining).
-  const [look, setLook] = useState<RoomLook>(() => useRooms.getState().myLook ?? randomLook(Math.random));
   const pending = preview?.code ?? invite;
+  // A new nickname for every room (the character and accessory last chosen come back); hopping
+  // back into a room keeps the nickname used there.
+  const [look, setLook] = useState<RoomLook>(() => lookFor(pending ?? null));
+  useEffect(() => {
+    setLook(lookFor(pending ?? null));
+  }, [pending, current]);
+
+  // The rules answer (and the 13+ tick) is the signed-in account's own, read from it, never this browser's.
+  const uid = user?.uid ?? null;
+  useEffect(() => {
+    if (uid) void useRooms.getState().syncRules();
+  }, [uid]);
   const clearPending = () => {
     setPreview(null);
     if (useUi.getState().roomInvite) useUi.getState().setRoomInvite(null);
@@ -58,7 +68,7 @@ export function RoomsPanel({ onClose }: { onClose: () => void }) {
     body = <SignedOut invited={!!invite} />;
   } else if (notice) {
     body = <RoomNoticeCard notice={notice} onStart={() => setTab("start")} onRejoin={(code, refusal) => setPreview({ code, refusal })} />;
-  } else if (rulesOk < ROOM_RULES_VERSION || showRules) {
+  } else if (rulesOk < ROOM_RULES_VERSION || prefsUid !== user.uid || showRules) {
     body = <RoomRulesCard onDone={() => setShowRules(false)} />;
   } else if (pending && pending !== current) {
     body = (

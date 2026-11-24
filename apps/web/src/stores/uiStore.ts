@@ -27,6 +27,10 @@ export interface UiState {
   setRoomInvite(code: string | null): void;
   /** Opens Study Sheets with this note already picked. */
   blurtNote(noteId: string): void;
+  /** Study Rooms should open at the game ("Answer" or "Open the game" in the banner); the game clears it once shown. */
+  roomGameWanted: boolean;
+  showRoomGame(): void;
+  roomGameShown(): void;
   openPanel(panel: PanelId | null): void;
   togglePanel(panel: PanelId): void;
   toast(text: string, tone?: ToastTone): void;
@@ -44,6 +48,9 @@ export const useUi = create<UiState>()((set, get) => ({
   setRoomInvite: (roomInvite) => set({ roomInvite }),
   setLoginOpen: (loginOpen) => set(loginOpen ? { loginOpen, panel: null } : { loginOpen }),
   blurtNote: (noteId) => set({ blurtNoteId: noteId, panel: "log" }),
+  roomGameWanted: false,
+  showRoomGame: () => set({ roomGameWanted: true, panel: "rooms" }),
+  roomGameShown: () => set({ roomGameWanted: false }),
   openPanel: (panel) => set({ panel }),
   togglePanel: (panel) => set({ panel: get().panel === panel ? null : panel }),
   toast: (text, tone = "info") => {

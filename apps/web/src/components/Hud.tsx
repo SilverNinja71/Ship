@@ -510,7 +510,7 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
 function RoomsButton() {
   const openPanel = useUi((s) => s.openPanel);
   const aboard = useRooms((s) => (s.current !== null && s.room ? s.room.members.length : 0));
-  const offer = useRooms((s) => s.offer !== null || s.notice !== null);
+  const offer = useRooms((s) => (s.current !== null && s.offer !== null) || s.notice !== null);
   return (
     <button
       type="button"

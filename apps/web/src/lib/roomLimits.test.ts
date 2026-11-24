@@ -11,7 +11,7 @@ const range = (field: string, r: { min: number; max: number }) => `${field} >= $
 
 /** Every limit the database enforces, by its path in ROOM_LIMITS, with the rules text that enforces it. */
 const IN_RULES: Record<string, string[]> = {
-  size: [`n.m.size() <= ${L.size}`],
+  size: [`n.m.size() <= ${L.size}`, `n.game.seats.size() <= ${L.size}`],
   codeLength: [`roomId.matches('[A-HJ-NP-Z2-9]{${L.codeLength}}')`, `docId.matches('[A-HJ-NP-Z2-9]{${L.codeLength}}')`],
   writeGapSeconds: [`o.seen + duration.value(${L.writeGapSeconds}, 's')`],
   staleMinutes: [`staleAt(o.m[o.host].seen, ${L.staleMinutes})`, `staleAt(o.m[gone].seen, ${L.staleMinutes})`, `staleAt(d.m[d.host].seen, ${L.staleMinutes})`],
@@ -28,7 +28,7 @@ const IN_RULES: Record<string, string[]> = {
   accessories: [`x.a < ${L.accessories}`],
   nickNumberMax: [`x.n[2] <= ${L.nickNumberMax}`],
   creditSlackSeconds: [`(request.time - o.cr).seconds() + ${L.creditSlackSeconds})`, `(request.time - o.m[gone].cr).seconds() + ${L.creditSlackSeconds})`],
-  "deckCards.min": [range("n.deck.n", L.deckCards), range("request.resource.data.cards.size()", L.deckCards)],
+  "deckCards.min": [range("n.deck.n", L.deckCards), range("request.resource.data.cards.size()", L.deckCards), `n.game.n >= ${L.deckCards.min}`],
   "deckCards.max": [range("n.deck.n", L.deckCards), range("request.resource.data.cards.size()", L.deckCards)],
   "sailFocus.min": [range("n.sail.f", L.sailFocus)],
   "sailFocus.max": [range("n.sail.f", L.sailFocus)],
@@ -100,9 +100,11 @@ describe("firestore.rules agrees with the room lists", () => {
     expect(rules).toContain(`d.why == {${quoted.map((q) => `${q}: 0`).join(", ")}}`);
   });
 
-  it("takes room codes made of exactly the app's alphabet", () => {
-    const patterns = [...rules.matchAll(/(?:roomId|docId)\.matches\('([^']+)'\)/g)].map((m) => m[1]!);
-    expect(patterns.length).toBe(2);
+  it("takes room codes made of exactly the app's alphabet, everywhere the rules check one", () => {
+    // Every pattern in the rules but Bottle Bay's https check is a room code: the room's id, the
+    // private note's id, and the two cooldown stamps that name a room.
+    const patterns = [...rules.matchAll(/\.matches\('([^']+)'\)/g)].map((m) => m[1]!).filter((p) => !p.startsWith("https://"));
+    expect(patterns.length).toBe(4);
     expect(new Set(patterns).size).toBe(1);
     // Firestore's matches() must match the whole string.
     const code = new RegExp(`^(?:${patterns[0]})$`);

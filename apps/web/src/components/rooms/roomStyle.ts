@@ -4,6 +4,7 @@
 // here too, so every room part words times the same way.
 
 import { useEffect, useState } from "react";
+import type { RefObject } from "react";
 import { ROOM_ACCESSORIES, ROOM_COSTUMES } from "@ship/shared-types";
 import type { RoomAccessory, RoomCostume, RoomMember, RoomState } from "@ship/shared-types";
 import { presence, roomProblem } from "../../lib/roomRules.js";
@@ -113,16 +114,48 @@ export const SEAFOAM_BUTTON = `inline-flex items-center justify-center gap-1.5 r
 /** A quiet text button, as the rest of Ship's panels use. */
 export const QUIET_BUTTON = `rounded-md px-1.5 py-0.5 text-sm text-[var(--muted-ink)] underline-offset-4 hover:text-[var(--page-ink)] hover:underline disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
-/** A paper card on the page. */
-export const PAPER_CARD = "rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] shadow-[3px_3px_0_#EAE5DA] [[data-visual-style=storybook]_&]:shadow-none";
+/**
+ * The sticker-edge shadow under anything with the page's own fill. It's cream, which only suits a
+ * light page: Full Color and the dark themes (Midnight Moon, Deep Sea Jellyfish) drop it.
+ */
+export const PAPER_SHADOW = "shadow-[3px_3px_0_#EAE5DA] [[data-visual-style=storybook]_&]:shadow-none [[data-theme-dark=true]_&]:shadow-none";
 
-/** A little pill chip (subjects, cheers, accessories). */
-export function chipClass(active: boolean): string {
-  return [
-    "rounded-full border px-2.5 py-0.5 text-xs transition",
-    FOCUS_RING,
-    active ? "border-transparent bg-[#CDEDE5] text-[#24584B]" : "border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--muted-ink)] hover:text-[var(--page-ink)]",
-  ].join(" ");
+/** A paper card on the page. */
+export const PAPER_CARD = `rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] ${PAPER_SHADOW}`;
+
+/**
+ * A little pill chip (subjects, cheers, accessories). `pastel`: inside a card with its own fixed
+ * pastel fill (the look picker, Lumi's cards), so the chip keeps a light fill and the card's ink
+ * on every theme instead of turning into a dark pill.
+ */
+export function chipClass(active: boolean, opts: { pastel?: boolean } = {}): string {
+  const idle = opts.pastel ? "border-white/80 bg-white/70 text-[inherit] hover:bg-white" : "border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--muted-ink)] hover:text-[var(--page-ink)]";
+  return ["rounded-full border px-2.5 py-0.5 text-xs transition", FOCUS_RING, active ? "border-transparent bg-[#CDEDE5] text-[#24584B]" : idle].join(" ");
+}
+
+/**
+ * Closes a small popover (a ⋯ menu, the sticker picker) on Escape or a click outside `ref`. Escape
+ * is caught before the page hears it, so it closes only the popover, never the panel around it.
+ */
+export function usePopoverDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: () => void): void {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) close();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", key, true);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", key, true);
+    };
+  }, [open, ref, close]);
 }
 
 export const ROOM_FOCUS_RING = FOCUS_RING;
@@ -175,6 +208,16 @@ export async function roomAction(run: () => Promise<void>, action: RoomAction): 
     return errorText(e, action);
   }
   return useRooms.getState().error;
+}
+
+/**
+ * roomAction for the skipper's tools, which can wait up to 15 s for the room's write gap:
+ * undefined when the sailor left the room meanwhile (nothing was sent, and there's nothing to say).
+ */
+export async function skipperAction(run: () => Promise<void>): Promise<string | null | undefined> {
+  const code = useRooms.getState().current;
+  const problem = await roomAction(run, "skipper");
+  return !problem && code !== null && useRooms.getState().current !== code ? undefined : problem;
 }
 
 /** "just now", "25 min ago", "3 h ago". */

@@ -22,9 +22,21 @@ export function Aboard() {
   const room = useRooms((s) => s.room);
   const myKey = useRooms((s) => s.myKey);
   const status = useRooms((s) => s.status);
-  const error = useRooms((s) => s.error);
+  const error = useRooms((s) => s.alert ?? s.error);
+  const alert = useRooms((s) => s.alert);
   const serverOffset = useRooms((s) => s.serverOffset);
   const now = useTicker(1000) + serverOffset;
+
+  if (status === "elsewhere") {
+    return (
+      <div className="mx-auto grid max-w-md place-items-center gap-3 rounded-3xl border border-[#B2C8E0] bg-[#E6F2FA] px-6 py-8 text-center text-[#2F4F6B]">
+        <PastelMinionBadge costume="pwedo" size={64} />
+        <p className="font-display text-xl leading-snug">This room is open in another Ship tab</p>
+        <p className="text-sm">Pwedo keeps your seat in one tab at a time, so your crew sees one of you. Use that tab, or close it and this one takes over.</p>
+        <LeaveButton label="Leave the room" />
+      </div>
+    );
+  }
 
   if (!room || !myKey || !room.members.some((m) => m.key === myKey)) {
     return (
@@ -32,7 +44,7 @@ export function Aboard() {
         <PastelMinionBadge costume="pwedo" size={64} />
         {status === "error" ? (
           <>
-            <p className="text-sm text-[#8A3B31]">{error ?? "Couldn't reach the room. Check your connection."}</p>
+            <p className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">{error ?? "Couldn't reach the room. Check your connection."}</p>
             <LeaveButton label="Leave the room" />
           </>
         ) : (
@@ -42,14 +54,15 @@ export function Aboard() {
     );
   }
 
-  return <AboardRoom room={room} myKey={myKey} now={now} serverOffset={serverOffset} />;
+  return <AboardRoom room={room} myKey={myKey} now={now} serverOffset={serverOffset} problem={alert} listening={status !== "error"} />;
 }
 
-function AboardRoom({ room, myKey, now, serverOffset }: { room: Room; myKey: string; now: number; serverOffset: number }) {
+function AboardRoom({ room, myKey, now, serverOffset, problem, listening }: { room: Room; myKey: string; now: number; serverOffset: number; problem: string | null; listening: boolean }) {
   const pastel = roomPastel(room.subject);
   const iSkipper = room.host === myKey;
   return (
     <div className="space-y-4">
+      {problem && <ProblemNote text={problem} listening={listening} />}
       <header className="rounded-2xl border px-4 py-3.5" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
         <h3 className="font-display text-2xl leading-tight">{roomNameText(room.name)}</h3>
         <p className="mt-0.5 text-sm opacity-85">
@@ -87,6 +100,28 @@ function AboardRoom({ room, myKey, now, serverOffset }: { room: Room; myKey: str
         )}
       </footer>
       <p className="text-xs text-[var(--muted-ink)]">Nobody here sees your real name, and there's no chat, voice or video. Leaving keeps the minutes you gave the crew.</p>
+    </div>
+  );
+}
+
+/**
+ * A problem from the room's background work (the listener dropped, the day's free database use
+ * ran out, an own write was refused): Pwedo says so while the room stays on show. A listener
+ * problem clears itself on the next good snapshot; the rest are dismissed.
+ */
+function ProblemNote({ text, listening }: { text: string; listening: boolean }) {
+  return (
+    <div role="status" className="flex items-start gap-3 rounded-2xl border border-[#F4C7BE] bg-[#FDE8E4] px-3.5 py-2.5 text-[#8A3B31]">
+      <PastelMinionBadge costume="pwedo" size={40} />
+      <div className="min-w-0 flex-1 text-sm">
+        <p>{text}</p>
+        <p className="mt-0.5 text-xs opacity-85">{listening ? "Your own timer keeps going either way." : "Pwedo keeps trying to reach the room. Your own timer keeps going either way."}</p>
+      </div>
+      {listening && (
+        <button type="button" onClick={() => useRooms.setState({ alert: null })} className="shrink-0 rounded-full bg-white/70 px-2.5 py-0.5 text-xs hover:bg-white">
+          OK
+        </button>
+      )}
     </div>
   );
 }

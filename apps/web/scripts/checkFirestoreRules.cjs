@@ -183,23 +183,29 @@ const fresh = (extra = {}) => ({ n: [3, 7, 42], c: 1, a: 0, st: 0, end: null, in
 const roomData = (u, code, mode, extra = {}) => ({ v: 1, mode, name: [1, 2], subj: 0, at: serverTimestamp(), host: u.key(code), listed: mode === "open", locked: false, ban: [], rep: [], why: { spam: 0, unkind: 0, personal: 0, off: 0 }, banked: 0, last: null, sail: null, deck: null, game: null, m: { [u.key(code)]: fresh() }, ...extra });
 const cardData = (mode, extra = {}) => ({ v: 1, mode, name: [1, 2], subj: 0, at: serverTimestamp(), listed: mode === "open", locked: false, n: 1, alive: serverTimestamp(), ...extra });
 const stampRef = (u) => doc(u.db, "users", u.uid, "meta", "rooms");
-const acceptRules = (u, over13) => setDoc(stampRef(u), { madeAt: null, joinedAt: null, rules: 1, over13 });
-// The same batches lib/rooms.ts sends.
+const acceptRules = (u, over13) => setDoc(stampRef(u), { madeAt: null, joinedAt: null, madeIn: null, joinedIn: null, openIn: null, rules: 1, over13 });
+// The stamp a new room writes: the times, and this room's code (an open room's also as openIn).
+const openStamp = (code, mode) => ({ madeAt: serverTimestamp(), joinedAt: serverTimestamp(), madeIn: code, joinedIn: code, ...(mode === "open" ? { openIn: code } : {}) });
+// The same batches lib/rooms.ts sends. `also` adds more rooms to the same batch, on the same stamp.
 async function create(u, code, mode, opts = {}) {
   const b = writeBatch(u.db);
-  if (opts.stamp !== false) b.update(stampRef(u), { madeAt: serverTimestamp(), joinedAt: serverTimestamp() });
-  if (opts.note !== false) b.set(doc(u.db, "users", u.uid, "rooms", code), { at: serverTimestamp() });
-  b.set(doc(u.db, "rooms", code), opts.data ?? roomData(u, code, mode));
-  if (opts.card !== false) b.set(doc(u.db, "roomCards", code), opts.cardData ?? cardData(mode));
+  if (opts.stamp !== false) b.update(stampRef(u), opts.stampData ?? openStamp(code, mode));
+  for (const c of [code, ...(opts.also ?? [])]) {
+    if (opts.note !== false) b.set(doc(u.db, "users", u.uid, "rooms", c), { at: serverTimestamp() });
+    b.set(doc(u.db, "rooms", c), c === code ? (opts.data ?? roomData(u, c, mode)) : roomData(u, c, mode));
+    if (opts.card !== false) b.set(doc(u.db, "roomCards", c), c === code ? (opts.cardData ?? cardData(mode)) : cardData(mode));
+  }
   await b.commit();
 }
 const mp = (k, f) => new FieldPath("m", k, ...(f ? [f] : []));
 async function join(u, code, opts = {}) {
   const b = writeBatch(u.db);
-  b.update(doc(u.db, "rooms", code), mp(u.key(code)), opts.entry ?? fresh());
-  if (opts.card !== false) b.update(doc(u.db, "roomCards", code), { n: increment(opts.by ?? 1) });
-  if (opts.stamp !== false) b.update(stampRef(u), { joinedAt: serverTimestamp() });
-  if (opts.note !== false) b.set(doc(u.db, "users", u.uid, "rooms", code), { at: serverTimestamp() });
+  if (opts.stamp !== false) b.update(stampRef(u), { joinedAt: serverTimestamp(), joinedIn: opts.stampRoom ?? code });
+  for (const c of [code, ...(opts.also ?? [])]) {
+    b.update(doc(u.db, "rooms", c), mp(u.key(c)), opts.entry ?? fresh());
+    if (opts.card !== false) b.update(doc(u.db, "roomCards", c), { n: increment(opts.by ?? 1) });
+    if (opts.note !== false) b.set(doc(u.db, "users", u.uid, "rooms", c), { at: serverTimestamp() });
+  }
   await b.commit();
 }
 const own = (u, code, fields) => {
@@ -228,6 +234,10 @@ async function report(u, code, reason, listed, opts = {}) {
 }
 const ageSeen = (u, code, mins = 1) => age(`rooms/${code}`, `m.${u.key(code)}.seen`, mins);
 const ageJoinStamp = (u) => age(`users/${u.uid}/meta/rooms`, "joinedAt", 1);
+const ageStamp = async (u) => {
+  await age(`users/${u.uid}/meta/rooms`, "madeAt", 2);
+  await age(`users/${u.uid}/meta/rooms`, "joinedAt", 2);
+};
 const openList = (u, n = 20) => getDocs(query(collection(u.db, "roomCards"), where("listed", "==", true), limit(n)));
 
 async function studyRooms(nobody) {
@@ -237,20 +247,23 @@ async function studyRooms(nobody) {
   const crew = await Promise.all(names.map((x) => sailor(x, run)));
   const [alice, bob, carol, dave, erin, finn, gail, hank, ivy, jay] = crew;
   const A = roomCode("K7MP"), O = roomCode("BEACH"), D1 = roomCode("DAVE"), D2 = roomCode("DAVE"), J = roomCode("JAY"), HK = roomCode("HANK"), P = roomCode("PEARL");
-  const hiddenDeck = `HIDDEN${run}`, goodDeck = `GOODDECK${run}`;
+  const hiddenDeck = `HIDDEN${run}`, goodDeck = `GOODDECK${run}`, otherDeck = `OTHERDECK${run}`;
   // Rooms start switched on (no config/rooms), even if an earlier run stopped halfway.
   await ownerDelete("config/rooms");
 
   // ---- The rules card and the stamp ----
   for (const u of [alice, bob, carol, erin, finn, gail, hank, ivy, jay]) await setup(`${u.name} accepts the rules`, () => acceptRules(u, true));
   await expect("Dave accepts the rules without the 13+ tick", true, () => acceptRules(dave, false));
-  await expect("The stamp can't carry other fields", false, () => setDoc(stampRef(dave), { madeAt: null, joinedAt: null, rules: 1, over13: false, name: "Dave" }));
+  await expect("The stamp can't carry other fields", false, () => setDoc(stampRef(dave), { madeAt: null, joinedAt: null, madeIn: null, joinedIn: null, openIn: null, rules: 1, over13: false, name: "Dave" }));
+  await expect("The stamp can't name a room without spending its cooldown", false, () => updateDoc(stampRef(dave), { madeIn: roomCode("ZZ") }));
 
   // ---- Opening an invite room ----
   await expect("A room needs its public card", false, () => create(alice, A, "invite", { card: false }));
   await expect("A card that miscounts the crew is refused", false, () => create(alice, A, "invite", { cardData: cardData("invite", { n: 2 }) }));
   await expect("A room needs the skipper's private note", false, () => create(alice, A, "invite", { note: false }));
   await expect("A room needs the cooldown stamp", false, () => create(alice, A, "invite", { stamp: false }));
+  await expect("A room's stamp must name that room", false, () => create(alice, A, "invite", { stampData: openStamp(roomCode("ZZ"), "invite") }));
+  await expect("One batch can't open two rooms on one stamp", false, () => create(alice, A, "invite", { also: [roomCode("ZY")] }));
   await expect("A sailor can't carry a name field", false, () => create(alice, A, "invite", { data: roomData(alice, A, "invite", { m: { [alice.key(A)]: { ...fresh(), name: "Alice Smith" } } }) }));
   await expect("Nickname number 69 is refused", false, () => create(alice, A, "invite", { data: roomData(alice, A, "invite", { m: { [alice.key(A)]: fresh({ n: [3, 7, 69] }) } }) }));
   await expect("Alice opens an invite room (room, card, note, stamp)", true, () => create(alice, A, "invite"));
@@ -271,6 +284,7 @@ async function studyRooms(nobody) {
   await expect("Bob's join without updating the card is refused", false, () => join(bob, A, { card: false }));
   await expect("Bob's join without his join stamp is refused", false, () => join(bob, A, { stamp: false }));
   await expect("Bob can't join with accessory 9", false, () => join(bob, A, { entry: fresh({ a: 9 }) }));
+  await expect("Bob's join stamp must name the room", false, () => join(bob, A, { stampRoom: roomCode("ZZ") }));
   await expect("Bob joins by code (room, card +1, stamp, note)", true, () => join(bob, A));
   await expect("Bob now reads the room", true, () => getDoc(doc(bob.db, "rooms", A)));
   await setup("age Bob's join stamp", () => ageJoinStamp(bob));
@@ -300,6 +314,8 @@ async function studyRooms(nobody) {
   await expect("Bob can't rejoin", false, () => join(bob, A));
   await setup("Carol joins Alice's room", async () => { await ageJoinStamp(carol); await join(carol, A); });
   await expect("Dave can't remove Alice's crewmate (not skipper, not stale)", false, () => removal(dave, A, carol.key(A), 0));
+  await setup("age Alice's seen", () => ageSeen(alice, A, 1));
+  await expect("The skipper can't sweep a crewmate who's still here (only ask them to leave)", false, () => removal(alice, A, carol.key(A), 0));
 
   // ---- Open room, list, 13+ ----
   await expect("Dave (no 13+ tick) can't open an open room", false, () => create(dave, D1, "open"));
@@ -307,7 +323,13 @@ async function studyRooms(nobody) {
   await expect("Dave opens an invite room instead", true, () => create(dave, D2, "invite"));
   await setup("age Carol's join stamp", () => ageJoinStamp(carol));
   await expect("Carol (13+) opens an open room", true, () => create(carol, O, "open"));
+  await expect("One batch can't join two rooms on one stamp", false, () => join(erin, O, { also: [A] }));
   for (const u of [erin, finn, ivy]) await expect(`${u.name[0].toUpperCase()}${u.name.slice(1)} joins the open room`, true, () => join(u, O));
+  const O2 = roomCode("BEACH");
+  await setup("age Carol's stamp", () => ageStamp(carol));
+  await expect("Carol can't open a second open room while she skippers one", false, () => create(carol, O2, "open"));
+  await expect("Carol can't free her open-room slot by naming a made-up room", false, () => updateDoc(stampRef(carol), { madeAt: serverTimestamp(), madeIn: O2, openIn: O2 }));
+  await expect("Carol can't delete her stamp while she skippers an open room", false, () => deleteDoc(stampRef(carol)));
   await setup("age Dave's join stamp", () => ageJoinStamp(dave));
   await expect("Dave (no 13+) can't join the open room", false, () => join(dave, O));
   await expect("Gail lists open rooms (limit 20): the open one is there, as a card", true, async () => {
@@ -358,6 +380,17 @@ async function studyRooms(nobody) {
   await expect("Carol starts Tidy the Deck with the crew aboard", true, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 7, at: serverTimestamp(), seats: [carol.key(O), erin.key(O), ivy.key(O)] }]));
   await setup("age Erin's seen", () => ageSeen(erin, O, 1));
   await expect("Erin reports her patch cleared", true, () => own(erin, O, { gid: 7, g: 2, gt: 41000, gp: 2 }));
+  const deckFields = (reports, cards) => ({ kind: { stringValue: "deck" }, reports: { integerValue: String(reports) }, cardCount: { integerValue: String(cards) } });
+  await setup("age Carol's seen; float another deck", async () => {
+    await ageSeen(carol, O, 1);
+    await ownerSet(`bottles/${otherDeck}`, deckFields(0, 8));
+  });
+  await expect("The deck can't change while a game is on", false, () => captainWrite(carol, O, ["deck", { b: otherDeck, n: 8 }]));
+  await setup("Bottle Bay hides the game's deck after a third report", () => ownerSet(`bottles/${goodDeck}`, deckFields(3, 12)));
+  await expect("A new game can't be dealt from a deck that reports have since hidden", false, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 8, at: serverTimestamp(), seats: [carol.key(O)] }]));
+  await expect("Putting the game away and picking another deck in one write is fine", true, () => captainWrite(carol, O, ["game", null, "deck", { b: otherDeck, n: 8 }]));
+  await setup("age Carol's seen", () => ageSeen(carol, O, 1));
+  await expect("…and a game from that deck starts", true, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 9, at: serverTimestamp(), seats: [carol.key(O), erin.key(O)] }]));
 
   // ---- Pass the Bottle in the invite room, with field-path turns ----
   await setup("age Alice's seen", () => ageSeen(alice, A, 1));
@@ -371,7 +404,13 @@ async function studyRooms(nobody) {
   await expect("Gail (not aboard) can't read the room deck", false, () => getDoc(doc(gail.db, "rooms", A, "deck", "cards")));
   await setup("age Alice's seen", () => ageSeen(alice, A, 1));
   const seats = [alice.key(A), dave.key(A), carol.key(A)];
-  await expect("Alice starts Pass the Bottle", true, () => captainWrite(alice, A, ["game", { kind: "bottle", v: 1, seed: 99, at: serverTimestamp(), seats, turn: 0, holder: seats[0], tAt: serverTimestamp(), card: 0, del: 0, buoys: 5, res: false, goal: 3, end: 0 }]));
+  const bottle = (extra = {}) => ({ kind: "bottle", v: 1, seed: 99, at: serverTimestamp(), seats, n: 4, turn: 0, holder: seats[0], tAt: serverTimestamp(), card: 0, del: 0, buoys: 5, res: false, goal: 3, end: 0, ...extra });
+  await expect("A bottle game can't deal more cards than the deck holds", false, () => captainWrite(alice, A, ["game", bottle({ n: 5 })]));
+  await expect("A bottle game's goal can't be more than the cards it deals", false, () => captainWrite(alice, A, ["game", bottle({ goal: 5 })]));
+  await expect("Alice starts Pass the Bottle", true, () => captainWrite(alice, A, ["game", bottle()]));
+  await expect("The skipper's own cards can't be swapped while a game is on", false, () =>
+    setDoc(doc(alice.db, "rooms", A, "deck", "cards"), { cards: [{ f: "w", b: "5" }, { f: "x", b: "6" }, { f: "y", b: "7" }, { f: "z", b: "8" }] }),
+  );
   await wait(2200);
   const gp = (f) => new FieldPath("game", f);
   // A turn as lib/rooms.ts playTurn sends it: field paths under game.*, no read first.
@@ -456,7 +495,7 @@ async function studyRooms(nobody) {
   await expect("Hank opens an open room", true, () => create(hank, P, "open"));
   await setup("age Hank's seen", () => ageSeen(hank, P, 1));
   await expect("Locking an open room without unlisting its card is refused", false, () => captainWrite(hank, P, ["locked", true, "listed", false]));
-  await expect("Hank locks the door and the card leaves the list", true, () => captainWrite(hank, P, ["locked", true, "listed", false], { listed: false, locked: true }));
+  await expect("Hank locks the door and the card leaves the list (refreshing the card's alive too)", true, () => captainWrite(hank, P, ["locked", true, "listed", false], { listed: false, locked: true, alive: serverTimestamp() }));
   await expect("A skipper write within 15 s is refused", false, () => captainWrite(hank, P, ["locked", false, "listed", true], { listed: true, locked: false }));
   await setup("age Hank's seen", () => ageSeen(hank, P, 1));
   await expect("Hank unlocks and relists", true, () => captainWrite(hank, P, ["locked", false, "listed", true], { listed: true, locked: false }));
@@ -472,8 +511,49 @@ async function studyRooms(nobody) {
   await expect("Gail can't take the hat while Hank is here", false, () => updateDoc(doc(gail.db, "rooms", P), "host", gail.key(P), mp(gail.key(P), "seen"), serverTimestamp()));
   await setup("age Hank's seen", () => ageSeen(hank, P, 1));
   await expect("Hank passes the hat to Gail", true, () => captainWrite(hank, P, ["host", gail.key(P)]));
+  const P2 = roomCode("PEARL");
+  await setup("age Hank's stamp", () => ageStamp(hank));
+  await expect("Hank, no longer its skipper, can open another open room", true, () => create(hank, P2, "open"));
   await setup("age Jay's join stamp and seen", async () => { await ageJoinStamp(jay); await ageSeen(jay, J, 1); });
   await expect("Jay can't list his invite room", false, () => captainWrite(jay, J, ["listed", true], { listed: true }));
+
+  // ---- No card is ever left on the list without its room ----
+  await expect("Jay packs his own 4-card deck", true, async () => {
+    const b = writeBatch(jay.db);
+    b.set(doc(jay.db, "rooms", J, "deck", "cards"), { cards: [{ f: "a", b: "1" }, { f: "b", b: "2" }, { f: "c", b: "3" }, { f: "d", b: "4" }] });
+    b.update(doc(jay.db, "rooms", J), "deck", { b: null, n: 4 }, mp(jay.key(J), "seen"), serverTimestamp());
+    await b.commit();
+  });
+  await expect("The skipper can't delete a room and keep its card (a ghost on the open list)", false, () => deleteDoc(doc(jay.db, "rooms", J)));
+  await expect("…or delete it with its card but not its deck", false, async () => {
+    const b = writeBatch(jay.db);
+    b.delete(doc(jay.db, "rooms", J));
+    b.delete(doc(jay.db, "roomCards", J));
+    await b.commit();
+  });
+  await expect("Jay closes his room with its card, deck and note", true, async () => {
+    const b = writeBatch(jay.db);
+    b.delete(doc(jay.db, "rooms", J, "deck", "cards"));
+    b.delete(doc(jay.db, "rooms", J));
+    b.delete(doc(jay.db, "roomCards", J));
+    b.delete(doc(jay.db, "users", jay.uid, "rooms", J));
+    await b.commit();
+    for (const p of [`rooms/${J}`, `roomCards/${J}`, `rooms/${J}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
+  });
+  const G = roomCode("GHST");
+  await setup("leave a card and a deck whose room is gone (as an older app could)", async () => {
+    const now = { timestampValue: new Date().toISOString() };
+    await ownerSet(`roomCards/${G}`, { v: { integerValue: "1" }, mode: { stringValue: "open" }, name: { arrayValue: { values: [{ integerValue: "1" }, { integerValue: "2" }] } }, subj: { integerValue: "0" }, at: now, listed: { booleanValue: true }, locked: { booleanValue: false }, n: { integerValue: "1" }, alive: now });
+    await ownerSet(`rooms/${G}/deck/cards`, { cards: { arrayValue: { values: [] } } });
+  });
+  await expect("Anyone clears a leftover card and deck with the app's tidy-up batch", true, async () => {
+    const b = writeBatch(gail.db);
+    b.delete(doc(gail.db, "rooms", G, "deck", "cards"));
+    b.delete(doc(gail.db, "rooms", G));
+    b.delete(doc(gail.db, "roomCards", G));
+    await b.commit();
+    for (const p of [`roomCards/${G}`, `rooms/${G}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
+  });
 
   const dump = JSON.stringify(await ownerGet(`rooms/${O}`)) + JSON.stringify(await ownerGet(`roomCards/${O}`)) + JSON.stringify(await ownerGet(`rooms/${P}`));
   await expect("No account id or email appears in any room or card document", true, async () => {
@@ -507,8 +587,8 @@ async function studyRooms(nobody) {
 
   // Leave the emulator as it was found: rooms switched on, and no rooms of this run on the list.
   await ownerDelete("config/rooms");
-  for (const c of [O, P, J]) for (const p of [`rooms/${c}/deck/cards`, `rooms/${c}`, `roomCards/${c}`]) await ownerDelete(p);
-  for (const id of [hiddenDeck, goodDeck]) await ownerDelete(`bottles/${id}`);
+  for (const c of [O, P, P2, J]) for (const p of [`rooms/${c}/deck/cards`, `rooms/${c}`, `roomCards/${c}`]) await ownerDelete(p);
+  for (const id of [hiddenDeck, goodDeck, otherDeck]) await ownerDelete(`bottles/${id}`);
 }
 
 (async () => {

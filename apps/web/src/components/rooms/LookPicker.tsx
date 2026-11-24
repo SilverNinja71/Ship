@@ -21,7 +21,7 @@ export function LookPicker({ look, onChange }: { look: RoomLook; onChange: (look
           <p className="text-sm">
             In this room you're <strong className="font-display text-base font-normal">{nickText(look.nick)}</strong>.
           </p>
-          <p className="text-xs opacity-80">Your Google name and email stay hidden.</p>
+          <p className="text-xs opacity-80">Your Google name and email stay hidden, and every room gets a new nickname.</p>
           <button
             type="button"
             onClick={() => onChange({ ...look, nick: randomNick(Math.random) })}
@@ -55,7 +55,7 @@ export function LookPicker({ look, onChange }: { look: RoomLook; onChange: (look
 
       <div role="radiogroup" aria-label="Accessory" className="flex flex-wrap gap-1.5">
         {ROOM_ACCESSORIES.map((a, i) => (
-          <button key={a} type="button" role="radio" aria-checked={look.accessory === i} onClick={() => onChange({ ...look, accessory: i })} className={chipClass(look.accessory === i)}>
+          <button key={a} type="button" role="radio" aria-checked={look.accessory === i} onClick={() => onChange({ ...look, accessory: i })} className={chipClass(look.accessory === i, { pastel: true })}>
             {ACCESSORY_LABELS[a]}
           </button>
         ))}

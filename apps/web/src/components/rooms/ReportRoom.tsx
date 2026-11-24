@@ -37,16 +37,17 @@ export function ReportRoom({ code, label = "⚑ Report room", onPastel = false }
         {label}
       </button>
     );
+  // On a pastel card the reasons keep a light fill and the card's ink, whatever the theme.
   return (
-    <div className="w-full space-y-1.5 rounded-2xl bg-[var(--surface-2)] px-3 py-2.5 text-left">
-      <p className="text-sm text-[var(--page-ink)]">What's wrong? Nobody in the room sees who reported.</p>
+    <div className={cx("w-full space-y-1.5 rounded-2xl px-3 py-2.5 text-left", onPastel ? "bg-white/60" : "bg-[var(--surface-2)]")}>
+      <p className={cx("text-sm", !onPastel && "text-[var(--page-ink)]")}>What's wrong? Nobody in the room sees who reported.</p>
       <div className="flex flex-wrap gap-1.5">
         {REASONS.map((r) => (
-          <button key={r.id} type="button" disabled={busy} onClick={() => void report(r.id)} className={cx(chipClass(false), "disabled:opacity-50")}>
+          <button key={r.id} type="button" disabled={busy} onClick={() => void report(r.id)} className={cx(chipClass(false, { pastel: onPastel }), "disabled:opacity-50")}>
             {r.label}
           </button>
         ))}
-        <button type="button" onClick={() => setOpen(false)} className={chipClass(false)}>
+        <button type="button" onClick={() => setOpen(false)} className={chipClass(false, { pastel: onPastel })}>
           Never mind
         </button>
       </div>

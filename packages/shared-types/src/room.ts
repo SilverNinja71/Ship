@@ -100,6 +100,8 @@ export interface RoomDeckRef { bottleId: string | null; cards: number }
 export interface TidyGame { kind: "tidy"; v: 1; seed: number; at: number; seats: string[] }
 export interface BottleGame {
   kind: "bottle"; v: 1; seed: number; at: number; seats: string[];
+  /** How many cards the game deals (the deck's playable ones, stored as `n`): it ends when they run out. */
+  cards: number;
   turn: number; holder: string; turnAt: number; card: number; delivered: number; buoys: number;
   rescue: boolean; goal: number; end: 0 | 1 | 2;
 }

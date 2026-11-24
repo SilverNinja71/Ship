@@ -40,6 +40,8 @@ export interface TidyProps {
 
 export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
   const serverOffset = useRooms((s) => s.serverOffset);
+  // What this device has seen of the game, so a crewmate leaving never reopens the patch they tidied.
+  const memo = useRooms((s) => s.tidyMemo);
   const motion = useSettings((s) => s.motion);
   const now = useTicker(250) + serverOffset;
   const patches = useMemo(() => (deck ? tidyPatches(deck, game.seed, game.seats.length) : null), [deck, game.seed, game.seats.length]);
@@ -55,7 +57,7 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
   const [record, setRecord] = useState<boolean | null>(() => crewRecords.get(game.seed) ?? null);
 
   const count = patches?.length ?? 0;
-  const status = tidyStatus(room, game, count, now);
+  const status = tidyStatus(room, game, count, now, memo);
   const full = bit(count) - 1;
   const covered = (status.covered | mine) & full;
   const active = chosen === undefined ? myPatch : chosen;
@@ -129,7 +131,7 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
     body = (
       <div>
         <p className="mb-2 text-sm text-[var(--muted-ink)]">
-          {active === myPatch ? "Your patch" : `Patch ${active + 1}${owner && owner !== myKey ? `, ${ownerName(room, owner)}'s` : ""}`}: pair each question with its answer. A mix-up adds a second to the crew's time.
+          {active === myPatch ? "Your patch" : patchTitle(room, active, owner, myKey)}: pair each question with its answer. A mix-up adds a second to the crew's time.
         </p>
         <MatchTiles key={`${game.seed}:${active}`} tiles={patches[active]!} onCleared={() => cleared(active)} onMistake={mistake} />
       </div>
@@ -202,6 +204,14 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
 function ownerName(room: Room, key: string): string {
   const m = room.members.find((x) => x.key === key);
   return m ? nickText(m.nick) : "a sailor who left";
+}
+
+/** "Patch 2, Cozy Dango 42's", or "Patch 2 (its sailor left)" once they've gone. */
+function patchTitle(room: Room, patch: number, owner: string | undefined, myKey: string): string {
+  const title = `Patch ${patch + 1}`;
+  if (!owner || owner === myKey) return title;
+  const m = room.members.find((x) => x.key === owner);
+  return m ? `${title}, ${nickText(m.nick)}'s` : `${title} (its sailor left)`;
 }
 
 /** One chip per patch, with the sailor who started on it and a tick once anyone has tidied it. */

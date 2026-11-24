@@ -12,7 +12,7 @@ import { useUi } from "../../stores/uiStore.js";
 import { useVoyage } from "../../stores/voyageStore.js";
 import { cx } from "../ui.js";
 import { MinionPortrait } from "./MinionPortrait.js";
-import { PAPER_CARD, ROOM_FOCUS_RING, SEAFOAM_BUTTON, YELLOW_BUTTON, chipClass, clockText, roomAction } from "./roomStyle.js";
+import { PAPER_CARD, ROOM_FOCUS_RING, SEAFOAM_BUTTON, YELLOW_BUTTON, chipClass, clockText, skipperAction } from "./roomStyle.js";
 
 const MINUTE = 60_000;
 const PRESETS = [
@@ -27,7 +27,9 @@ function offerLabel(o: SailOffer): string {
   // The minutes the timer will run (the crew's time left, rounded), so the button and the pill agree.
   if (o.kind === "hop-aboard") return `Hop aboard · ${o.focusMinutes} min left`;
   const last = o.fromLeg + o.cycles - 1;
-  return o.cycles > 1 ? `Sail on (legs ${o.fromLeg}–${last})` : `Sail on (leg ${o.fromLeg})`;
+  // The first leg has only just begun: it's still sailing with the crew, not sailing on.
+  const verb = o.fromLeg === 1 ? "Sail with the crew" : "Sail on";
+  return o.cycles > 1 ? `${verb} (legs ${o.fromLeg}–${last})` : `${verb} (leg ${o.fromLeg})`;
 }
 
 export function SailTogetherCard({ room, myKey, now }: { room: Room; myKey: string; now: number }) {
@@ -71,7 +73,8 @@ export function SailTogetherCard({ room, myKey, now }: { room: Room; myKey: stri
                 </>
               )}
             </p>
-            {live.phase !== "prep" && <p className="text-sm text-[var(--muted-ink)]">{Math.max(1, Math.ceil((live.endsAt - now) / MINUTE))} min left</p>}
+            {/* Rounded to the nearest minute, as Hop aboard's timer is, so the card and its button agree. */}
+            {live.phase !== "prep" && <p className="text-sm text-[var(--muted-ink)]">{offer?.kind === "hop-aboard" ? offer.focusMinutes : Math.max(1, Math.round((live.endsAt - now) / MINUTE))} min left</p>}
             <p className="text-xs text-[var(--muted-ink)]">
               {sail.focus} min focus, {sail.brk} min break, {sail.cycles} {sail.cycles === 1 ? "leg" : "legs"}
             </p>
@@ -131,9 +134,9 @@ function SkipperPlan({ hasPlan }: { hasPlan: boolean }) {
 
   const go = async (next: { focus: number; brk: number; cycles: number } | null) => {
     setBusy(true);
-    const problem = await roomAction(() => useRooms.getState().setSail(next), "write");
-    toast(problem ?? (next ? "Set sail! The crew starts in a minute." : "Plan cleared."), problem ? "warning" : "info");
+    const problem = await skipperAction(() => useRooms.getState().setSail(next));
     setBusy(false);
+    if (problem !== undefined) toast(problem ?? (next ? "Set sail! The crew starts in a minute." : "Plan cleared."), problem ? "warning" : "info");
   };
 
   const field = "w-16 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 py-1 text-center text-[var(--page-ink)] tabular-nums";

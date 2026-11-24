@@ -7,7 +7,7 @@
 import { collection, doc, getDoc, getDocs, increment, limit, orderBy, query, serverTimestamp, startAfter, where, writeBatch } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { BOTTLE_LIMITS } from "@ship/shared-types";
-import type { Bottle, BottleCard, BottleReportReason, BottleSourceType } from "@ship/shared-types";
+import type { Bottle, BottleCard, BottleKind, BottleReportReason, BottleSourceType } from "@ship/shared-types";
 import type { BottleData } from "./bottleRules.js";
 import { firestore } from "./db.js";
 
@@ -46,12 +46,13 @@ export interface BottlePage {
 }
 
 /** The newest bottles, or every bottle on one subject. */
-export async function listBottles(opts: { subjectKey?: string; after?: QueryDocumentSnapshot | null } = {}): Promise<BottlePage> {
+export async function listBottles(opts: { subjectKey?: string; kind?: BottleKind; after?: QueryDocumentSnapshot | null } = {}): Promise<BottlePage> {
   const store = firestore();
   const bottles = collection(store, "bottles");
-  // A subject is looked up on its own (sorted here), which needs no extra database index.
+  // A subject is looked up on its own (sorted here), which needs no extra database index; so is a
+  // subject and a kind together (two "==" filters can use the single-field indexes).
   const q = opts.subjectKey
-    ? query(bottles, where("subjectKey", "==", opts.subjectKey), limit(PAGE * 2))
+    ? query(bottles, where("subjectKey", "==", opts.subjectKey), ...(opts.kind ? [where("kind", "==", opts.kind)] : []), limit(PAGE * 2))
     : query(bottles, orderBy("at", "desc"), ...(opts.after ? [startAfter(opts.after)] : []), limit(PAGE));
   const snap = await getDocs(q);
   const list = snap.docs.map((d) => toBottle(d.id, d.data())).filter((b): b is Bottle => b !== null);
@@ -96,6 +97,12 @@ export async function reportBottle(uid: string, id: string, reason: BottleReport
   batch.update(doc(store, "bottles", id), { reports: increment(1) });
   batch.set(doc(store, "bottles", id, "reports", uid), { at: serverTimestamp(), reason });
   await batch.commit();
+}
+
+/** Whether a deck bottle is still in the bay: not taken back, and not hidden by reports. Read fresh, never from a list. */
+export async function bottleStillShared(id: string): Promise<boolean> {
+  const d = (await getDoc(doc(firestore(), "bottles", id))).data();
+  return d?.kind === "deck" && typeof d.reports === "number" && d.reports < BOTTLE_LIMITS.hideAtReports;
 }
 
 /** A deck bottle's cards (kept apart so browsing stays light). */

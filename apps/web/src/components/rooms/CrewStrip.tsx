@@ -1,7 +1,8 @@
 // The crew in every scene. While you're aboard a study room, everyone's badge shows over the
 // scene, whatever it is (deck, desk, break, quarters, Full Color or Ink & Paper): a status dot
 // each, the Kraken's live health bar, and a cheer bubble for 6 seconds when someone sends one.
-// On a wide screen it's a paper card at the bottom left; on a phone, one row under the top bar.
+// On a wide screen it's a paper card at the bottom left; on a phone (or any screen too narrow for
+// the card beside the running Pwedo Pomo pill), one row under the top bar.
 // Tapping it opens Study Rooms. It reads the room store only, so it never loads Firestore.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -15,19 +16,23 @@ import { useUi } from "../../stores/uiStore.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
 import { DieCutSticker, STICKERS } from "../StickerArt.js";
 import { cx } from "../ui.js";
-import { ROOM_FOCUS_RING, STATUS_WORD, accessoryOf, costumeOf, memberStatus, useTicker } from "./roomStyle.js";
+import { PAPER_SHADOW, ROOM_FOCUS_RING, STATUS_WORD, accessoryOf, costumeOf, memberStatus, useTicker } from "./roomStyle.js";
 
-/** Wide screens get the bottom-left card (narrower ones keep the Pwedo Pomo pill's room clear). */
-const WIDE_QUERY = "(min-width: 1280px)";
+/**
+ * Wide screens get the bottom-left card. A full crew's card is 320 px wide and the running Pwedo
+ * Pomo pill about 694 px, centred, so below about 1390 px they'd overlap: narrower screens get the row.
+ */
+const WIDE_QUERY = "(min-width: 1400px)";
 /** The phone row's height, so the banner can sit just under it. */
 export const STRIP_ROW_HEIGHT = 42;
 
 const BADGE = { wide: 44, narrow: 30 } as const;
 const GAP = { wide: 6, narrow: 4 } as const;
 const PAD = { wide: 12, narrow: 6 } as const;
-const BUBBLE_ROW = 32;
+/** Each cheer bubble's row; on a phone they hang under the strip, so the banner moves down by these. */
+export const BUBBLE_ROW = 32;
 
-/** True on screens at least 1280 px wide (and follows the window as it's resized). */
+/** True on screens at least 1400 px wide (and follows the window as it's resized). */
 export function useWideScreen(): boolean {
   const [wide, setWide] = useState(() => typeof matchMedia !== "undefined" && matchMedia(WIDE_QUERY).matches);
   useEffect(() => {
@@ -81,6 +86,18 @@ interface Bubble {
   at: number;
 }
 
+/** The cheer bubbles showing now, newest first: other sailors' from sceneMates (it leaves out hidden sailors and muted cheers); my own always shows. */
+export function stripBubbles(room: Room, myKey: string, now: number, hidden: readonly string[], muted: boolean): Bubble[] {
+  const cheers = new Map(sceneMates(room, myKey, now, hidden, muted).map((m) => [m.key, m.cheer]));
+  const bubbles: Bubble[] = [];
+  room.members.slice(0, ROOM_LIMITS.size).forEach((m, index) => {
+    const say = m.key === myKey ? ownCheer(m, now) : (cheers.get(m.key) ?? null);
+    if (say !== null) bubbles.push({ key: m.key, index, name: nickText(m.nick), say, at: m.sayAt ?? 0 });
+  });
+  // The newest sits closest to the badges; each has a row of its own, so they never overlap.
+  return bubbles.sort((a, b) => b.at - a.at);
+}
+
 function Strip({ room, myKey, top }: { room: Room; myKey: string; top: number }) {
   const serverOffset = useRooms((s) => s.serverOffset);
   const hidden = useRooms((s) => s.hidden);
@@ -95,15 +112,7 @@ function Strip({ room, myKey, top }: { room: Room; myKey: string; top: number })
   const size = wide ? "wide" : "narrow";
   const badge = BADGE[size];
 
-  // Cheers: other sailors' from sceneMates (it leaves out hidden sailors and muted cheers); my own always shows.
-  const cheers = new Map(sceneMates(room, myKey, now, hidden, muted).map((m) => [m.key, m.cheer]));
-  const bubbles: Bubble[] = [];
-  members.forEach((m, index) => {
-    const say = m.key === myKey ? ownCheer(m, now) : (cheers.get(m.key) ?? null);
-    if (say !== null) bubbles.push({ key: m.key, index, name: nickText(m.nick), say, at: m.sayAt ?? 0 });
-  });
-  // The newest sits closest to the badges; each has a row of its own, so they never overlap.
-  bubbles.sort((a, b) => b.at - a.at);
+  const bubbles = stripBubbles(room, myKey, now, hidden, muted);
   const newest = bubbles[0];
 
   const quest = questFromDamage(liveDamage(room, now));
@@ -125,7 +134,8 @@ function Strip({ room, myKey, top }: { room: Room; myKey: string; top: number })
         aria-label={label}
         title="Your study room crew (R)"
         className={cx(
-          "pointer-events-auto relative flex flex-col border border-[var(--border-subtle)] bg-[var(--surface-1)] text-left text-[var(--page-ink)] shadow-[3px_3px_0_#EAE5DA] transition hover:-translate-y-px [[data-visual-style=storybook]_&]:shadow-none",
+          "pointer-events-auto relative flex flex-col border border-[var(--border-subtle)] bg-[var(--surface-1)] text-left text-[var(--page-ink)] transition hover:-translate-y-px",
+          PAPER_SHADOW,
           wide ? "gap-2 rounded-2xl px-3 py-2.5" : "rounded-full px-1.5 py-1",
           ROOM_FOCUS_RING,
         )}
