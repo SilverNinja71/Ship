@@ -14,7 +14,7 @@ import { useNow } from "./Hud.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { DieCutSticker } from "./StickerArt.js";
 import { StickerPickerPopover } from "./StickerPickerPopover.js";
-import { IconCards, IconLog, IconNotebook } from "./icons.js";
+import { IconBottle, IconCards, IconLog, IconNotebook } from "./icons.js";
 import { cx, readFile } from "./ui.js";
 
 export function StudyMaterialsSection() {
@@ -429,6 +429,13 @@ function StudySheetsSection() {
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[#F3EAF7] px-3.5 py-1.5 text-xs font-bold text-[#56406A] transition-[background-color] duration-150 hover:bg-[#EBDDF3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
           >
             <IconNotebook size={14} /> Note Nook &amp; Obsidian
+          </button>
+          <button
+            type="button"
+            onClick={() => openPanel("bay")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[#EAF7F3] px-3.5 py-1.5 text-xs font-bold text-[#2D6252] transition-[background-color] duration-150 hover:bg-[#DDF2EB] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]"
+          >
+            <IconBottle size={14} /> Bottle Bay
           </button>
         </div>
       </div>

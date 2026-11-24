@@ -64,7 +64,7 @@ ship/
 │   │       │                StudyMaterialsSection + BananaPlannaSection (the page below the scene),
 │   │       │                OnboardingModal, ConsentBanner, LegalModal, BreakReflectModal, MonthlyStatsModal,
 │   │       │                AudioBrowserModal, PastelMinionBadge,
-│   │       │                panels/ (Helm, Planner, Captain's Log, Note Nook, Flashcards, Shipwright, Wardrobe,
+│   │       │                panels/ (Helm, Planner, Captain's Log, Note Nook, Bottle Bay, Flashcards, Shipwright, Wardrobe,
 │   │       │                Crew, Fleet Log, Lookout, Settings)
 │   │       ├── stores/      voyageStore, economyStore, shipCustomizer, recallStore, fleetStore, crewStore,
 │   │       │                settingsStore, uiStore, activityStore, lookoutStore, plannerStore, vaultStore
@@ -73,7 +73,8 @@ ship/
 │   │       └── lib/         voyageLogic (the timer's rules), format, network, audio, rtcMesh, ids, storage,
 │   │                        hosting, backup, noteVault, blurtGrading, firebase (Google sign-in), accountData
 │   │                        (profile, consent, delete everything), captainsLogService (hashtags), plannerExport,
-│   │                        markdown (Obsidian-style reading), obsidianVault (vault sync), clipNotes
+│   │                        markdown (Obsidian-style reading), obsidianVault (vault sync), clipNotes,
+│   │                        db (the shared Firestore), bottleRules + bottleBay (Bottle Bay)
 │   ├── extension/           "The Lookout", Chrome Manifest V3, bundled with esbuild (build.mjs)
 │   │   └── src/ background/ content/ popup/ options/; core/videoGroups.ts + videoSort.ts sort watch pages;
 │   │                        content/clipper.ts + popup/clipper.ts + core/clips.ts: the Web Clipper
@@ -103,7 +104,7 @@ npm run assets -w @ship/web   # check the graphics AI's sprites; rewrite assets/
 
 Package names: `@ship/shared-types`, `@ship/ship-theme-kit`, `@ship/active-recall-engine`, `@ship/integrations`, `@ship/web`, `@ship/extension`, `@ship/signaling-server`.
 
-## Status (2026-11-23)
+## Status (2026-11-24)
 
 Everything below is on `main`:
 - pull request #1: sessions 1–3;
@@ -115,9 +116,10 @@ Everything below is on `main`:
 - pull request #6: this file's notes on the redesign;
 - pull request #7: cloud sync and the backup fix (see "Cloud sync");
 - a commit pushed straight to `main` on 2026-11-23 (`93194b1`): kawaii themes, die-cut stickers and a stationery grid. This file doesn't describe it yet;
-- pull request #8: stage 1 of the study-app features, flashcards (see "Features from other study apps").
+- pull request #8: stage 1 of the study-app features, flashcards (see "Features from other study apps");
+- pull request #9: Obsidian vaults, the Note Nook and the Lookout's Web Clipper (see "Obsidian"), plus the Kanban board and the 10-minute daily plan (see "Kanban and the daily plan").
 
-Open: pull request #9, branch `claude/obsidian`: Obsidian vaults, the Note Nook and the Lookout's Web Clipper (see "Obsidian"), plus the Kanban board and the 10-minute daily plan (see "Kanban and the daily plan"). `main` (with #8) is merged into it.
+Open: branch `claude/commons`, Bottle Bay (see "Studying together"). **It needs the new `firestore.rules` published before it works on the real site.**
 
 Every build step now has working code:
 - **`packages/shared-types`**: every contract.
@@ -135,7 +137,7 @@ Every build step now has working code:
   The Lookout now uses the same client.
 - **The Lookout's video groups** (session 5): rules written ahead of time that sort YouTube videos without Gemini. Details in "Decisions made in session 5".
 
-`npm test` runs 939 tests on `claude/obsidian` (which includes `main`), and all pass (run on 2026-11-24):
+`npm test` runs 949 tests on `claude/commons`, and all pass (run on 2026-11-24):
 
 | Package | Tests |
 |---|---|
@@ -144,9 +146,9 @@ Every build step now has working code:
 | crew server | 100 |
 | integrations (incl. Gemini client and blurt grader 16, uploaded documents 31, links and images 34, Gemini flashcards 4, Anki exports 3, Obsidian 12) | 204 |
 | extension (incl. video groups 25, clips 5) | 192 |
-| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16, Markdown 7, vault sync 8, clips 2, Kanban and daily plan 5) | 325 |
+| web (ship art 147, sailor art 68, stores and voyage rules 26, sprite engine 11, hosting 11, asset checks 6, Gemini grading, flashcard questions and backups 14, Ink & Paper palette 4, cloud sync rules 16, Markdown 7, vault sync 8, clips 2, Kanban and daily plan 5, Bottle Bay 10) | 335 |
 
-`npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds.
+`npm run typecheck` passes for all 7 workspaces, and `npm run build:site` builds. `npm run check:rules -w @ship/web` checks `firestore.rules` against the emulator (30 checks; see "Studying together").
 
 **The redesign has almost no tests.** It added about 7,000 lines of code and 5 tests (the palette and the Gemini schema check). The planner, the Pwedo Pomo cycles, sign-in, the consent bar and data deletion have none.
 
@@ -1140,6 +1142,52 @@ The user asked for a Kanban board and to "emphasize 10 minutes every day to plan
 **Sync:** the board, the planned days and today's picks are in `SYNCED_FIELDS`; the step ticks and the timer stay on the device.
 
 **Verified** in muted headless Chromium: the top-bar dot and the planner opening on today's plan, the countdown running, adding four cards, picking two, "I've planned my day" paying 5 doubloons once with a toast, moving a card with an arrow and another by dragging, adding to Doing, ▶ starting a Pwedo Pomo with the card's text, the banner turning green, and phone width. **Not verified:** a real day rolling over, and the Obsidian Kanban plugin opening `Ship/Kanban.md`.
+
+## Studying together (2026-11-24, in progress)
+
+The user asked for people to study together: collaborate on Obsidian notes, study together, play co-op games, and a shared space where people can find sources others added, anonymous and opt-in. They chose (2026-11-24):
+- **Order:** the shared space first, then study rooms with co-op games, then shared Obsidian notes, checking usage between each.
+- **What can be shared:** sources and flashcard decks (not notes).
+- **Anonymity:** a private owner record, so the sharer can take an item back.
+- **Rooms:** invite links or codes, and a public list of open rooms too.
+- **At the very end:** a swarm of review agents (tens of them, checking each other) to make sure every new screen, and the Lookout, keeps the kawaii Mr. Tiny Ink & Paper look and the characters.
+
+Everything runs on the Firestore database that cloud sync uses, so it works on the public website with no new hosting. It needs a Google login, which keeps spam out and lets the rules protect each person's data.
+
+### 1. Bottle Bay (the shared space; branch `claude/commons`)
+
+A panel (top bar, key `B`, a button on the page below the scene; `components/panels/BottleBayPanel.tsx`, loaded on first open) where sailors "set a bottle afloat" with a study source or a flashcard deck, and anyone logged in can fish it out.
+
+- **Fish:** the newest 40 bottles (more on request), search, Sources/Decks, and subject chips (a subject is its own query, sorted in the browser, so no extra database index is needed). A source can be opened or kept in the Note Nook (`bottle:<id>`, an Obsidian-style note with a "From Bottle Bay" callout). A deck can be added to the sailor's flashcards (`source: "bottle"`, fresh schedules). ⚑ Report takes a reason: spam, wrong, unkind or personal details.
+- **Set one afloat:** a link (typed, or picked from notes and clips that have one) or one of the sailor's own decks (not ones fished out of the bay), with a title, subject, tags and an optional description. A preview shows exactly what others will see. Before anything goes out:
+  - `cleanShareUrl` keeps https links only, and removes tracking codes (`utm_*`, `fbclid`, `gclid`…) and sharer codes (YouTube's and Spotify's `si`, which point back at the person who shared);
+  - `personalInfoWarnings` warns about emails, phone numbers, street addresses, full names, personal cloud files (Drive, OneDrive, Dropbox…) and Canvas links;
+  - a tick box confirms no personal details. Then "Set it afloat 🍾".
+- **My bottles:** the sailor's own bottles, from their private list, with report counts and "Take it back".
+- **Anonymity:** a bottle (`bottles/{random id}`) holds no name, email or account id, and its time shows as a date only. The sharer's own folder keeps `users/{uid}/shared/{bottleId}`, so only they can take it back. Ship's operator could connect the two in the database; other sailors can't. The privacy text says so.
+- **Safety:** one report per sailor per bottle (`bottles/{id}/reports/{uid}`, which nobody can read back); 3 reports hide a bottle from everyone (`BOTTLE_LIMITS.hideAtReports`); one bottle per account every 20 seconds.
+- **Deck cards** live in `bottles/{id}/deck/cards`, so browsing never downloads whole decks. Limits (`BOTTLE_LIMITS` in `shared-types/bottle.ts`): title 200, link 2000, subject 60, 8 tags of 30, description 500, 300 cards of 500 characters a side, 3 preview cards.
+- **The rules** (`firestore.rules`) enforce all of it on Google's side, because the app's own checks can be skipped by a script. A bottle is created in one batch with its sharer's private note and their cooldown stamp (`users/{uid}/meta/bottles`, `lastAt` = server time, rewritable only after 20 s, and not deletable early). Only the sharer can delete a bottle or its cards, and a report must add exactly 1 alongside a new report record.
+- **Account deletion** (`deleteCloudData`) takes the sailor's bottles back too, and deletes the cooldown stamp last, waiting out its 20 seconds if needed. The Log in window wording is unchanged; the privacy policy has a "Bottle Bay" paragraph.
+- **Code:** pure rules in `lib/bottleRules.ts` (10 tests), database calls in `lib/bottleBay.ts`, and `lib/db.ts` now holds the one Firestore instance for both cloud sync and Bottle Bay. `uiStore.loginOpen` lets any panel open the Log in window. Contracts: `shared-types/bottle.ts` (new), `IntegrationId` and `DeckSource` gain `bottle`.
+
+**Switching it on** (the user, once): publish the new `firestore.rules` in the Firebase console (Firestore → Rules → paste → Publish), or run `firebase deploy --only firestore:rules`. Until then the bay says its rules need publishing; cloud sync keeps working either way.
+
+**Verified (2026-11-24):**
+- `npm run check:rules` against the emulator: 30 checks, covering what must work and what must be refused:
+  - stealing, claiming or deleting someone else's bottle;
+  - naming the sharer, http links, a made-up time or starting reports;
+  - skipping the private note or the stamp, and dodging or rewriting the cooldown;
+  - wrong card counts, or adding cards to someone else's deck;
+  - double, inflated or made-up reports, and reading who reported;
+  - browsing while signed out.
+- Two muted headless browsers against the emulators: Alice shared a link (its `si` code was removed, and an email in the description was warned about) and a deck after the cooldown. Bob saw both, kept the link in his Note Nook, added the 4-card deck, reported once and was refused a second time. Alice saw the report and took the link back. Phone width, no page errors.
+
+**Not verified:** the real Firebase project (rules not yet published there), real Google sign-in, and use by many people at once (the free tier's daily reads are shared: each visit to the bay reads about 40 documents).
+
+### 2. Study rooms and co-op games, 3. Shared Obsidian notes
+
+Not started; next, after a usage check.
 
 ## Conventions
 

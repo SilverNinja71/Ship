@@ -1,15 +1,100 @@
 rules_version = '2';
 
-// Ship's cloud sync (apps/web/src/lib/cloudSync.ts). Each signed-in person
-// reads and writes only their own folder, users/{their uid}, and only the
-// three kinds of document Ship writes there. Everything else is refused.
+// Ship's database rules. Everything not allowed here is refused.
+// - users/{uid}/…: each signed-in sailor's own folder: cloud sync (apps/web/src/lib/cloudSync.ts)
+//   and the private list of bottles they set afloat.
+// - bottles/…: Bottle Bay (apps/web/src/lib/bottleBay.ts), sources and decks shared anonymously.
+//   A bottle never holds an account id; only its sharer's folder knows it's theirs.
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
     match /users/{uid}/{kind}/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null
-        && request.auth.uid == uid
-        && kind in ['state', 'notes', 'meta'];
+      allow read: if isOwner(uid);
+      // The bottle cooldown can't be dodged by deleting it early.
+      allow delete: if isOwner(uid)
+        && !(kind == 'meta' && docId == 'bottles' && request.time < resource.data.lastAt + duration.value(20, 's'));
+      allow create, update: if isOwner(uid)
+        && kind in ['state', 'notes', 'meta']
+        && !(kind == 'meta' && docId == 'bottles');
+      // When this sailor last set a bottle afloat: one every 20 seconds at most.
+      allow create, update: if isOwner(uid) && kind == 'meta' && docId == 'bottles'
+        && request.resource.data.keys().hasOnly(['lastAt'])
+        && request.resource.data.lastAt == request.time
+        && (resource == null || request.time > resource.data.lastAt + duration.value(20, 's'));
+      // The private note that a bottle is theirs: made only together with a new bottle, never changed.
+      allow create: if isOwner(uid) && kind == 'shared'
+        && request.resource.data.keys().hasOnly(['at'])
+        && request.resource.data.at == request.time
+        && !exists(/databases/$(database)/documents/bottles/$(docId))
+        && existsAfter(/databases/$(database)/documents/bottles/$(docId));
+    }
+
+    function validBottle(d) {
+      return d.keys().hasOnly(['kind', 'title', 'url', 'sourceType', 'subject', 'subjectKey', 'tags', 'description', 'cardCount', 'preview', 'at', 'reports'])
+        && d.keys().hasAll(['kind', 'title', 'url', 'sourceType', 'subject', 'subjectKey', 'tags', 'description', 'cardCount', 'preview', 'at', 'reports'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 200
+        && d.subject is string && d.subject.size() <= 60
+        && d.subjectKey is string && d.subjectKey.size() <= 60
+        && d.tags is list && d.tags.size() <= 8
+        && d.description is string && d.description.size() <= 500
+        && d.preview is list && d.preview.size() <= 3
+        && d.cardCount is int
+        && d.reports == 0
+        && d.at == request.time
+        && (d.kind == 'source'
+          ? d.url is string && d.url.size() <= 2000 && d.url.matches('https://[^\\s]+')
+            && d.sourceType in ['website', 'video', 'pdf', 'article', 'book', 'other']
+            && d.cardCount == 0 && d.preview.size() == 0
+          : d.kind == 'deck' && d.url == null && d.sourceType == null
+            && d.cardCount > 0 && d.cardCount <= 300);
+    }
+
+    match /bottles/{bottleId} {
+      allow read: if signedIn();
+      // Set afloat together with the sharer's private note and their cooldown stamp.
+      allow create: if signedIn()
+        && validBottle(request.resource.data)
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(bottleId))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/meta/bottles).data.lastAt == request.time;
+      // Only the sharer can take it back.
+      allow delete: if signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(bottleId));
+      // A report adds exactly one, once per sailor, written together with that sailor's report.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reports'])
+        && request.resource.data.reports == resource.data.reports + 1
+        && !exists(/databases/$(database)/documents/bottles/$(bottleId)/reports/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/bottles/$(bottleId)/reports/$(request.auth.uid));
+
+      // Reports are never read back by anyone; their count is on the bottle.
+      match /reports/{reporter} {
+        allow create: if signedIn() && request.auth.uid == reporter
+          && request.resource.data.keys().hasOnly(['at', 'reason'])
+          && request.resource.data.at == request.time
+          && request.resource.data.reason in ['spam', 'wrong', 'unkind', 'personal']
+          && getAfter(/databases/$(database)/documents/bottles/$(bottleId)).data.reports
+            == get(/databases/$(database)/documents/bottles/$(bottleId)).data.reports + 1;
+      }
+
+      // A deck's cards, apart from the bottle so that browsing doesn't download every deck.
+      match /deck/{part} {
+        allow read: if signedIn();
+        allow create: if signedIn() && part == 'cards'
+          && !exists(/databases/$(database)/documents/bottles/$(bottleId))
+          && getAfter(/databases/$(database)/documents/bottles/$(bottleId)).data.kind == 'deck'
+          && request.resource.data.keys().hasOnly(['cards'])
+          && request.resource.data.cards is list
+          && request.resource.data.cards.size() == getAfter(/databases/$(database)/documents/bottles/$(bottleId)).data.cardCount;
+        allow delete: if signedIn()
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(bottleId));
+      }
     }
   }
 }

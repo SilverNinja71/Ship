@@ -11,6 +11,7 @@ export const PANEL_KEYS: Record<string, PanelId> = {
   p: "planner",
   l: "log",
   n: "notes",
+  b: "bay",
   f: "flashcards",
   s: "shipwright",
   w: "wardrobe",

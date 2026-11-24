@@ -14,6 +14,8 @@ import { ShipwrightPanel } from "./panels/ShipwrightPanel.js";
 import { WardrobePanel } from "./panels/WardrobePanel.js";
 
 // The Note Nook brings the Markdown reader with it, so it loads the first time it opens.
+// Bottle Bay brings Firestore with it, so it loads the first time it opens too.
+const BottleBayPanel = lazy(() => import("./panels/BottleBayPanel.js").then((m) => ({ default: m.BottleBayPanel })));
 const NoteNookPanel = lazy(() => import("./panels/NoteNookPanel.js").then((m) => ({ default: m.NoteNookPanel })));
 
 export function PanelHost() {
@@ -30,6 +32,12 @@ export function PanelHost() {
       return (
         <Suspense fallback={null}>
           <NoteNookPanel onClose={close} />
+        </Suspense>
+      );
+    case "bay":
+      return (
+        <Suspense fallback={null}>
+          <BottleBayPanel onClose={close} />
         </Suspense>
       );
     case "flashcards":

@@ -36,6 +36,7 @@ import {
   IconHelm,
   IconLog,
   IconNotebook,
+  IconBottle,
   IconScroll,
   IconShirt,
   IconSpyglass,
@@ -50,6 +51,7 @@ export const PANELS: { id: PanelId; label: string; icon: (p: { size?: number }) 
   { id: "planner", label: "Banana Planna", icon: IconCalendar },
   { id: "log", label: "Study Sheets", icon: IconLog },
   { id: "notes", label: "Note Nook", icon: IconNotebook },
+  { id: "bay", label: "Bottle Bay", icon: IconBottle },
   { id: "flashcards", label: "Flashcards", icon: IconCards },
   { id: "shipwright", label: "Shipwright", icon: IconHammer },
   { id: "wardrobe", label: "Wardrobe", icon: IconShirt },
@@ -69,7 +71,8 @@ export function useNow(ms = 1000): number {
 }
 
 export function Hud() {
-  const [loginOpen, setLoginOpen] = useState(false);
+  const loginOpen = useUi((s) => s.loginOpen);
+  const setLoginOpen = useUi((s) => s.setLoginOpen);
   const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial());
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
@@ -210,6 +213,17 @@ function TopBar({
         >
           <IconNotebook size={15} />
           <span className="hidden sm:inline">Note Nook</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openPanel("bay")}
+          className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+          title="Bottle Bay: study sources and decks shared anonymously (B)"
+          aria-label="Bottle Bay"
+        >
+          <IconBottle size={15} />
+          <span className="hidden sm:inline">Bottle Bay</span>
         </button>
 
         <button

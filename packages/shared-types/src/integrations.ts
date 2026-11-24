@@ -5,7 +5,7 @@ import type { Deck, Flashcard } from "./recall.js";
 
 /** "file" is a file the sailor uploaded by hand, such as a PDF of lecture slides. */
 /** Where a note or card came from. "obsidian" is a file in a connected Obsidian vault; "clip" is a web page the Lookout clipped. */
-export type IntegrationId = "canvas" | "todoist" | "lodestar" | "google-drive" | "parchment" | "paper" | "file" | "obsidian" | "clip";
+export type IntegrationId = "canvas" | "todoist" | "lodestar" | "google-drive" | "parchment" | "paper" | "file" | "obsidian" | "clip" | "bottle";
 
 export type AssignmentKind = "assignment" | "quiz" | "exam" | "discussion" | "task" | "reading";
 

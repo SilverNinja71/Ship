@@ -16,18 +16,16 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
-  connectFirestoreEmulator,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
-  getFirestore,
   onSnapshot,
   serverTimestamp,
   setDoc,
   writeBatch,
 } from "firebase/firestore";
-import type { DocumentData, Firestore, Unsubscribe } from "firebase/firestore";
+import type { DocumentData, Unsubscribe } from "firebase/firestore";
 import type { NoteDocument } from "@ship/shared-types";
 import { useCustomizer } from "../stores/shipCustomizer.js";
 import { useEconomy } from "../stores/economyStore.js";
@@ -38,7 +36,7 @@ import { useSettings } from "../stores/settingsStore.js";
 import { useSync } from "../stores/syncStore.js";
 import type { SyncChoice } from "../stores/syncStore.js";
 import { useVoyage } from "../stores/voyageStore.js";
-import { app, firebaseEmulators } from "./firebase.js";
+import { firestore } from "./db.js";
 import { saveNotes } from "./noteVault.js";
 import { SYNC_META_KEY, onShipStorageWrite, storageKey } from "./storage.js";
 import {
@@ -79,14 +77,6 @@ const REHYDRATE: Record<string, () => unknown> = {
   [storageKey("settings")]: () => useSettings.persist.rehydrate(),
 };
 
-let db: Firestore | null = null;
-function firestore(): Firestore {
-  if (!db) {
-    db = getFirestore(app);
-    if (firebaseEmulators) connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  }
-  return db;
-}
 
 const newRev = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -495,11 +485,30 @@ export async function deleteCloudData(uid: string): Promise<void> {
   stopSync();
   try {
     const store = firestore();
-    const refs = (await Promise.all(["state", "notes", "meta"].map((name) => getDocs(collection(store, "users", uid, name))))).flatMap((snap) => snap.docs.map((d) => d.ref));
+    // Bottles this sailor set afloat go too (with their deck cards), while the private notes that they're theirs still exist.
+    const shared = await getDocs(collection(store, "users", uid, "shared"));
+    for (let i = 0; i < shared.docs.length; i += 150) {
+      const batch = writeBatch(store);
+      for (const d of shared.docs.slice(i, i + 150)) {
+        batch.delete(doc(store, "bottles", d.id, "deck", "cards"));
+        batch.delete(doc(store, "bottles", d.id));
+      }
+      await batch.commit();
+    }
+    const docs = (await Promise.all(["state", "notes", "meta", "shared"].map((name) => getDocs(collection(store, "users", uid, name))))).flatMap((snap) => snap.docs);
+    // The bottle cooldown stamp can only go once its 20 seconds are up (see firestore.rules), so it goes last.
+    const stamp = docs.find((d) => d.ref.path.endsWith("/meta/bottles"));
+    const refs = docs.filter((d) => d !== stamp).map((d) => d.ref);
     for (let i = 0; i < refs.length; i += 400) {
       const batch = writeBatch(store);
       for (const ref of refs.slice(i, i + 400)) batch.delete(ref);
       await batch.commit();
+    }
+    if (stamp) {
+      const lastAt = (stamp.data().lastAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? 0;
+      const wait = lastAt + 21_000 - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 21_000)));
+      await deleteDoc(stamp.ref);
     }
   } catch (e) {
     if (nothingStored(e)) return;

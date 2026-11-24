@@ -36,7 +36,7 @@ export function newReviewSchedule(): ReviewSchedule {
   return { ease: 2.5, interval: 0, repetitions: 0, lapses: 0, due: 0, lastReviewed: null };
 }
 
-export type DeckSource = "manual" | "parchment" | "csv" | "paper" | "blurt" | "obsidian";
+export type DeckSource = "manual" | "parchment" | "csv" | "paper" | "blurt" | "obsidian" | "bottle";
 
 export interface Deck {
   id: string;
