@@ -15,7 +15,7 @@ import { retryCloudSync } from "../hooks/useCloudSync.js";
 import { signInWithGoogle, signOutGoogle, subscribeAuthUser } from "../lib/firebase.js";
 import { useFleet } from "../stores/fleetStore.js";
 import { useLookout } from "../stores/lookoutStore.js";
-import { usePlanner } from "../stores/plannerStore.js";
+import { plannedToday, usePlanner } from "../stores/plannerStore.js";
 import { dueNow, useRecall } from "../stores/recallStore.js";
 import { useSettings } from "../stores/settingsStore.js";
 import { useSync } from "../stores/syncStore.js";
@@ -35,6 +35,7 @@ import {
   IconHammer,
   IconHelm,
   IconLog,
+  IconNotebook,
   IconScroll,
   IconShirt,
   IconSpyglass,
@@ -48,6 +49,7 @@ export const PANELS: { id: PanelId; label: string; icon: (p: { size?: number }) 
   { id: "helm", label: "Helm", icon: IconHelm },
   { id: "planner", label: "Banana Planna", icon: IconCalendar },
   { id: "log", label: "Study Sheets", icon: IconLog },
+  { id: "notes", label: "Note Nook", icon: IconNotebook },
   { id: "flashcards", label: "Flashcards", icon: IconCards },
   { id: "shipwright", label: "Shipwright", icon: IconHammer },
   { id: "wardrobe", label: "Wardrobe", icon: IconShirt },
@@ -170,6 +172,7 @@ function TopBar({
   const sync = useSync();
   const now = useNow(30_000);
   const due = dueNow(cards, now).length;
+  const plannedTodayYet = usePlanner((s) => plannedToday(s));
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 sm:py-4">
@@ -178,10 +181,14 @@ function TopBar({
           type="button"
           onClick={() => openPanel("planner")}
           className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
-          title="Banana Planna (P)"
+          title={plannedTodayYet ? "Banana Planna (P)" : "Banana Planna (P): take 10 minutes to plan today"}
         >
-          <IconCalendar size={15} />
+          <span className="relative">
+            <IconCalendar size={15} />
+            {!plannedTodayYet && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-[#E8B84A] ring-2 ring-[var(--page-bg)]" aria-hidden="true" />}
+          </span>
           <span>Banana Planna</span>
+          {!plannedTodayYet && <span className="sr-only">(not planned yet today)</span>}
         </button>
 
         <button
@@ -192,6 +199,17 @@ function TopBar({
         >
           <IconLog size={15} />
           <span>Study Sheets</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openPanel("notes")}
+          className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
+          title="Note Nook: your notes and Obsidian vault (N)"
+          aria-label="Note Nook"
+        >
+          <IconNotebook size={15} />
+          <span className="hidden sm:inline">Note Nook</span>
         </button>
 
         <button
@@ -528,8 +546,8 @@ function SyncStatusCard() {
     <div role="status" className="mb-4 space-y-1.5 rounded-[14px] border border-[rgb(0_0_0_/_0.08)] bg-[#FAF6E8] p-3 text-xs leading-snug">
       <p className={cx("font-semibold", sync.status === "error" ? "text-[#8A3B31]" : "text-[#4D453E]")}>{syncSentence(sync)}</p>
       <p className="text-[#6B635B]">
-        Syncs your planner, timer history, flashcards, Study Sheets, coins, unlocks and timer settings. API keys, Canvas and Todoist logins, calendar links and sound
-        settings stay on this device.
+        Syncs your planner, timer history, flashcards, Study Sheets, coins, unlocks and timer settings. API keys, Canvas and Todoist logins, calendar links, sound
+        settings and notes from an Obsidian vault stay on this device.
       </p>
       {sync.tooBig.length > 0 && <p className="text-[#8A3B31]">Too big to sync, so kept on this device only: {sync.tooBig.join(", ")}.</p>}
       {canRetry && (

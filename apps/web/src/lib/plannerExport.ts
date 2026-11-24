@@ -20,10 +20,17 @@ export function buildObsidianMarkdown(): string {
     "## Session Tasks",
     ...(v.sessionTasks.length ? v.sessionTasks.map((t) => `- [${t.done ? "x" : " "}] ${t.text}`) : ["- [ ] No tasks added yet"]),
     "",
+    "## Kanban",
+    ...(["todo", "doing", "done"] as const).map((col) => {
+      const items = p.kanban.filter((c) => c.column === col);
+      const label = col === "todo" ? "To do" : col === "doing" ? "Doing" : "Done";
+      return `### ${label}\n${items.length ? items.map((c) => `- [${col === "done" ? "x" : " "}] ${c.text.replace(/\s*\n\s*/g, " ")}`).join("\n") : "- (empty)"}`;
+    }),
+    "",
     "## Habit Tracker",
     ...p.habits.map((h) => {
       const count = h.checks.filter(Boolean).length;
-      return `- ${h.label}: ${count}/31 days`;
+      return `- ${h.label}: ${count}/${h.checks.length} days`;
     }),
     "",
     "## Monthly Notes",

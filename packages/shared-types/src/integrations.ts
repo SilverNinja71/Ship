@@ -4,7 +4,8 @@
 import type { Deck, Flashcard } from "./recall.js";
 
 /** "file" is a file the sailor uploaded by hand, such as a PDF of lecture slides. */
-export type IntegrationId = "canvas" | "todoist" | "lodestar" | "google-drive" | "parchment" | "paper" | "file";
+/** Where a note or card came from. "obsidian" is a file in a connected Obsidian vault; "clip" is a web page the Lookout clipped. */
+export type IntegrationId = "canvas" | "todoist" | "lodestar" | "google-drive" | "parchment" | "paper" | "file" | "obsidian" | "clip";
 
 export type AssignmentKind = "assignment" | "quiz" | "exam" | "discussion" | "task" | "reading";
 
@@ -53,6 +54,8 @@ export interface NoteDocument {
   pages: { id: string; text: string }[];
   /** Where it came from, for notes made from a link. */
   url?: string;
+  /** A Markdown note's properties (its `---` block): tags, aliases, author and so on. */
+  properties?: Record<string, string | string[]>;
 }
 
 /** Everything an import of a file can produce. */

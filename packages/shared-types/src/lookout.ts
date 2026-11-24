@@ -49,6 +49,17 @@ export interface LookoutStats {
   geminiReady: boolean;
 }
 
+/** A web page the Lookout clipped as Markdown, waiting for Ship to save it as a note. */
+export interface LookoutClip {
+  /** Unique, so Ship never saves the same clip twice. */
+  id: string;
+  title: string;
+  url: string;
+  /** The whole note: Obsidian Web Clipper-style properties (YAML frontmatter), then the page as Markdown. */
+  markdown: string;
+  at: number;
+}
+
 export type WebToLookout =
   | { source: typeof WEB_SOURCE; t: "hello"; version: number }
   | { source: typeof WEB_SOURCE; t: "voyage"; voyage: LookoutVoyageState }
@@ -56,12 +67,17 @@ export type WebToLookout =
   /** Ask the extension for reward events it has queued. */
   | { source: typeof WEB_SOURCE; t: "claim-rewards" }
   /** Confirm these event ids were paid so the extension can drop them. */
-  | { source: typeof WEB_SOURCE; t: "ack-rewards"; ids: string[] };
+  | { source: typeof WEB_SOURCE; t: "ack-rewards"; ids: string[] }
+  /** Ask for clips waiting to be saved. */
+  | { source: typeof WEB_SOURCE; t: "claim-clips" }
+  /** These clips are saved; the extension can drop them. */
+  | { source: typeof WEB_SOURCE; t: "ack-clips"; ids: string[] };
 
 export type LookoutToWeb =
   | { source: typeof LOOKOUT_SOURCE; t: "hello"; version: number; stats: LookoutStats }
   | { source: typeof LOOKOUT_SOURCE; t: "rewards"; events: LookoutRewardEvent[] }
-  | { source: typeof LOOKOUT_SOURCE; t: "stats"; stats: LookoutStats };
+  | { source: typeof LOOKOUT_SOURCE; t: "stats"; stats: LookoutStats }
+  | { source: typeof LOOKOUT_SOURCE; t: "clips"; clips: LookoutClip[] };
 
 /** What the Lookout reads off a YouTube watch page before judging it. */
 export interface VideoInspection {

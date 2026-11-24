@@ -76,6 +76,21 @@ export async function startOptions(doc: Document = document, fetchImpl: LookoutF
     else say(geminiStatus, result.message, "bad");
   });
 
+  const vaultInput = byId<HTMLInputElement>(doc, "obsidian-vault");
+  const folderInput = byId<HTMLInputElement>(doc, "clip-folder");
+  const obsidianStatus = byId<HTMLElement>(doc, "obsidian-status");
+  vaultInput.value = settings.obsidianVault;
+  folderInput.value = settings.clipFolder;
+  byId<HTMLFormElement>(doc, "obsidian-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    void save({ obsidianVault: vaultInput.value, clipFolder: folderInput.value }).then((next) => {
+      settings = next;
+      vaultInput.value = next.obsidianVault;
+      folderInput.value = next.clipFolder;
+      say(obsidianStatus, `Saved. Clips go to ${next.clipFolder ? `${next.clipFolder}/` : "the top folder"} in ${next.obsidianVault ? `"${next.obsidianVault}"` : "the open vault"}.`, "good");
+    });
+  });
+
   byId<HTMLFormElement>(doc, "ship-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const url = normalizeShipUrl(shipInput.value);

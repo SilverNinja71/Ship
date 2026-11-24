@@ -42,6 +42,17 @@ export interface RecallState {
   saveBlurt(session: Omit<BlurtSession, "id" | "at">): void;
   /** Records a finished Match game; true when it beat the deck's best time. */
   recordMatch(deckKey: string, ms: number): boolean;
+  /**
+   * Brings in the cards read from Obsidian notes. Each set replaces its note's deck; a card whose question
+   * didn't change keeps its review progress. An empty set, or a removed path, drops that note's deck.
+   */
+  syncVaultCards(sets: readonly VaultCards[], removedPaths?: readonly string[]): void;
+}
+
+/** One vault note's cards, as `cardsForVaultNote` in `@ship/integrations` reads them. */
+export interface VaultCards {
+  deck: Deck;
+  cards: readonly Omit<Flashcard, "schedule">[];
 }
 
 const MAX_LOG = 5000;
@@ -104,6 +115,25 @@ export const useRecall = create<RecallState>()(
           cards: [...get().cards.map((c) => incomingCards.get(c.id) ?? c), ...cards.filter((c) => !cardIds.has(c.id))],
         });
         return { decks: newDecks, cards: newCards };
+      },
+
+      syncVaultCards: (sets, removedPaths = []) => {
+        if (!sets.length && !removedPaths.length) return;
+        const touched = new Set([...sets.map((s) => s.deck.id), ...removedPaths.map((p) => `obsidian:${p}`)]);
+        const oldDecks = new Map(get().decks.map((d) => [d.id, d]));
+        const oldCards = new Map(get().cards.map((c) => [c.id, c]));
+        const keep = sets.filter((s) => s.cards.length > 0);
+        const decks = [...get().decks.filter((d) => !touched.has(d.id))];
+        const cards = get().cards.filter((c) => !touched.has(c.deckId));
+        for (const set of keep) {
+          const old = oldDecks.get(set.deck.id);
+          decks.push(old ? { ...set.deck, created: old.created } : set.deck);
+          for (const card of set.cards) {
+            const prev = oldCards.get(card.id);
+            cards.push(prev ? { ...card, created: prev.created, schedule: prev.schedule } : { ...card, schedule: newReviewSchedule() });
+          }
+        }
+        set({ decks, cards });
       },
 
       saveBlurt: (session) => set({ blurts: [...get().blurts, { ...session, id: newId("blurt"), at: Date.now() }].slice(-MAX_BLURTS) }),

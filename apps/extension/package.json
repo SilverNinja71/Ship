@@ -10,12 +10,16 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "@ship/active-recall-engine": "*",
     "@ship/integrations": "*",
-    "@ship/shared-types": "*"
+    "@ship/shared-types": "*",
+    "turndown": "^7.2.5",
+    "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.7",
+    "@types/turndown": "^5.0.6",
     "esbuild": "^0.28.2"
   }
 }

@@ -228,6 +228,55 @@ body.popup main {
   flex: 1;
 }
 
+/* Web Clipper (popup) */
+body.popup .clipper {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  background: #fbf6ff;
+  border-color: #dccbef;
+}
+.clip-title {
+  margin: 0;
+  font-weight: 800;
+  color: #56406a;
+}
+.clipper p {
+  margin: 0;
+}
+.clip-input,
+.clip-body {
+  width: 100%;
+  box-sizing: border-box;
+  border: 2px solid #e2d6f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+}
+.clip-body {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.clip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.btn.obsidian {
+  background: #7c5cc4;
+  border-color: #5e43a0;
+  color: #fff;
+}
+.clipper .btn.seafoam:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* Options */
 body.options {
   padding: 28px 16px 48px;

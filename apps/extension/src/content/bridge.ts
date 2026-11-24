@@ -39,6 +39,7 @@ function startBridge() {
 
   chrome.runtime.onMessage.addListener((message: ToContent) => {
     if (message?.t === "lookout-stats" && isShipPage()) post({ source: LOOKOUT_SOURCE, t: "stats", stats: message.stats });
+    if (message?.t === "lookout-clips" && isShipPage()) post({ source: LOOKOUT_SOURCE, t: "clips", clips: message.clips });
     return false;
   });
 

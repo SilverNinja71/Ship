@@ -113,6 +113,19 @@ describe("bridge messages", () => {
     expect(await harness().web({ t: "claim-rewards" })).toEqual({ source: LOOKOUT_SOURCE, t: "rewards", events: [] });
   });
 
+  it("keeps Web Clipper clips until Ship collects and acknowledges them", async () => {
+    const h = harness();
+    const clip = { id: "c1", title: "Cells", url: "https://bio.example/cells", markdown: "---\ntitle: Cells\n---\nSmall.", at: T0 };
+    expect(await h.send({ t: "save-clip", clip })).toEqual({ waiting: 1 });
+    // An open Ship tab hears about it at once.
+    expect(h.broadcasts.at(-1)).toEqual({ message: { t: "lookout-clips", clips: [clip] }, to: "bridges" });
+    expect((await h.popup()).clipsWaiting).toBe(1);
+    expect(await h.web({ t: "claim-clips" })).toEqual({ source: LOOKOUT_SOURCE, t: "clips", clips: [clip] });
+    await h.web({ t: "ack-clips", ids: ["c1"] });
+    expect(await h.web({ t: "claim-clips" })).toEqual({ source: LOOKOUT_SOURCE, t: "clips", clips: [] });
+    expect(await h.send({ t: "save-clip", clip: { ...clip, url: "javascript:alert(1)" } })).toBeNull();
+  });
+
   it("ignores malformed or foreign messages without touching state", async () => {
     const h = harness();
     expect(await h.send({ t: "web", msg: { source: "evil", t: "voyage", voyage: {} } })).toBeNull();

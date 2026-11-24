@@ -10,6 +10,7 @@ export const PANEL_KEYS: Record<string, PanelId> = {
   h: "helm",
   p: "planner",
   l: "log",
+  n: "notes",
   f: "flashcards",
   s: "shipwright",
   w: "wardrobe",

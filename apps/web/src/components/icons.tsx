@@ -40,6 +40,13 @@ export const IconLog = (p: IconProps) => (
     <path d="M5 17a3 3 0 0 1 3-3h11M9 8h6" />
   </Icon>
 );
+export const IconNotebook = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="5" y="3" width="14" height="18" rx="2.5" />
+    <path d="M9 3v18M12 8h4M12 12h4" />
+    <path d="M3 7h3M3 12h3M3 17h3" />
+  </Icon>
+);
 export const IconCards = (p: IconProps) => (
   <Icon {...p}>
     <rect x="3" y="6" width="13" height="15" rx="2" />

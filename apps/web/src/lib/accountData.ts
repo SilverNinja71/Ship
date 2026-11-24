@@ -3,6 +3,7 @@
 
 import { deleteUser, signOut } from "firebase/auth";
 import { clearNotes } from "./noteVault.js";
+import { forgetVaultHandle } from "./obsidianVault.js";
 import { auth } from "./firebase.js";
 
 export const TUTORIAL_SEEN_KEY = "ship:tutorial-seen";
@@ -107,5 +108,6 @@ export async function deleteAllUserData(): Promise<{ wasSignedIn: boolean; delet
   }
 
   await clearNotes().catch(() => undefined);
+  await forgetVaultHandle().catch(() => undefined);
   return { wasSignedIn: user !== null, deletedFirebaseAccount };
 }

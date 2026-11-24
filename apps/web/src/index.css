@@ -164,3 +164,233 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- Markdown notes, read the way Obsidian shows them (lib/markdown.ts) ---- */
+.md-note {
+  --md-hue: 300;
+  line-height: 1.65;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.md-note > * + * {
+  margin-top: 0.75em;
+}
+.md-note h1,
+.md-note h2,
+.md-note h3,
+.md-note h4,
+.md-note h5,
+.md-note h6 {
+  font-family: var(--font-display);
+  line-height: 1.25;
+  margin-top: 1.3em;
+  scroll-margin-top: 1rem;
+}
+.md-note h1 {
+  font-size: 1.6em;
+}
+.md-note h2 {
+  font-size: 1.35em;
+  padding-bottom: 0.15em;
+  border-bottom: 2px dotted var(--border-subtle);
+}
+.md-note h3 {
+  font-size: 1.15em;
+}
+.md-note h4,
+.md-note h5,
+.md-note h6 {
+  font-size: 1em;
+  color: var(--muted-ink);
+}
+.md-note ul,
+.md-note ol {
+  padding-left: 1.4em;
+}
+.md-note ul {
+  list-style: disc;
+}
+.md-note ol {
+  list-style: decimal;
+}
+.md-note li + li {
+  margin-top: 0.2em;
+}
+.md-note li::marker {
+  color: oklch(0.7 0.09 var(--md-hue));
+}
+.md-note li.task-list-item {
+  list-style: none;
+  margin-left: -1.3em;
+}
+.md-note .md-task {
+  appearance: none;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.12em;
+  border: 1.5px solid oklch(0.72 0.08 var(--md-hue));
+  border-radius: 0.35em;
+  background: var(--surface-1);
+}
+.md-note .md-task:checked {
+  background: oklch(0.8 0.09 168) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5'/%3E%3C/svg%3E") center / 80% no-repeat;
+  border-color: oklch(0.7 0.1 168);
+}
+.md-note li.task-list-item:has(.md-task:checked) {
+  color: var(--muted-ink);
+  text-decoration: line-through;
+  text-decoration-color: oklch(0.7 0.06 168);
+}
+.md-note a {
+  color: oklch(0.48 0.11 var(--md-hue));
+  text-decoration: underline;
+  text-decoration-color: oklch(0.8 0.06 var(--md-hue));
+  text-underline-offset: 3px;
+}
+.md-note a.md-wikilink {
+  text-decoration-style: dotted;
+}
+.md-note a.md-embed-link {
+  display: inline-block;
+  padding: 0.1em 0.6em;
+  border-radius: 999px;
+  background: oklch(0.95 0.03 var(--md-hue));
+  text-decoration: none;
+}
+.md-note .md-embed {
+  display: inline-block;
+  padding: 0.1em 0.6em;
+  border-radius: 0.6em;
+  border: 1px dashed var(--border-subtle);
+  color: var(--muted-ink);
+  font-size: 0.9em;
+}
+.md-note a.md-tag {
+  display: inline-block;
+  padding: 0 0.55em;
+  border-radius: 999px;
+  background: oklch(0.93 0.045 var(--md-hue));
+  color: oklch(0.38 0.07 var(--md-hue));
+  font-size: 0.85em;
+  text-decoration: none;
+}
+.md-note mark {
+  color: inherit;
+  padding: 0 0.15em;
+  border-radius: 0.3em;
+  background: linear-gradient(transparent 35%, oklch(0.92 0.11 95) 35%);
+}
+.md-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.4em;
+  background: var(--surface-3);
+}
+.md-note pre {
+  padding: 0.8em 1em;
+  border-radius: 1em;
+  background: var(--surface-3);
+  overflow-x: auto;
+}
+.md-note pre code {
+  padding: 0;
+  background: none;
+}
+.md-note blockquote {
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid oklch(0.85 0.05 var(--md-hue));
+  color: var(--muted-ink);
+}
+.md-note hr {
+  border: 0;
+  border-top: 2px dotted var(--border-subtle);
+  margin: 1.5em 0;
+}
+.md-note img {
+  max-width: 100%;
+  border-radius: 1em;
+}
+.md-note table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.md-note th,
+.md-note td {
+  padding: 0.35em 0.7em;
+  border: 1px solid var(--border-subtle);
+}
+.md-note th {
+  background: var(--surface-2);
+  text-align: left;
+}
+
+/* Callouts: > [!tip] and friends. Each kind gets its own pastel. */
+.md-note blockquote.callout {
+  --c: 250;
+  padding: 0.7em 1em;
+  border: 1px solid oklch(0.85 0.06 var(--c) / 0.8);
+  border-radius: 1.1em;
+  background: oklch(0.96 0.03 var(--c) / 0.75);
+  color: var(--page-ink);
+}
+.md-note blockquote.callout-info {
+  --c: 230;
+}
+.md-note blockquote.callout-tip {
+  --c: 175;
+}
+.md-note blockquote.callout-success {
+  --c: 145;
+}
+.md-note blockquote.callout-question {
+  --c: 300;
+}
+.md-note blockquote.callout-warning {
+  --c: 70;
+}
+.md-note blockquote.callout-danger {
+  --c: 20;
+}
+.md-note blockquote.callout-example {
+  --c: 285;
+}
+.md-note blockquote.callout-quote {
+  --c: 80;
+  border-style: dashed;
+}
+.md-note .callout-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin-bottom: 0.25em;
+}
+.md-note .callout-title > span {
+  color: oklch(0.55 0.12 var(--c));
+}
+.md-note .callout > * + * {
+  margin-top: 0.5em;
+}
+
+/* Full Color is navy: the same pastels, dimmed. */
+[data-visual-style="storybook"] .md-note a {
+  color: oklch(0.85 0.08 var(--md-hue));
+}
+[data-visual-style="storybook"] .md-note a.md-tag,
+[data-visual-style="storybook"] .md-note a.md-embed-link {
+  background: oklch(0.4 0.07 var(--md-hue));
+  color: oklch(0.95 0.03 var(--md-hue));
+}
+[data-visual-style="storybook"] .md-note mark {
+  background: linear-gradient(transparent 35%, oklch(0.55 0.1 95) 35%);
+}
+[data-visual-style="storybook"] .md-note blockquote.callout {
+  border-color: oklch(0.5 0.07 var(--c));
+  background: oklch(0.33 0.05 var(--c) / 0.7);
+}
+[data-visual-style="storybook"] .md-note .callout-title > span {
+  color: oklch(0.82 0.1 var(--c));
+}

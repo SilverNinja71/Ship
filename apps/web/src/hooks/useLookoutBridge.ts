@@ -6,6 +6,7 @@
 import { useEffect } from "react";
 import { BRIDGE_PROTOCOL_VERSION, LOOKOUT_SOURCE, WEB_SOURCE } from "@ship/shared-types";
 import type { GateCard, LookoutToWeb, LookoutVoyageState, WebToLookout } from "@ship/shared-types";
+import { noteFromClip } from "../lib/clipNotes.js";
 import { blockEndsAt } from "../lib/voyageLogic.js";
 import { useEconomy } from "../stores/economyStore.js";
 import { useFleet } from "../stores/fleetStore.js";
@@ -52,6 +53,8 @@ function isLookoutMessage(data: unknown): data is LookoutToWeb {
 export function useLookoutBridge(): void {
   useEffect(() => {
     const lookout = useLookout.getState;
+    // Clips already filed this visit, in case one arrives twice before the Lookout hears the ack.
+    const filed = new Set<string>();
 
     const onMessage = (event: MessageEvent) => {
       if (event.source !== window || !isLookoutMessage(event.data)) return;
@@ -63,6 +66,7 @@ export function useLookoutBridge(): void {
           post({ t: "voyage", voyage: lookoutVoyageState() });
           post({ t: "cards", cards: gateCards() });
           post({ t: "claim-rewards" });
+          post({ t: "claim-clips" });
           break;
         case "stats":
           lookout().set({ stats: msg.stats });
@@ -74,6 +78,19 @@ export function useLookoutBridge(): void {
           const gained = useEconomy.getState().doubloons - before;
           if (gained > 0) useUi.getState().toast(`The Lookout paid you ${gained} doubloons for steering back to the ship.`, "reward");
           post({ t: "ack-rewards", ids: settled });
+          break;
+        }
+        case "clips": {
+          if (!Array.isArray(msg.clips) || !msg.clips.length) break;
+          const ids = msg.clips.map((c) => (typeof c?.id === "string" ? c.id : "")).filter(Boolean);
+          const notes = msg.clips.filter((c) => !filed.has(c?.id)).map(noteFromClip).filter((n) => n !== null);
+          for (const id of ids) filed.add(id);
+          if (notes.length) {
+            useFleet.getState().putNotes(notes, []);
+            useUi.getState().toast(notes.length === 1 ? `✂ Clipped "${notes[0]!.title}" into the Note Nook.` : `✂ ${notes.length} clips landed in the Note Nook.`, "reward");
+          }
+          // Malformed ones are acknowledged too, so they don't come back.
+          post({ t: "ack-clips", ids });
           break;
         }
       }
@@ -90,6 +107,7 @@ export function useLookoutBridge(): void {
     const claim = () => {
       if (!lookout().connected) post({ t: "hello", version: BRIDGE_PROTOCOL_VERSION });
       post({ t: "claim-rewards" });
+      post({ t: "claim-clips" });
     };
 
     // Voyage changes go out right away; the heartbeat lets the Lookout notice a closed tab.

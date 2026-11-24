@@ -103,3 +103,23 @@ export { guessKind } from "./kind.js";
 export { APPLE_REFERENCE_EPOCH_MS, appleSecondsToEpochMs, endOfLocalDay, parseDateString, toEpochMs } from "./time.js";
 export type { NumericDateEncoding } from "./time.js";
 export type { Clock, IdFactory } from "./values.js";
+export {
+  CLIPPINGS_FOLDER,
+  SHIP_FOLDER,
+  cardsForVaultNote,
+  clipToMarkdown,
+  deckToMarkdown,
+  inlineCards,
+  isVaultNotePath,
+  noteFromMarkdown,
+  noteIdForPath,
+  noteTags,
+  parseFrontmatter,
+  pathForNoteId,
+  resolveWikilink,
+  safeFileName,
+  splitMarkdownPages,
+  wikilinks,
+  writeFrontmatter,
+} from "./obsidian.js";
+export type { ClipInput, Frontmatter, InlineCard, PropertyValue, WikiLink } from "./obsidian.js";

@@ -34,6 +34,7 @@ const builds = [
     entryPoints: {
       "content/bridge": "src/content/bridge.ts",
       "content/guard": "src/content/guard.ts",
+      "content/clipper": "src/content/clipper.ts",
       popup: "src/popup/main.ts",
       options: "src/options/main.ts",
       "dev/gate": "src/dev/gate.ts",

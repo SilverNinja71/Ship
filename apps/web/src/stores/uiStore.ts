@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { newId } from "../lib/ids.js";
 
-export type PanelId = "helm" | "planner" | "log" | "flashcards" | "shipwright" | "wardrobe" | "crew" | "fleet" | "lookout" | "settings";
+export type PanelId = "helm" | "planner" | "log" | "notes" | "flashcards" | "shipwright" | "wardrobe" | "crew" | "fleet" | "lookout" | "settings";
 
 export type ToastTone = "reward" | "info" | "warning";
 
@@ -17,6 +17,10 @@ export interface Toast {
 export interface UiState {
   panel: PanelId | null;
   toasts: Toast[];
+  /** A note for Study Sheets to start on, set by "Blurt this" in the Note Nook. */
+  blurtNoteId: string | null;
+  /** Opens Study Sheets with this note already picked. */
+  blurtNote(noteId: string): void;
   openPanel(panel: PanelId | null): void;
   togglePanel(panel: PanelId): void;
   toast(text: string, tone?: ToastTone): void;
@@ -28,6 +32,8 @@ const TOAST_MS = 4500;
 export const useUi = create<UiState>()((set, get) => ({
   panel: null,
   toasts: [],
+  blurtNoteId: null,
+  blurtNote: (noteId) => set({ blurtNoteId: noteId, panel: "log" }),
   openPanel: (panel) => set({ panel }),
   togglePanel: (panel) => set({ panel: get().panel === panel ? null : panel }),
   toast: (text, tone = "info") => {

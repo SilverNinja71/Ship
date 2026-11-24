@@ -52,6 +52,8 @@ export interface FleetState {
   importLinks(text: string): Promise<ImportSummary>;
   toggleDone(assignmentId: string): void;
   removeNote(id: string): void;
+  /** Adds or replaces notes (from a vault or the Lookout's clipper) and removes the ones in `removedIds`. */
+  putNotes(upserts: readonly NoteDocument[], removedIds: readonly string[]): void;
 }
 
 const EMPTY_SETTINGS: IntegrationSettings = { canvas: null, todoist: null, lodestar: null, googleDrive: null };
@@ -267,6 +269,14 @@ export const useFleet = create<FleetState>()(
         removeNote: (id) => {
           set({ notes: get().notes.filter((n) => n.id !== id) });
           void deleteNote(id).catch((e: unknown) => console.warn("Ship couldn't remove a saved note.", e));
+        },
+
+        putNotes: (upserts, removedIds) => {
+          if (!upserts.length && !removedIds.length) return;
+          const gone = new Set(removedIds);
+          set({ notes: mergeNotes(get().notes.filter((n) => !gone.has(n.id)), upserts) });
+          if (upserts.length) void saveNotes(upserts).catch((e: unknown) => console.warn("Ship couldn't save notes from the vault.", e));
+          for (const id of removedIds) void deleteNote(id).catch((e: unknown) => console.warn("Ship couldn't remove a saved note.", e));
         },
       };
     },
