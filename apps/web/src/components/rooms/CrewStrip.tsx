@@ -7,9 +7,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { QUEST_BEASTS, ROOM_CHEERS, ROOM_LIMITS, STICKER_IDS, questFromDamage } from "@ship/shared-types";
+import { QUEST_BEASTS, ROOM_CHEERS, ROOM_LIMITS, STICKER_IDS } from "@ship/shared-types";
 import type { Room, RoomMember } from "@ship/shared-types";
-import { liveDamage, nickText, sceneMates } from "../../lib/roomRules.js";
+import { memberName, sceneMates, shownQuest } from "../../lib/roomRules.js";
 import { useRooms } from "../../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
@@ -92,7 +92,7 @@ export function stripBubbles(room: Room, myKey: string, now: number, hidden: rea
   const bubbles: Bubble[] = [];
   room.members.slice(0, ROOM_LIMITS.size).forEach((m, index) => {
     const say = m.key === myKey ? ownCheer(m, now) : (cheers.get(m.key) ?? null);
-    if (say !== null) bubbles.push({ key: m.key, index, name: nickText(m.nick), say, at: m.sayAt ?? 0 });
+    if (say !== null) bubbles.push({ key: m.key, index, name: memberName(room, m.key), say, at: m.sayAt ?? 0 });
   });
   // The newest sits closest to the badges; each has a row of its own, so they never overlap.
   return bubbles.sort((a, b) => b.at - a.at);
@@ -115,13 +115,13 @@ function Strip({ room, myKey, top }: { room: Room; myKey: string; top: number })
   const bubbles = stripBubbles(room, myKey, now, hidden, muted);
   const newest = bubbles[0];
 
-  const quest = questFromDamage(liveDamage(room, now));
+  const quest = shownQuest(room, now);
   const beast = QUEST_BEASTS[quest.beastIndex]!;
   const hpShare = quest.maxHp > 0 ? Math.max(0, Math.min(1, quest.hp / quest.maxHp)) : 0;
   const hpText = `${beast.name}: ${Math.ceil(quest.hp)} of ${quest.maxHp} health left`;
 
   const others = members.filter((m) => m.key !== myKey);
-  const label = `Your study room crew: ${members.length} aboard${others.length ? ` (${others.map((m) => `${nickText(m.nick)}, ${STATUS_WORD[memberStatus(m, now)].toLowerCase()}`).join("; ")})` : ""}. Open Study Rooms.`;
+  const label = `Your study room crew: ${members.length} aboard${others.length ? ` (${others.map((m) => `${memberName(room, m.key)}, ${STATUS_WORD[memberStatus(m, now)].toLowerCase()}`).join("; ")})` : ""}. Open Study Rooms.`;
 
   return (
     <div
@@ -130,6 +130,7 @@ function Strip({ room, myKey, top }: { room: Room; myKey: string; top: number })
     >
       <button
         type="button"
+        data-panel-opener="rooms"
         onClick={() => openPanel("rooms")}
         aria-label={label}
         title="Your study room crew (R)"
@@ -144,7 +145,7 @@ function Strip({ room, myKey, top }: { room: Room; myKey: string; top: number })
           {members.map((m) => {
             const status = memberStatus(m, now);
             return (
-              <span key={m.key} className="relative grid place-items-center" title={`${nickText(m.nick)}${m.key === myKey ? " (you)" : ""} · ${STATUS_WORD[status]}`}>
+              <span key={m.key} className="relative grid place-items-center" title={`${memberName(room, m.key)}${m.key === myKey ? " (you)" : ""} · ${STATUS_WORD[status]}`}>
                 <PastelMinionBadge costume={costumeOf(m.costume)} accessory={accessoryOf(m.accessory)} status={status} skipper={wide && m.key === room.host} size={badge} />
               </span>
             );
@@ -217,7 +218,7 @@ function CheerBubble({ bubble, row, wide, still }: { bubble: Bubble; row: number
         style={{ maxWidth: `min(18rem, ${space})` }}
       >
         {/* The name gives way first, so the cheer itself always shows. */}
-        <span className="min-w-0 truncate text-[#857B70]">{bubble.name}</span>
+        <span className="min-w-0 truncate text-[#6D655C]">{bubble.name}</span>
         {stickerId ? (
           <DieCutSticker id={stickerId} size={20} />
         ) : (

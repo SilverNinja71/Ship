@@ -5,7 +5,7 @@ import { DEFAULT_AVATAR, ENVIRONMENTS, SHIPS, defaultLoadout } from "@ship/ship-
 import type { SceneMate } from "../lib/roomRules.js";
 import { shipLayout } from "../ships/index.js";
 import { getKawaiiTheme } from "./kawaiiThemes.js";
-import { breakSpots, cheerWords, deskSpots, drawCheerBubble, drawMate, mateChore, mateTitle } from "./roomCrew.js";
+import { DESK_PIP, breakSpots, cheerWords, deskSpots, drawCheerBubble, drawMate, mateChore, mateTitle } from "./roomCrew.js";
 import { renderDeck } from "./ShipRenderer.js";
 import type { CrewOnDeck, Viewport } from "./ShipRenderer.js";
 import { renderBreakScene, renderStudyDeskScene } from "./StudySceneRenderer.js";
@@ -129,6 +129,13 @@ describe("scene spots", () => {
       expect(new Set(spots.map((s) => `${s.x},${s.y}`)).size).toBe(spots.length);
     }
     expect(breakSpots(5).filter((s) => s.swim).every((s) => s.dryY !== undefined)).toBe(true);
+  });
+
+  it("on a phone, puts the two crewmates at the desk's far ends, well clear of Pip's face", () => {
+    const spots = deskSpots(4, true);
+    expect(spots).toHaveLength(2);
+    // A name tag there is wide in scene units; its spot keeps more than a tag's half-width from Pip.
+    for (const s of spots) expect(Math.abs(s.x - DESK_PIP.x) - DESK_PIP.halfWidth).toBeGreaterThan(150);
   });
 });
 

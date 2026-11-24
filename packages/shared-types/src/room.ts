@@ -16,8 +16,13 @@ export const ROOM_REPORT_REASONS: readonly RoomReportReason[] = ["spam", "unkind
 export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 /** Bumped when the room rules card changes, so it shows again. */
 export const ROOM_RULES_VERSION = 1;
-/** Bumped when a game's dealing changes; a device on an older bundle sits that game out. */
-export const ROOM_GAME_ENGINE = 1;
+/**
+ * Bumped when a game's dealing changes (crewPlay.ts): games are written with it as `v`, a device on
+ * another version reads the game as none and sits it out, and firestore.rules takes only this
+ * version (`n.game.v == …`, checked by roomLimits.test.ts), so old and new bundles never deal
+ * different cards in one room.
+ */
+export const ROOM_GAME_ENGINE = 2;
 
 export const ROOM_LIMITS = {
   size: 6,
@@ -25,12 +30,19 @@ export const ROOM_LIMITS = {
   writeGapSeconds: 15,
   keepAliveMinutes: 10,
   awayMinutes: 12,
+  /** The crew may take the hat once the skipper has been quiet this long, well before the room is over (staleMinutes). */
+  hatMinutes: 15,
   staleMinutes: 25,
+  /** A skipper's own write keeps the card's `alive` no older than this (the app refreshes it at 9). */
+  cardFreshMinutes: 10,
   lifetimeHours: 12,
   createCooldownSeconds: 60,
   joinCooldownSeconds: 10,
   listPage: 20,
+  /** Strikes (reports from sailors with a stake) that take an open room off the list. */
   hideAtReports: 3,
+  /** A report is a strike only from a sailor aboard this long (now, or when they last left by themselves), in the room they came aboard last. */
+  reportStakeMinutes: 5,
   maxBans: 20,
   maxReports: 20,
   wordList: 64,
@@ -97,9 +109,9 @@ export interface RoomMember extends RoomLook {
 export interface RoomSail { at: number; focus: number; brk: number; cycles: number }
 export interface RoomDeckRef { bottleId: string | null; cards: number }
 
-export interface TidyGame { kind: "tidy"; v: 1; seed: number; at: number; seats: string[] }
+export interface TidyGame { kind: "tidy"; v: typeof ROOM_GAME_ENGINE; seed: number; at: number; seats: string[] }
 export interface BottleGame {
-  kind: "bottle"; v: 1; seed: number; at: number; seats: string[];
+  kind: "bottle"; v: typeof ROOM_GAME_ENGINE; seed: number; at: number; seats: string[];
   /** How many cards the game deals (the deck's playable ones, stored as `n`): it ends when they run out. */
   cards: number;
   turn: number; holder: string; turnAt: number; card: number; delivered: number; buoys: number;
@@ -119,6 +131,8 @@ export interface Room {
   banned: string[];
   reportKeys: string[];
   why: Record<RoomReportReason, number>;
+  /** Reports that count towards taking an open room off the list (firestore.rules' `stake`): 3 do. */
+  strikes: number;
   banked: number;
   last: string | null;
   sail: RoomSail | null;

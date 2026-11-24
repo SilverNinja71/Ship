@@ -2,6 +2,7 @@
 // Hand-crafted vector artwork (100% original, NO traced/third-party assets).
 
 import { STICKER_IDS } from "@ship/shared-types";
+import { prefersReducedMotion, useSettings } from "../stores/settingsStore.js";
 
 export type StickerId = (typeof STICKER_IDS)[number];
 
@@ -29,9 +30,14 @@ const STICKER_LABELS: Record<StickerId, string> = {
 // shared-types and this list follows it.
 export const STICKERS: readonly StickerDef[] = STICKER_IDS.map((id) => ({ id, label: STICKER_LABELS[id] }));
 
-export function DieCutSticker({ id, size = 34 }: { id: string; size?: number }) {
+/**
+ * One sticker. It springs in (`pop`, on by default) unless motion is reduced, by Ship's own
+ * Settings → Motion as well as the device's setting (index.css only knows the device's).
+ */
+export function DieCutSticker({ id, size = 34, pop = true }: { id: string; size?: number; pop?: boolean }) {
   const ink = "#7C746B";
   const cream = "#FFFDF7";
+  const still = prefersReducedMotion(useSettings((s) => s.motion));
   return (
     <svg
       width={size}
@@ -39,7 +45,7 @@ export function DieCutSticker({ id, size = 34 }: { id: string; size?: number }) 
       viewBox="0 0 48 48"
       fill="none"
       aria-label={STICKERS.find((s) => s.id === id)?.label ?? id}
-      className="sticker-pop shrink-0 drop-shadow-[0_1px_1px_rgb(0_0_0_/_0.12)]"
+      className={`${pop && !still ? "sticker-pop " : ""}shrink-0 drop-shadow-[0_1px_1px_rgb(0_0_0_/_0.12)]`}
     >
       {/* White die-cut vinyl border halo */}
       <circle cx="24" cy="24" r="21" fill="#FFFFFF" stroke="#EAE4D8" strokeWidth="1.2" />

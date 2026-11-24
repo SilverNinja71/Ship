@@ -180,9 +180,20 @@ const BREAK_SPOTS: readonly SceneSpot[] = [
   { x: 40, y: 150, tagRow: 1 },
 ];
 
-/** Feet positions behind the study desk for `count` crewmates (at most 4). */
-export function deskSpots(count: number): SceneSpot[] {
-  return DESK_SPOTS.slice(0, Math.max(0, Math.min(count, DESK_SPOTS.length)));
+/**
+ * On a phone the scene is zoomed out, so name tags (kept about 12 px tall on screen) are wide in
+ * scene units: a tag at x 180 would sit on Pip's face and the pigeon on his head. Phones show two
+ * crewmates, at the desk's far ends, where their tags and cheers stay clear of Pip.
+ */
+const DESK_SPOTS_NARROW: readonly SceneSpot[] = [300, -330].map((x) => ({ x, y: Math.round(deskTopAt(x) + 6) }));
+
+/** Where Pip stands at the desk (x), and how far his face and the pigeon reach to each side. */
+export const DESK_PIP = { x: 65, halfWidth: 60 } as const;
+
+/** Feet positions behind the study desk for `count` crewmates (at most 4; on a narrow screen at most 2, clear of Pip). */
+export function deskSpots(count: number, narrow = false): SceneSpot[] {
+  const spots = narrow ? DESK_SPOTS_NARROW : DESK_SPOTS;
+  return spots.slice(0, Math.max(0, Math.min(count, spots.length)));
 }
 
 /** Feet positions on the picnic mat and in the pool for `count` crewmates (at most 5). */

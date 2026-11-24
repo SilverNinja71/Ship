@@ -11,7 +11,7 @@ import { cx } from "../ui.js";
 import { LookPicker } from "./LookPicker.js";
 import { AboardDots, closesAt } from "./RoomCardView.js";
 import { ReportRoom } from "./ReportRoom.js";
-import { QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, roomAction, roomPastel } from "./roomStyle.js";
+import { CatchFocus, HELD, QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, heldButton, roomAction, roomPastel } from "./roomStyle.js";
 
 /** What a refused join says: the card shows no reason, so usually a ban (the skipper removed this sailor). */
 const BANNED_TEXT = roomProblem("permission-denied", "join");
@@ -81,7 +81,7 @@ export function JoinCard({
     return (
       <Box>
         <PastelMinionBadge costume="pwedo" size={64} />
-        <p className="font-display text-xl">You're already aboard this room</p>
+        <CatchFocus className="font-display text-xl">You're already aboard this room</CatchFocus>
         <button type="button" onClick={onJoined} className={SEAFOAM_BUTTON}>
           Back to the crew
         </button>
@@ -92,7 +92,7 @@ export function JoinCard({
     return (
       <Box>
         <PastelMinionBadge costume="pwedo" size={64} />
-        <p className="text-sm text-[var(--muted-ink)]">Pwedo is looking for that room…</p>
+        <CatchFocus className="text-sm text-[var(--muted-ink)]">Pwedo is looking for that room…</CatchFocus>
       </Box>
     );
   }
@@ -100,7 +100,7 @@ export function JoinCard({
     return (
       <Box>
         <PastelMinionBadge costume="pwedo" size={64} />
-        <p className="font-display text-xl">{found.state === "missing" ? "No room here" : "Couldn't look for the room"}</p>
+        <CatchFocus className="font-display text-xl">{found.state === "missing" ? "No room here" : "Couldn't look for the room"}</CatchFocus>
         <p className="max-w-sm text-sm text-[var(--muted-ink)]">{found.state === "problem" ? found.text : roomProblem("not-found", "join")}</p>
         <button type="button" onClick={onCancel} className={YELLOW_BUTTON}>
           OK
@@ -112,17 +112,23 @@ export function JoinCard({
   const card = found.card;
   const pastel = roomPastel(card.subject);
   const why = joinProblem(card, Date.now() + serverOffset);
+  // Only what the card shows for certain (full, locked) stops the button. Whether the room has
+  // ended is judged by a clock that may be out, so for that the database decides on the tap.
+  const blocked = why === "full" || why === "locked" || why === "gone";
   const needsAge = card.mode === "open" && !over13;
   const whyText = why ? roomProblem("permission-denied", "join", why) : null;
 
   return (
     <div className="mx-auto grid max-w-2xl gap-4">
-      <div className="rounded-3xl border px-5 py-5" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
+      <div className="rounded-3xl border px-5 py-5 [--ring:currentColor]" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
         <div className="flex items-start gap-3">
           <PastelMinionBadge costume="pwedo" size={56} />
           <div className="min-w-0 flex-1">
-            <p className="text-xs tracking-[0.18em] uppercase opacity-80">Come aboard?</p>
-            <h3 className="font-display text-2xl leading-tight">{roomNameText(card.name)}</h3>
+            <p className="text-xs tracking-[0.18em] uppercase opacity-90">Come aboard?</p>
+            {/* "Find room" swapped the code box for this card: its name takes the focus the button had. */}
+            <CatchFocus as="h3" className="font-display text-2xl leading-tight">
+              {roomNameText(card.name)}
+            </CatchFocus>
             <p className="mt-0.5 text-sm opacity-85">
               {subjectText(card.subject)} <span aria-hidden="true">·</span> {card.mode === "open" ? "Open room" : "Invite room"}
             </p>
@@ -130,15 +136,15 @@ export function JoinCard({
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
           <AboardDots aboard={card.aboard} ink={pastel.ink} />
-          <span className="text-xs opacity-80">closes at {closesAt(card, serverOffset)}</span>
+          <span className="text-xs opacity-90">closes at {closesAt(card, serverOffset)}</span>
         </div>
       </div>
 
       {current && <p className="rounded-2xl bg-[#FFF9DC] px-3 py-2 text-sm text-[#4B3A0B]">You're in another room right now. Coming aboard here takes you out of it.</p>}
       {whyText ? (
-        <p className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">{whyText}</p>
+        <p role="alert" className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">{whyText}</p>
       ) : needsAge ? (
-        <p className="rounded-2xl bg-[#F3ECFB] px-3 py-2 text-sm text-[#56406A]">
+        <p className="rounded-2xl bg-[#F3ECFB] px-3 py-2 text-sm text-[#56406A] [--ring:currentColor]">
           Open rooms are for sailors 13 and older.{" "}
           <button type="button" onClick={onRules} className="underline underline-offset-4">
             Open the room rules
@@ -148,7 +154,11 @@ export function JoinCard({
         <LookPicker look={look} onChange={onLook} />
       )}
 
-      {refusal && refusal !== whyText && <p className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">{refusal}</p>}
+      {refusal && refusal !== whyText && (
+        <p role="alert" className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">
+          {refusal}
+        </p>
+      )}
       {/* A sailor the skipper removed can still report the room (the rules allow it for banned sailors). */}
       {refusal === BANNED_TEXT && (
         <div className="flex justify-start">
@@ -159,7 +169,7 @@ export function JoinCard({
         <button type="button" onClick={onCancel} className={QUIET_BUTTON}>
           Not now
         </button>
-        <button type="button" disabled={busy || !!why || needsAge} onClick={() => void join()} className={cx(SEAFOAM_BUTTON, "px-5 py-2 font-display text-base font-normal")}>
+        <button type="button" disabled={blocked || needsAge} {...heldButton(busy, () => void join())} className={cx(SEAFOAM_BUTTON, HELD, "px-5 py-2 font-display text-base font-normal")}>
           {busy ? "Climbing aboard…" : "Come aboard"}
         </button>
       </div>

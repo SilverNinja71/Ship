@@ -7,7 +7,7 @@ import { ROOM_CHEERS, ROOM_LIMITS, STICKER_IDS } from "@ship/shared-types";
 import { useRooms } from "../../stores/roomStore.js";
 import { DieCutSticker, STICKERS } from "../StickerArt.js";
 import { cx } from "../ui.js";
-import { PAPER_CARD, PAPER_SHADOW, ROOM_FOCUS_RING, chipClass, usePopoverDismiss } from "./roomStyle.js";
+import { HELD, PAPER_CARD, PAPER_SHADOW, ROOM_FOCUS_RING, chipClass, heldButton, usePopoverDismiss } from "./roomStyle.js";
 
 const GAP_MS = ROOM_LIMITS.writeGapSeconds * 1000;
 
@@ -22,6 +22,7 @@ export function CheerBar() {
   const waiting = now - sentAt < GAP_MS;
   // Escape or a tap outside closes the sticker picker (and only the picker, not the room).
   const pickerRef = useRef<HTMLDivElement>(null);
+  const stickerButton = useRef<HTMLButtonElement>(null);
   const closePicker = useCallback(() => setPicker(false), []);
   usePopoverDismiss(picker && !waiting, pickerRef, closePicker);
 
@@ -36,6 +37,8 @@ export function CheerBar() {
     lastSentAt = Date.now();
     setSentAt(lastSentAt);
     setNow(lastSentAt);
+    // A sticker sent from the picker: the keyboard goes back to the Stickers button, not the page.
+    if (picker && pickerRef.current?.contains(document.activeElement)) requestAnimationFrame(() => stickerButton.current?.focus());
     setPicker(false);
   };
 
@@ -65,11 +68,11 @@ export function CheerBar() {
       <div className="flex flex-wrap gap-1.5">
         <div ref={pickerRef} className="relative">
           <button
+            ref={stickerButton}
             type="button"
-            disabled={waiting}
-            aria-expanded={picker}
-            onClick={() => setPicker(!picker)}
-            className={cx("inline-flex items-center gap-1 rounded-full border border-[#F1E3A0] bg-[#FFF9DC] px-2.5 py-0.5 text-xs text-[#4B3A0B] disabled:opacity-50", ROOM_FOCUS_RING)}
+            aria-expanded={picker && !waiting}
+            {...heldButton(waiting, () => setPicker(!picker))}
+            className={cx("inline-flex items-center gap-1 rounded-full border border-[#F1E3A0] bg-[#FFF9DC] px-2.5 py-0.5 text-xs text-[#4B3A0B]", HELD, ROOM_FOCUS_RING)}
           >
             <DieCutSticker id="star-sparkle" size={16} /> Stickers
           </button>
@@ -93,7 +96,8 @@ export function CheerBar() {
           )}
         </div>
         {ROOM_CHEERS.map((text, i) => (
-          <button key={text} type="button" disabled={waiting} onClick={() => send(i)} className={cx(chipClass(false), "disabled:opacity-50")}>
+          // aria-disabled while the 15 s pass, not disabled: the chip keeps the keyboard focus.
+          <button key={text} type="button" {...heldButton(waiting, () => send(i))} className={cx(chipClass(false), HELD)}>
             {text}
           </button>
         ))}

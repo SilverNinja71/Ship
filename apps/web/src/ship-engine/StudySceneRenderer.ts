@@ -12,7 +12,7 @@ import type { KawaiiTheme } from "./kawaiiThemes.js";
 import { drawPastelMinion } from "./minions.js";
 import type { MinionCostume } from "./minions.js";
 import { drawLabel } from "./props.js";
-import { MATE_HEIGHT, breakSpots, deskSpots, drawCheerBubble, drawMate, mateChore, mateTitle } from "./roomCrew.js";
+import { DESK_PIP, MATE_HEIGHT, breakSpots, deskSpots, drawCheerBubble, drawMate, mateChore, mateTitle } from "./roomCrew.js";
 import type { SceneSpot } from "./roomCrew.js";
 import { drawThemeBackdrop } from "./themeBackdrop.js";
 import { PORT_THEMES, SKETCH_INK, drawPaperTexture } from "./tinyInk.js";
@@ -157,10 +157,13 @@ function drawSparkle(ctx: Ctx, x: number, y: number, r: number, color: string): 
 
 // ---- Study Rooms crewmates in the desk and break scenes -------------------------------------
 
+/** Under this width (CSS px) the scenes show 2 crewmates, placed for a phone. */
+const NARROW_SCENE_PX = 520;
+
 /** Crewmates to show and how many are left over: 2 on narrow screens (under 520 px), else as many as there are spots. */
 function fitCrew(crew: readonly SceneMate[] | undefined, width: number, spots: number): { shown: SceneMate[]; extra: number } {
   const all = crew ?? [];
-  const shown = all.slice(0, width < 520 ? Math.min(2, spots) : spots);
+  const shown = all.slice(0, width < NARROW_SCENE_PX ? Math.min(2, spots) : spots);
   return { shown, extra: all.length - shown.length };
 }
 
@@ -183,15 +186,27 @@ function drawMateTags(
   /** Half the canvas width in scene units, so a tag near the edge slides in instead of being cut off. */
   halfWidth: number,
   below = false,
+  /** A stretch of x no tag may cover (Pip's face on a phone): each tag stays on its spot's side of it, shortened if it must. */
+  keepClear: { from: number; to: number } | null = null,
 ): void {
   const s = sceneTagScale(unit);
-  const tagX = (x: number, text: string) => {
+  const measure = (text: string) => {
     ctx.save();
     ctx.font = `700 ${Math.round(17 * s)}px ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif`;
     const half = (ctx.measureText(text).width + 18 * s) / 2 + 6 * s;
     ctx.restore();
-    return Math.max(-halfWidth + half, Math.min(halfWidth - half, x));
+    return half;
   };
+  /** The tag's text and centre: inside the canvas and off the clear stretch, with "…" if it's too long to fit there. */
+  const placeTag = (x: number, label: string): { text: string; x: number } => {
+    const lo = keepClear && x > keepClear.to ? keepClear.to : -halfWidth;
+    const hi = keepClear && x < keepClear.from ? keepClear.from : halfWidth;
+    let text = label;
+    while (text.length > 4 && measure(text) * 2 > hi - lo) text = `${text.slice(0, -2).trimEnd()}…`;
+    const half = measure(text);
+    return { text, x: Math.max(lo + half, Math.min(hi - half, x)) };
+  };
+  const tagX = (x: number, text: string) => placeTag(x, text).x;
   const row = (spot: SceneSpot) => (spot.tagRow ?? 0) * 30 * s;
   const tagAt = (spot: SceneSpot) => (below ? spot.y + 18 * s + row(spot) : spot.y - MATE_HEIGHT * scale - 12 * s - row(spot));
   shown.forEach((mate, i) => {
@@ -199,7 +214,8 @@ function drawMateTags(
     if (!spot) return;
     const top = spot.y - MATE_HEIGHT * scale;
     const tagY = tagAt(spot);
-    drawLabel(ctx, mate.label, tagX(spot.x, mate.label), tagY, s, mate.away ? "ghost" : "plain", true);
+    const tag = placeTag(spot.x, mate.label);
+    drawLabel(ctx, tag.text, tag.x, tagY, s, mate.away ? "ghost" : "plain", true);
     if (mate.cheer !== null) drawCheerBubble(ctx, { x: spot.x, y: below ? top + 2 * scale : tagY - 14 * s }, mate.cheer, s);
     regions.push(rectRegion(ctx, dpr, `mate:${mate.key}`, mateTitle(mate), spot.x - 30 * scale, top, 60 * scale, spot.y - top));
   });
@@ -318,7 +334,8 @@ export function renderStudyDeskScene(
   const cy = h * 0.55;
   const m = frame.reducedMotion ? 0 : 1;
   const regions: HitRegion[] = [];
-  const allSpots = deskSpots(4);
+  // On a phone, crewmates stand at the desk's far ends so their tags never cover Pip.
+  const allSpots = deskSpots(4, w < NARROW_SCENE_PX);
   const { shown, extra } = fitCrew(opts.crew, w, allSpots.length);
   const spots = allSpots.slice(0, shown.length);
 
@@ -345,14 +362,14 @@ export function renderStudyDeskScene(
 
     // Main Pip minion locked into study mode with Pwedo perched on top!
     const lockedIn = (opts.focusProgress ?? 0) >= 0.35;
-    drawPastelMinion(ctx, { x: 65, y: 36 + writeBob }, "banana", frame, {
+    drawPastelMinion(ctx, { x: DESK_PIP.x, y: 36 + writeBob }, "banana", frame, {
       scale: 2.25,
       seed: 1,
       chore: lockedIn ? "fire-focus" : "none",
       accessory: activeTheme.accessory,
       shadow: false,
     });
-    drawPwedoBird(ctx, 65, -79 + writeBob, frame, { scale: 1.0, pastelWing: pastel });
+    drawPwedoBird(ctx, DESK_PIP.x, -79 + writeBob, frame, { scale: 1.0, pastelWing: pastel });
 
     // Soft floating study sparkles
     const sp = Math.sin(frame.t * 2.2) * 5 * m;
@@ -420,7 +437,9 @@ export function renderStudyDeskScene(
     }
 
     // 7. Crewmates' name tags and cheers go over the desk and its props.
-    drawMateTags(ctx, view.dpr, unit, shown, spots, MATE_DESK_SCALE, { count: extra, at: extraSpot(spots, allSpots, shown.length) }, regions, w / 2 / unit);
+    // On a phone the tags are wide in scene units: none may cover Pip's face or the pigeon on his head.
+    const pip = w < NARROW_SCENE_PX ? { from: DESK_PIP.x - DESK_PIP.halfWidth, to: DESK_PIP.x + DESK_PIP.halfWidth } : null;
+    drawMateTags(ctx, view.dpr, unit, shown, spots, MATE_DESK_SCALE, { count: extra, at: extraSpot(spots, allSpots, shown.length) }, regions, w / 2 / unit, false, pip);
   });
 
   drawPaperTexture(ctx, w, h);

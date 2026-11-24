@@ -15,7 +15,7 @@ const { createHash, randomInt } = require("node:crypto");
 const { initializeApp, deleteApp } = require("firebase/app");
 const { getAuth, connectAuthEmulator, signInWithCredential, GoogleAuthProvider } = require("firebase/auth");
 const F = require("firebase/firestore");
-const { getFirestore, connectFirestoreEmulator, doc, collection, writeBatch, serverTimestamp, getDocs, getDoc, setDoc, updateDoc, deleteDoc, deleteField, increment, arrayUnion, query, where, orderBy, limit, FieldPath, onSnapshot, setLogLevel } = F;
+const { getFirestore, connectFirestoreEmulator, doc, collection, writeBatch, serverTimestamp, getDocs, getDoc, setDoc, updateDoc, deleteDoc, deleteField, increment, arrayUnion, query, where, orderBy, limit, startAt, documentId, FieldPath, onSnapshot, setLogLevel } = F;
 
 // A removed sailor's listener is refused on purpose; that isn't worth a console warning.
 setLogLevel("silent");
@@ -64,16 +64,30 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- Bottle Bay and cloud sync ----------
 
-const source = (extra = {}) => ({ kind: "source", title: "Krebs cycle explained", url: "https://youtu.be/k", sourceType: "video", subject: "Biology", subjectKey: "biology", tags: ["bio"], description: "Clear video.", cardCount: 0, preview: [], reports: 0, at: serverTimestamp(), ...extra });
+const source = (extra = {}) => ({ kind: "source", title: "Krebs cycle explained", url: "https://youtu.be/k", sourceType: "video", subject: "Biology", subjectKey: "biology", tags: ["bio"], description: "Clear video.", cardCount: 0, preview: [], reports: 0, hidden: false, at: serverTimestamp(), ...extra });
+// The bay's own browse: only bottles that reports haven't hidden (the rules refuse any other list).
+const browse = (u, n = 10) => getDocs(query(collection(u.db, "bottles"), where("hidden", "==", false), orderBy("at", "desc"), limit(n)));
+// The batch lib/bottleBay.ts setAfloat sends: the stamp (naming the bottle), the private note and
+// the bottle. `id` reuses a bottle id; `also` adds a second bottle to the same batch, on the same stamp.
 async function share(u, bottle, opts = {}) {
-  const ref = doc(collection(u.db, "bottles"));
+  const ref = opts.id ? doc(u.db, "bottles", opts.id) : doc(collection(u.db, "bottles"));
   const b = writeBatch(u.db);
-  if (opts.stamp !== false) b.set(doc(u.db, "users", u.uid, "meta", "bottles"), { lastAt: serverTimestamp() });
-  if (opts.owner !== false) b.set(doc(u.db, "users", u.uid, "shared", ref.id), { at: serverTimestamp() });
-  b.set(ref, bottle);
-  if (opts.cards) b.set(doc(u.db, "bottles", ref.id, "deck", "cards"), { cards: opts.cards });
+  if (opts.stamp !== false) b.set(doc(u.db, "users", u.uid, "meta", "bottles"), { lastAt: serverTimestamp(), lastId: opts.stampId ?? ref.id });
+  for (const r of [ref, ...(opts.also ? [doc(collection(u.db, "bottles"))] : [])]) {
+    if (opts.owner !== false) b.set(doc(u.db, "users", u.uid, "shared", r.id), { at: serverTimestamp() });
+    b.set(r, bottle);
+    if (opts.cards) b.set(doc(u.db, "bottles", r.id, "deck", "cards"), { cards: opts.cards });
+  }
   await b.commit();
   return ref.id;
+}
+// Taking a bottle back, as lib/bottleBay.ts takeBack does: it empties to {gone: true} for good.
+async function takeBottleBack(u, id) {
+  const b = writeBatch(u.db);
+  b.delete(doc(u.db, "bottles", id, "deck", "cards"));
+  b.set(doc(u.db, "bottles", id), { gone: true });
+  b.delete(doc(u.db, "users", u.uid, "shared", id));
+  await b.commit();
 }
 
 async function bottleBay(alice, bob, carol, nobody) {
@@ -81,13 +95,19 @@ async function bottleBay(alice, bob, carol, nobody) {
   let aliceBottle;
   await expect("Alice sets a source bottle afloat", true, async () => { aliceBottle = await share(alice, source()); });
   await expect("Bob browses the bay", true, async () => {
-    const snap = await getDocs(query(collection(bob.db, "bottles"), orderBy("at", "desc"), limit(10)));
+    const snap = await browse(bob);
     const data = snap.docs.find((d) => d.id === aliceBottle).data();
     const text = JSON.stringify(data);
     if (text.includes(alice.uid) || text.includes("alice")) throw new Error("bottle names its sharer");
-    if (Object.keys(data).sort().join() !== "at,cardCount,description,kind,preview,reports,sourceType,subject,subjectKey,tags,title,url") throw new Error("unexpected fields " + Object.keys(data));
+    if (Object.keys(data).sort().join() !== "at,cardCount,description,hidden,kind,preview,reports,sourceType,subject,subjectKey,tags,title,url") throw new Error("unexpected fields " + Object.keys(data));
   });
-  await expect("Nobody signed out can browse", false, () => getDocs(collection(nobody.db, "bottles")));
+  await expect("Nobody signed out can browse", false, () => browse(nobody));
+  await expect("Browsing without leaving out hidden bottles is refused", false, () => getDocs(query(collection(bob.db, "bottles"), orderBy("at", "desc"), limit(10))));
+  await expect("Nor can anyone list the hidden ones", false, () => getDocs(query(collection(bob.db, "bottles"), where("reports", ">=", 3), limit(10))));
+  await expect("A bottle can't start hidden (or leave the flag out)", false, async () => {
+    const { hidden: _h, ...noFlag } = source();
+    await share(carol, noFlag);
+  });
   await expect("Bob can't take back Alice's bottle", false, () => deleteDoc(doc(bob.db, "bottles", aliceBottle)));
   await expect("Bob can't claim Alice's bottle as his", false, () => setDoc(doc(bob.db, "users", bob.uid, "shared", aliceBottle), { at: serverTimestamp() }));
   await expect("Bob can't read Alice's private list", false, () => getDocs(collection(bob.db, "users", alice.uid, "shared")));
@@ -100,6 +120,14 @@ async function bottleBay(alice, bob, carol, nobody) {
   await expect("A bottle can't start with reports", false, () => share(carol, source({ reports: 5 })));
   await expect("A bottle needs its sharer's private note", false, () => share(carol, source(), { owner: false }));
   await expect("A bottle needs the cooldown stamp", false, () => share(carol, source(), { stamp: false }));
+  await expect("A bottle's stamp must name that bottle", false, () => share(carol, source(), { stampId: "someOtherBottle00000" }));
+  await expect("One batch can't set two bottles afloat on one stamp", false, () => share(carol, source(), { also: true }));
+  await expect("A tag can't be longer than 30 characters", false, () => share(carol, source({ tags: ["x".repeat(31)] })));
+  await expect("A tag must be plain text (not a map or a number)", false, () => share(carol, source({ tags: [{ nested: { map: 1 } }, 42] })));
+  const deckBottle = (preview) => source({ kind: "deck", url: null, sourceType: null, cardCount: 4, preview });
+  const four = [{ f: "a", b: "1" }, { f: "b", b: "2" }, { f: "c", b: "3" }, { f: "d", b: "4" }];
+  await expect("A preview card can't be longer than 500 characters a side", false, () => share(carol, deckBottle([{ f: "x".repeat(501), b: "y" }]), { cards: four }));
+  await expect("A preview card holds only its two sides", false, () => share(carol, deckBottle([{ f: "a", b: "1", big: "z" }]), { cards: four }));
   await expect("A deck whose card count is wrong is refused", false, () =>
     share(carol, source({ kind: "deck", url: null, sourceType: null, cardCount: 3, preview: [{ f: "a", b: "b" }] }), { cards: [{ f: "a", b: "b" }] }),
   );
@@ -112,30 +140,67 @@ async function bottleBay(alice, bob, carol, nobody) {
     if (d.data().cards.length !== 2) throw new Error("wrong cards");
   });
   await expect("Bob can't add cards to Carol's deck", false, () => setDoc(doc(bob.db, "bottles", carolDeck, "deck", "cards"), { cards: [] }));
-  const report = (u, id, by = 1, reason = "spam") => {
+  // A report as lib/bottleBay.ts reportBottle sends it: +1 (and `hidden` at the third), the
+  // reporter's record, and their report stamp naming the bottle; a hidden deck's cards go too.
+  const report = (u, id, opts = {}) => {
     const b = writeBatch(u.db);
-    b.update(doc(u.db, "bottles", id), { reports: increment(by) });
-    b.set(doc(u.db, "bottles", id, "reports", u.uid), { at: serverTimestamp(), reason });
+    b.update(doc(u.db, "bottles", id), { reports: increment(opts.by ?? 1), hidden: opts.hidden ?? false });
+    b.set(doc(u.db, "bottles", id, "reports", u.uid), { at: serverTimestamp(), reason: opts.reason ?? "spam" });
+    if (opts.stamp !== false) b.set(doc(u.db, "users", u.uid, "meta", "reports"), { at: serverTimestamp(), id: opts.stampId ?? id });
+    if (opts.dropCards) b.delete(doc(u.db, "bottles", id, "deck", "cards"));
+    for (const also of opts.also ?? []) {
+      b.update(doc(u.db, "bottles", also), { reports: increment(1), hidden: false });
+      b.set(doc(u.db, "bottles", also, "reports", u.uid), { at: serverTimestamp(), reason: "spam" });
+    }
     return b.commit();
   };
+  const ageReportStamp = (u) => age(`users/${u.uid}/meta/reports`, "at", 1);
+  await expect("A report needs the reporter's report stamp", false, () => report(bob, aliceBottle, { stamp: false }));
+  await expect("A report's stamp must name that bottle", false, () => report(bob, aliceBottle, { stampId: carolDeck }));
+  await expect("One batch can't report two bottles on one stamp", false, () => report(bob, aliceBottle, { also: [carolDeck] }));
   await expect("Bob reports Alice's bottle", true, () => report(bob, aliceBottle));
-  await expect("Bob can't report it twice", false, () => report(bob, aliceBottle));
-  await expect("Carol can't add 5 reports at once", false, () => report(carol, aliceBottle, 5));
-  await expect("Carol can't report with a made-up reason", false, () => report(carol, aliceBottle, 1, "boring"));
+  await expect("Bob can't report another bottle within 30 s of his last report", false, () => report(bob, carolDeck));
+  await expect("Bob can't dodge that by deleting his report stamp", false, () => deleteDoc(doc(bob.db, "users", bob.uid, "meta", "reports")));
+  await expect("Bob can't report it twice", false, async () => { await ageReportStamp(bob); await report(bob, aliceBottle); });
+  await expect("Carol can't add 5 reports at once", false, () => report(carol, aliceBottle, { by: 5 }));
+  await expect("Carol can't report with a made-up reason", false, () => report(carol, aliceBottle, { reason: "boring" }));
   await expect("Nobody can read who reported", false, () => getDocs(collection(carol.db, "bottles", aliceBottle, "reports")));
+
+  // ---- The third report hides a bottle from everyone but its sharer ----
+  let hideMe;
+  await setup("Carol's deck to hide, and three reporters", async () => {
+    await age(`users/${carol.uid}/meta/bottles`, "lastAt", 1);
+    hideMe = await share(carol, source({ kind: "deck", title: "Jane Doe, 12 Elm Street", url: null, sourceType: null, cardCount: 4, preview: [{ f: "a", b: "1" }] }), { cards: four });
+  });
+  const [r1, r2, r3] = await Promise.all(["rep1", "rep2", "rep3"].map((x) => user(`${x}.${Date.now()}@bay.test`)));
+  await expect("A first report that marks the bottle hidden is refused", false, () => report(r1, hideMe, { hidden: true }));
+  await expect("Two reports go (each from its own account)", true, async () => { await report(r1, hideMe); await report(r2, hideMe); });
+  await expect("A third report that doesn't hide the bottle is refused", false, () => report(r3, hideMe));
+  await expect("A third report that hides a deck but leaves its cards is refused", false, () => report(r3, hideMe, { hidden: true }));
+  await expect("The third report hides it, and its cards go with it", true, async () => {
+    await report(r3, hideMe, { hidden: true, dropCards: true });
+    if (await ownerExists(`bottles/${hideMe}/deck/cards`)) throw new Error("cards still there");
+  });
+  await expect("A hidden bottle can't be read by anyone but its sharer", false, () => getDoc(doc(bob.db, "bottles", hideMe)));
+  await expect("…nor found by a query for reported bottles", false, () => getDocs(query(collection(bob.db, "bottles"), where("hidden", "==", true), limit(10))));
+  await expect("The bay's browse leaves it out", true, async () => { if ((await browse(bob, 40)).docs.some((d) => d.id === hideMe)) throw new Error("hidden bottle listed"); });
+  await expect("Its sharer still sees it in My bottles", true, async () => { if ((await getDoc(doc(carol.db, "bottles", hideMe))).data().reports !== 3) throw new Error("wrong count"); });
+  await expect("Bob's report stamp goes once its 30 s are over (account deletion)", true, async () => { await ageReportStamp(bob); await deleteDoc(doc(bob.db, "users", bob.uid, "meta", "reports")); });
   await expect("Bob can't change Alice's title", false, () => setDoc(doc(bob.db, "bottles", aliceBottle), { title: "Spam" }, { merge: true }));
   await expect("Cloud sync still saves Alice's planner", true, () => setDoc(doc(alice.db, "users", alice.uid, "state", "planner"), { json: "{}", version: 1, rev: "r", updatedAt: serverTimestamp() }));
   await expect("Alice can't write other kinds of document in her folder", false, () => setDoc(doc(alice.db, "users", alice.uid, "secrets", "x"), { a: 1 }));
-  await expect("Alice takes her bottle back", true, async () => {
-    const b = writeBatch(alice.db);
-    b.delete(doc(alice.db, "bottles", aliceBottle, "deck", "cards"));
-    b.delete(doc(alice.db, "bottles", aliceBottle));
-    b.delete(doc(alice.db, "users", alice.uid, "shared", aliceBottle));
-    await b.commit();
-    if ((await getDoc(doc(bob.db, "bottles", aliceBottle))).exists()) throw new Error("still there");
+  await expect("Alice can't delete her bottle outright (taking back leaves a marker)", false, () => deleteDoc(doc(alice.db, "bottles", aliceBottle)));
+  await expect("Bob can't empty Alice's bottle", false, () => setDoc(doc(bob.db, "bottles", aliceBottle), { gone: true }));
+  await expect("Alice takes her bottle back: it empties to {gone: true}", true, async () => {
+    await takeBottleBack(alice, aliceBottle);
+    const left = (await getDoc(doc(bob.db, "bottles", aliceBottle))).data();
+    if (JSON.stringify(left) !== JSON.stringify({ gone: true })) throw new Error("left " + JSON.stringify(left));
   });
+  await expect("A taken-back bottle can't be reported", false, () => report(carol, aliceBottle));
   console.log("waiting out the 20 s cooldown…");
   await wait(21_000);
+  await expect("Alice can't set a bottle afloat again under her taken-back id", false, () => share(alice, source({ title: "Back again" }), { id: aliceBottle }));
+  await expect("Nor can Carol use that id", false, () => share(carol, source({ title: "Back again" }), { id: aliceBottle }));
   await expect("After 20 s Alice can set another bottle afloat", true, () => share(alice, source({ title: "Second" })));
   await expect("Carol (whose stamp is old) deletes her stamp, as account deletion does", true, () => deleteDoc(doc(carol.db, "users", carol.uid, "meta", "bottles")));
 }
@@ -180,7 +245,7 @@ const ownerGet = async (pathStr) => (await fetch(`${REST}/${pathStr}`, { headers
 const ownerExists = async (pathStr) => (await fetch(`${REST}/${pathStr}`, { headers: OWNER })).ok;
 
 const fresh = (extra = {}) => ({ n: [3, 7, 42], c: 1, a: 0, st: 0, end: null, in: serverTimestamp(), seen: serverTimestamp(), dmg: 0, cr: serverTimestamp(), say: -1, sayAt: null, gid: 0, g: 0, gt: 0, gp: 0, ...extra });
-const roomData = (u, code, mode, extra = {}) => ({ v: 1, mode, name: [1, 2], subj: 0, at: serverTimestamp(), host: u.key(code), listed: mode === "open", locked: false, ban: [], rep: [], why: { spam: 0, unkind: 0, personal: 0, off: 0 }, banked: 0, last: null, sail: null, deck: null, game: null, m: { [u.key(code)]: fresh() }, ...extra });
+const roomData = (u, code, mode, extra = {}) => ({ v: 1, mode, name: [1, 2], subj: 0, at: serverTimestamp(), host: u.key(code), listed: mode === "open", locked: false, ban: [], rep: [], why: { spam: 0, unkind: 0, personal: 0, off: 0 }, strikes: 0, banked: 0, last: null, sail: null, deck: null, game: null, m: { [u.key(code)]: fresh() }, ...extra });
 const cardData = (mode, extra = {}) => ({ v: 1, mode, name: [1, 2], subj: 0, at: serverTimestamp(), listed: mode === "open", locked: false, n: 1, alive: serverTimestamp(), ...extra });
 const stampRef = (u) => doc(u.db, "users", u.uid, "meta", "rooms");
 const acceptRules = (u, over13) => setDoc(stampRef(u), { madeAt: null, joinedAt: null, madeIn: null, joinedIn: null, openIn: null, rules: 1, over13 });
@@ -222,13 +287,35 @@ async function captainWrite(u, code, pairs, card = null) {
 async function removal(u, code, goneKey, dmg, opts = {}) {
   const b = writeBatch(u.db);
   b.update(doc(u.db, "rooms", code), mp(goneKey), deleteField(), "banked", increment(dmg), "last", goneKey, ...(opts.extra ?? []));
-  if (opts.card !== false) b.update(doc(u.db, "roomCards", code), { n: increment(-1) });
+  if (opts.card !== false) b.update(doc(u.db, "roomCards", code), { n: increment(-1), ...(opts.cardExtra ?? {}) });
+  if (opts.note) b.delete(doc(u.db, "users", u.uid, "rooms", code));
+  // Leaving by yourself, as lib/rooms.ts does: the note records whether you stayed 5 minutes.
+  if (opts.stayed !== undefined) b.set(doc(u.db, "users", u.uid, "rooms", code), { stayed: opts.stayed }, { merge: true });
+  await b.commit();
+}
+// What deleting a room sends (lib/rooms.ts goneBatch): its deck and the room go, and its card
+// empties to {gone: true} for good, so the code can never be opened again.
+async function gone(u, code, opts = {}) {
+  const b = writeBatch(u.db);
+  if (opts.deck !== false) b.delete(doc(u.db, "rooms", code, "deck", "cards"));
+  b.delete(doc(u.db, "rooms", code));
+  if (opts.card !== false) b.set(doc(u.db, "roomCards", code), { gone: true });
   if (opts.note) b.delete(doc(u.db, "users", u.uid, "rooms", code));
   await b.commit();
 }
+// Taking charge of an open room as its one open room (lib/rooms.ts): the stamp names it, and the
+// room and its card go back on the list, with the card's `alive` refreshed.
+async function claim(u, code, roomPairs, opts = {}) {
+  const b = writeBatch(u.db);
+  if (opts.stamp !== false) b.update(stampRef(u), { openIn: code });
+  b.update(doc(u.db, "rooms", code), ...roomPairs, mp(u.key(code), "seen"), serverTimestamp());
+  b.update(doc(u.db, "roomCards", code), { listed: true, alive: serverTimestamp(), ...(opts.card ?? {}) });
+  await b.commit();
+}
+// A report as lib/rooms.ts sends it. `strike`: it counts towards unlisting (the reporter has a stake).
 async function report(u, code, reason, listed, opts = {}) {
   const b = writeBatch(u.db);
-  b.update(doc(u.db, "rooms", code), "rep", arrayUnion(u.rep(code)), new FieldPath("why", reason), increment(opts.by ?? 1), "listed", listed);
+  b.update(doc(u.db, "rooms", code), "rep", arrayUnion(u.rep(code)), new FieldPath("why", reason), increment(opts.by ?? 1), "listed", listed, ...(opts.strike ? ["strikes", increment(1)] : []));
   if (opts.card) b.update(doc(u.db, "roomCards", code), { listed });
   await b.commit();
 }
@@ -243,16 +330,16 @@ const openList = (u, n = 20) => getDocs(query(collection(u.db, "roomCards"), whe
 async function studyRooms(nobody) {
   console.log("\nStudy Rooms");
   const run = Date.now().toString(36);
-  const names = ["alice", "bob", "carol", "dave", "erin", "finn", "gail", "hank", "ivy", "jay"];
+  const names = ["alice", "bob", "carol", "dave", "erin", "finn", "gail", "hank", "ivy", "jay", "lena", "mo", "hal", "ann", "bea", "jo", "x1", "x2", "x3"];
   const crew = await Promise.all(names.map((x) => sailor(x, run)));
-  const [alice, bob, carol, dave, erin, finn, gail, hank, ivy, jay] = crew;
+  const [alice, bob, carol, dave, erin, finn, gail, hank, ivy, jay, lena, mo, hal, ann, bea, jo, x1, x2, x3] = crew;
   const A = roomCode("K7MP"), O = roomCode("BEACH"), D1 = roomCode("DAVE"), D2 = roomCode("DAVE"), J = roomCode("JAY"), HK = roomCode("HANK"), P = roomCode("PEARL");
-  const hiddenDeck = `HIDDEN${run}`, goodDeck = `GOODDECK${run}`, otherDeck = `OTHERDECK${run}`;
+  const hiddenDeck = `HIDDEN${run}`, goodDeck = `GOODDECK${run}`, otherDeck = `OTHERDECK${run}`, goneDeck = `GONEDECK${run}`;
   // Rooms start switched on (no config/rooms), even if an earlier run stopped halfway.
   await ownerDelete("config/rooms");
 
   // ---- The rules card and the stamp ----
-  for (const u of [alice, bob, carol, erin, finn, gail, hank, ivy, jay]) await setup(`${u.name} accepts the rules`, () => acceptRules(u, true));
+  for (const u of [alice, bob, carol, erin, finn, gail, hank, ivy, jay, lena, mo, hal, ann, bea, jo, x1, x2, x3]) await setup(`${u.name} accepts the rules`, () => acceptRules(u, true));
   await expect("Dave accepts the rules without the 13+ tick", true, () => acceptRules(dave, false));
   await expect("The stamp can't carry other fields", false, () => setDoc(stampRef(dave), { madeAt: null, joinedAt: null, madeIn: null, joinedIn: null, openIn: null, rules: 1, over13: false, name: "Dave" }));
   await expect("The stamp can't name a room without spending its cooldown", false, () => updateDoc(stampRef(dave), { madeIn: roomCode("ZZ") }));
@@ -279,6 +366,7 @@ async function studyRooms(nobody) {
   });
   await expect("Bob can't fake the card's count", false, () => updateDoc(doc(bob.db, "roomCards", A), { n: 5 }));
   await expect("Bob can't delete a live room's card", false, () => deleteDoc(doc(bob.db, "roomCards", A)));
+  await expect("…nor empty it to {gone: true} while its room lives", false, () => setDoc(doc(bob.db, "roomCards", A), { gone: true }));
 
   // ---- Joining ----
   await expect("Bob's join without updating the card is refused", false, () => join(bob, A, { card: false }));
@@ -338,6 +426,10 @@ async function studyRooms(nobody) {
     if (!mine || mine.data().n !== 4) throw new Error("got " + s.docs.map((d) => d.id + ":" + d.data().n));
     if (s.docs.some((d) => [A, D2].includes(d.id))) throw new Error("an invite room is listed");
   });
+  await expect("Gail lists open rooms from a random starting code (the app's window)", true, async () => {
+    const s = await getDocs(query(collection(gail.db, "roomCards"), where("listed", "==", true), orderBy(documentId()), startAt(O), limit(20)));
+    if (!s.docs.some((d) => d.id === O)) throw new Error("window missed the room it starts at");
+  });
   await expect("Dave (no 13+) can't list open rooms", false, () => openList(dave));
   await expect("Listing more than 20 is refused", false, () => openList(gail, 21));
   await expect("Listing without listed == true is refused", false, () => getDocs(query(collection(gail.db, "roomCards"), limit(5))));
@@ -345,16 +437,69 @@ async function studyRooms(nobody) {
   await expect("Gail (not aboard) can't read the open room", false, () => getDoc(doc(gail.db, "rooms", O)));
 
   // ---- Reports ----
+  const ageIn = (u, code, mins) => age(`rooms/${code}`, `m.${u.key(code)}.in`, mins);
   await expect("Gail (never aboard) can't report", false, () => report(gail, O, "spam", true));
-  await expect("Erin (aboard) reports: unkind", true, () => report(erin, O, "unkind", true));
+  await expect("Erin (aboard) reports: unkind (counted, not a strike: she came aboard just now)", true, () => report(erin, O, "unkind", true));
   await expect("Erin can't report twice", false, () => report(erin, O, "spam", true));
   await expect("Ivy can't add two reasons at once", false, () => report(ivy, O, "spam", true, { by: 2 }));
+  await expect("Ivy can't count half a reason twice (the room would be unreadable)", false, () =>
+    updateDoc(doc(ivy.db, "rooms", O), "rep", arrayUnion(ivy.rep(O)), new FieldPath("why", "spam"), increment(0.5), new FieldPath("why", "unkind"), increment(0.5), "listed", true),
+  );
+  await expect("Ivy, aboard under 5 minutes, can't count a strike", false, () => report(ivy, O, "spam", true, { strike: true }));
   await setup("age Carol's seen", () => ageSeen(carol, O, 1));
   await expect("Carol removes Finn and bans him", true, () => removal(carol, O, finn.key(O), 0, { extra: ["ban", [finn.key(O)]] }));
+  await expect("Finn (removed) can't count a strike", false, () => report(finn, O, "personal", true, { strike: true }));
   await expect("Finn (removed) can still report: personal", true, () => report(finn, O, "personal", true));
-  await expect("A third report that keeps the room listed is refused", false, () => report(ivy, O, "off", true));
-  await expect("A third report that unlists the room without its card is refused", false, () => report(ivy, O, "off", false));
-  await expect("Ivy's third report unlists the room and its card", true, () => report(ivy, O, "off", false, { card: true }));
+
+  // Drive-by reports (found in the fifth review): three throwaway accounts come aboard from the
+  // list, report and leave within seconds. They're counted, but the room stays on the list.
+  for (const u of [x1, x2, x3]) {
+    await setup(`${u.name} comes aboard the open room`, async () => { await ageJoinStamp(u); await join(u, O); });
+    await expect(`${u.name} can't count a strike seconds after coming aboard`, false, () => report(u, O, "spam", false, { strike: true, card: true }));
+    await expect(`${u.name} reports (no strike) and leaves`, true, async () => {
+      await report(u, O, "spam", true);
+      await ageSeen(u, O, 1);
+      await removal(u, O, u.key(O), 0, { stayed: false });
+    });
+  }
+  await expect("A leaver can't say they stayed 5 minutes after seconds aboard", false, async () => {
+    await ageJoinStamp(bea);
+    await join(bea, O);
+    await ageSeen(bea, O, 1);
+    await removal(bea, O, bea.key(O), 0, { stayed: true });
+  });
+  await expect("Three drive-by reports leave the room on the list", true, async () => {
+    const d = (await getDoc(doc(gail.db, "roomCards", O))).data();
+    if (!d.listed) throw new Error("unlisted by drive-bys");
+  });
+  await expect("A note's `stayed` can't be written except by the leave that takes you out", false, () => setDoc(doc(bea.db, "users", bea.uid, "rooms", O), { stayed: false }, { merge: true }));
+
+  // Strikes: reports from sailors with a stake (aboard 5 minutes, in the room they came aboard last).
+  await setup("Ivy has been aboard 6 minutes", () => ageIn(ivy, O, 6));
+  await expect("Ivy's strike: a report that leaves out the strike is refused", false, () => report(ivy, O, "off", true));
+  await expect("Ivy (aboard 6 minutes) reports: a strike", true, () => report(ivy, O, "off", true, { strike: true }));
+  await expect("Jo comes aboard, stays 6 minutes and leaves (her note says she stayed)", true, async () => {
+    await ageJoinStamp(jo);
+    await join(jo, O);
+    await ageIn(jo, O, 6);
+    await ageSeen(jo, O, 1);
+    await removal(jo, O, jo.key(O), 0, { stayed: true });
+  });
+  await expect("Jo, who stayed 5 minutes before leaving, reports: a strike", true, () => report(jo, O, "unkind", true, { strike: true }));
+  await setup("Hal and Ann come aboard and stay 6 minutes; Ann then comes aboard another room", async () => {
+    for (const u of [hal, ann]) {
+      await ageJoinStamp(u);
+      await join(u, O);
+      await ageIn(u, O, 6);
+    }
+    await ageJoinStamp(ann);
+    await join(ann, D2);
+  });
+  await expect("Hal (aboard 6 minutes) can't mark his note `stayed` while he's still aboard", false, () => setDoc(doc(hal.db, "users", hal.uid, "rooms", O), { stayed: true }, { merge: true }));
+  await expect("Ann's report in the open room isn't a strike any more: she came aboard another room since", false, () => report(ann, O, "spam", false, { strike: true, card: true }));
+  await expect("A third strike that keeps the room listed is refused", false, () => report(hal, O, "off", true, { strike: true }));
+  await expect("A third strike that unlists the room without its card is refused", false, () => report(hal, O, "off", false, { strike: true }));
+  await expect("Hal's third strike unlists the room and its card", true, () => report(hal, O, "off", false, { strike: true, card: true }));
   await expect("The unlisted room is gone from the list", true, async () => { const s = await openList(gail); if (s.docs.some((d) => d.id === O)) throw new Error("still listed"); });
   await setup("age Carol's seen", () => ageSeen(carol, O, 1));
   await expect("The skipper can't relist a reported room", false, () => captainWrite(carol, O, ["listed", true, "locked", false], { listed: true }));
@@ -368,6 +513,8 @@ async function studyRooms(nobody) {
     await ownerSet(`bottles/${goodDeck}`, { kind: { stringValue: "deck" }, reports: { integerValue: "0" }, cardCount: { integerValue: "12" } });
   });
   await expect("Carol can't pick a hidden Bottle Bay deck", false, () => captainWrite(carol, O, ["deck", { b: hiddenDeck, n: 6 }]));
+  await setup("a deck taken back from Bottle Bay (emptied to gone)", () => ownerSet(`bottles/${goneDeck}`, { gone: { booleanValue: true } }));
+  await expect("Carol can't pick a deck its sharer took back", false, () => captainWrite(carol, O, ["deck", { b: goneDeck, n: 6 }]));
   await expect("Carol can't use her own cards in an open room", false, async () => {
     const b = writeBatch(carol.db);
     b.set(doc(carol.db, "rooms", O, "deck", "cards"), { cards: [{ f: "a", b: "1" }, { f: "b", b: "2" }, { f: "c", b: "3" }, { f: "d", b: "4" }] });
@@ -376,8 +523,8 @@ async function studyRooms(nobody) {
   });
   await expect("Carol picks an unreported Bottle Bay deck", true, () => captainWrite(carol, O, ["deck", { b: goodDeck, n: 12 }]));
   await setup("age Carol's seen", () => ageSeen(carol, O, 1));
-  await expect("A game can't seat someone who isn't aboard", false, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 7, at: serverTimestamp(), seats: [carol.key(O), gail.key(O)] }]));
-  await expect("Carol starts Tidy the Deck with the crew aboard", true, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 7, at: serverTimestamp(), seats: [carol.key(O), erin.key(O), ivy.key(O)] }]));
+  await expect("A game can't seat someone who isn't aboard", false, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 2, seed: 7, at: serverTimestamp(), seats: [carol.key(O), gail.key(O)] }]));
+  await expect("Carol starts Tidy the Deck with the crew aboard", true, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 2, seed: 7, at: serverTimestamp(), seats: [carol.key(O), erin.key(O), ivy.key(O)] }]));
   await setup("age Erin's seen", () => ageSeen(erin, O, 1));
   await expect("Erin reports her patch cleared", true, () => own(erin, O, { gid: 7, g: 2, gt: 41000, gp: 2 }));
   const deckFields = (reports, cards) => ({ kind: { stringValue: "deck" }, reports: { integerValue: String(reports) }, cardCount: { integerValue: String(cards) } });
@@ -387,10 +534,10 @@ async function studyRooms(nobody) {
   });
   await expect("The deck can't change while a game is on", false, () => captainWrite(carol, O, ["deck", { b: otherDeck, n: 8 }]));
   await setup("Bottle Bay hides the game's deck after a third report", () => ownerSet(`bottles/${goodDeck}`, deckFields(3, 12)));
-  await expect("A new game can't be dealt from a deck that reports have since hidden", false, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 8, at: serverTimestamp(), seats: [carol.key(O)] }]));
+  await expect("A new game can't be dealt from a deck that reports have since hidden", false, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 2, seed: 8, at: serverTimestamp(), seats: [carol.key(O)] }]));
   await expect("Putting the game away and picking another deck in one write is fine", true, () => captainWrite(carol, O, ["game", null, "deck", { b: otherDeck, n: 8 }]));
   await setup("age Carol's seen", () => ageSeen(carol, O, 1));
-  await expect("…and a game from that deck starts", true, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 1, seed: 9, at: serverTimestamp(), seats: [carol.key(O), erin.key(O)] }]));
+  await expect("…and a game from that deck starts", true, () => captainWrite(carol, O, ["game", { kind: "tidy", v: 2, seed: 9, at: serverTimestamp(), seats: [carol.key(O), erin.key(O)] }]));
 
   // ---- Pass the Bottle in the invite room, with field-path turns ----
   await setup("age Alice's seen", () => ageSeen(alice, A, 1));
@@ -404,7 +551,7 @@ async function studyRooms(nobody) {
   await expect("Gail (not aboard) can't read the room deck", false, () => getDoc(doc(gail.db, "rooms", A, "deck", "cards")));
   await setup("age Alice's seen", () => ageSeen(alice, A, 1));
   const seats = [alice.key(A), dave.key(A), carol.key(A)];
-  const bottle = (extra = {}) => ({ kind: "bottle", v: 1, seed: 99, at: serverTimestamp(), seats, n: 4, turn: 0, holder: seats[0], tAt: serverTimestamp(), card: 0, del: 0, buoys: 5, res: false, goal: 3, end: 0, ...extra });
+  const bottle = (extra = {}) => ({ kind: "bottle", v: 2, seed: 99, at: serverTimestamp(), seats, n: 4, turn: 0, holder: seats[0], tAt: serverTimestamp(), card: 0, del: 0, buoys: 5, res: false, goal: 3, end: 0, ...extra });
   await expect("A bottle game can't deal more cards than the deck holds", false, () => captainWrite(alice, A, ["game", bottle({ n: 5 })]));
   await expect("A bottle game's goal can't be more than the cards it deals", false, () => captainWrite(alice, A, ["game", bottle({ goal: 5 })]));
   await expect("Alice starts Pass the Bottle", true, () => captainWrite(alice, A, ["game", bottle()]));
@@ -413,11 +560,14 @@ async function studyRooms(nobody) {
   );
   await wait(2200);
   const gp = (f) => new FieldPath("game", f);
-  // A turn as lib/rooms.ts playTurn sends it: field paths under game.*, no read first.
-  const t = (u, ch) => { const args = [gp("tAt"), serverTimestamp()]; for (const [k, v] of Object.entries(ch)) args.push(gp(k), v); return updateDoc(doc(u.db, "rooms", A), ...args); };
+  // A turn as lib/rooms.ts playTurn sends it: field paths under game.*, no read first, naming the
+  // game's seed (unchanged, so not an affected key; a turn for another game is refused by it).
+  const t = (u, ch, seed = 99) => { const args = [gp("seed"), seed, gp("tAt"), serverTimestamp()]; for (const [k, v] of Object.entries(ch)) args.push(gp(k), v); return updateDoc(doc(u.db, "rooms", A), ...args); };
   await expect("Dave (not holder) can't take Alice's turn yet", false, () => t(dave, { turn: 1, holder: seats[1], card: 1, del: 1 }));
   await expect("Gail (not aboard) can't play", false, () => t(gail, { turn: 1, holder: seats[1], card: 1, del: 1 }));
+  await expect("A turn queued for an earlier game (another seed) can't land on this one", false, () => t(alice, { turn: 1, holder: seats[1], card: 1, del: 1 }, 98));
   await expect("A turn can't slip in another game field", false, () => t(alice, { turn: 1, holder: seats[1], card: 1, del: 1, goal: 1 }));
+  await expect("A turn can't deliver half a bottle (the game would be unreadable)", false, () => t(alice, { turn: 1, holder: seats[1], card: 0.5, del: 0.5 }));
   await expect("Alice delivers and passes the bottle to Dave (field-path update)", true, () => t(alice, { turn: 1, holder: seats[1], card: 1, del: 1 }));
   await expect("A second write of the same turn is refused (no transaction needed)", false, () => t(alice, { turn: 1, holder: seats[1], card: 1, del: 1 }));
   await wait(2200);
@@ -438,7 +588,10 @@ async function studyRooms(nobody) {
   await expect("Nobody joins while the skipper is gone", false, () => join(hank, A));
   await expect("Sweeping the stale skipper without handing on the hat is refused", false, () => removal(dave, A, alice.key(A), 0));
   await setup("age Carol's seen", () => ageSeen(carol, A, 1));
+  await expect("Once the room is over (skipper gone 25 min), nobody can take the hat", false, () => updateDoc(doc(carol.db, "rooms", A), "host", carol.key(A), mp(carol.key(A), "seen"), serverTimestamp()));
+  await setup("age Alice's seen to 16 min instead (quiet, not over)", () => age(`rooms/${A}`, `m.${alice.key(A)}.seen`, 16));
   await expect("Carol takes the hat (stamping her entry)", true, () => updateDoc(doc(carol.db, "rooms", A), "host", carol.key(A), mp(carol.key(A), "seen"), serverTimestamp()));
+  await setup("age Alice's seen by 30 min", () => age(`rooms/${A}`, `m.${alice.key(A)}.seen`, 30));
   await expect("Carol (skipper) sweeps away Alice, minutes banked", true, () => removal(carol, A, alice.key(A), 0));
   await setup("age Carol's seen", () => ageSeen(carol, A, 1));
   await expect("Carol refreshes the card's alive with her keep-alive", true, async () => {
@@ -449,22 +602,26 @@ async function studyRooms(nobody) {
   });
   await expect("A stranger can't set the card's alive to a made-up time", false, () => updateDoc(doc(gail.db, "roomCards", A), { alive: new Date() }));
   await setup("age Carol's seen by 30 min", () => age(`rooms/${A}`, `m.${carol.key(A)}.seen`, 30));
-  await expect("Gail (outside) clears the dead room, its deck and card in one batch", true, async () => {
+  await expect("Clearing it with its card deleted (rather than emptied for good) is refused", false, async () => {
     const b = writeBatch(gail.db);
     b.delete(doc(gail.db, "rooms", A, "deck", "cards"));
     b.delete(doc(gail.db, "rooms", A));
     b.delete(doc(gail.db, "roomCards", A));
     await b.commit();
-    for (const p of [`rooms/${A}`, `roomCards/${A}`, `rooms/${A}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
   });
+  await expect("Gail (outside) clears the dead room and its deck, emptying its card, in one batch", true, async () => {
+    await gone(gail, A);
+    for (const p of [`rooms/${A}`, `rooms/${A}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
+    if (JSON.stringify((await getDoc(doc(gail.db, "roomCards", A))).data()) !== JSON.stringify({ gone: true })) throw new Error("card not emptied");
+  });
+  await expect("A closed room's code can't be opened again (old links never lead into someone else's room)", false, async () => {
+    await ageStamp(gail);
+    await create(gail, A, "invite");
+  });
+  await expect("Nobody can delete its emptied card to free the code", false, () => deleteDoc(doc(gail.db, "roomCards", A)));
   await expect("Gail can't delete Dave's live room", false, () => deleteDoc(doc(gail.db, "rooms", D2)));
-  await expect("Dave, last one out, closes his room with its card and note", true, async () => {
-    const b = writeBatch(dave.db);
-    b.delete(doc(dave.db, "rooms", D2));
-    b.delete(doc(dave.db, "roomCards", D2));
-    b.delete(doc(dave.db, "users", dave.uid, "rooms", D2));
-    await b.commit();
-  });
+  await setup("Ann leaves Dave's room", async () => { await ageSeen(ann, D2, 1); await removal(ann, D2, ann.key(D2), 0); });
+  await expect("Dave, last one out, closes his room with its card and note", true, () => gone(dave, D2, { deck: false, note: true }));
   await expect("A private note needs a room-code id", false, () => setDoc(doc(dave.db, "users", dave.uid, "rooms", "lower123"), { at: serverTimestamp() }));
 
   // ---- Leaving by yourself ----
@@ -473,6 +630,7 @@ async function studyRooms(nobody) {
     await age(`rooms/${O}`, `m.${ivy.key(O)}.cr`, 3);
   });
   await expect("Ivy can't bank 10 extra minutes as she leaves after 3", false, () => removal(ivy, O, ivy.key(O), 10, { note: true }));
+  await expect("Ivy can't bank half a minute as she leaves (the room would be unreadable)", false, () => removal(ivy, O, ivy.key(O), 0.5));
   await expect("Ivy leaves, banking 2 minutes she hadn't written yet", true, () => removal(ivy, O, ivy.key(O), 2, { note: true }));
 
   // ---- Off switch, stamps, signed out ----
@@ -510,10 +668,58 @@ async function studyRooms(nobody) {
   await expect("Gail (not skipper) can't set sail", false, () => captainWrite(gail, P, ["sail", { at: serverTimestamp(), f: 25, b: 5, c: 2 }]));
   await expect("Gail can't take the hat while Hank is here", false, () => updateDoc(doc(gail.db, "rooms", P), "host", gail.key(P), mp(gail.key(P), "seen"), serverTimestamp()));
   await setup("age Hank's seen", () => ageSeen(hank, P, 1));
-  await expect("Hank passes the hat to Gail", true, () => captainWrite(hank, P, ["host", gail.key(P)]));
+  await expect("Passing the hat can't keep an open room on the list", false, () => captainWrite(hank, P, ["host", gail.key(P)]));
+  await expect("Hank passes the hat to Gail; the room leaves the list until she puts it back", true, () => captainWrite(hank, P, ["host", gail.key(P), "listed", false], { listed: false }));
   const P2 = roomCode("PEARL");
   await setup("age Hank's stamp", () => ageStamp(hank));
   await expect("Hank, no longer its skipper, can open another open room", true, () => create(hank, P2, "open"));
+
+  // ---- One listed open room per account, whoever holds the hat ----
+  await setup("age Gail's seen", () => ageSeen(gail, P, 1));
+  await expect("Gail can't put the room back on the list without naming it as her open room", false, () => claim(gail, P, ["listed", true], { stamp: false }));
+  await expect("Gail puts it back on the list, as her one open room", true, () => claim(gail, P, ["listed", true]));
+  await setup("Gail joins Hank's second open room", async () => { await ageJoinStamp(gail); await join(gail, P2); });
+  await expect("Hank can't leave his open room and keep it on the list", false, () => removal(hank, P2, hank.key(P2), 0, { extra: ["host", gail.key(P2)] }));
+  await expect("Hank leaves: the hat goes to Gail and the room leaves the list", true, () => removal(hank, P2, hank.key(P2), 0, { extra: ["host", gail.key(P2), "listed", false], cardExtra: { listed: false } }));
+  await setup("age Gail's seen in the second room", () => ageSeen(gail, P2, 1));
+  await expect("Gail can't list a second open room while she runs one (two accounts can't fill the list)", false, () => claim(gail, P2, ["listed", true]));
+  await expect("Gail can't take charge of it in her stamp either", false, () => updateDoc(stampRef(gail), { openIn: P2 }));
+
+  // ---- The card's alive keeps up with the skipper ----
+  await setup("age Gail's seen and the card's alive by 11 min", async () => { await ageSeen(gail, P, 1); await age(`roomCards/${P}`, "alive", 11); });
+  await expect("The skipper's own write is refused while the card says 11 minutes ago", false, () => own(gail, P, { st: 2 }));
+  await expect("…and goes with the card's alive refreshed", true, async () => {
+    const b = writeBatch(gail.db);
+    b.update(doc(gail.db, "rooms", P), mp(gail.key(P), "seen"), serverTimestamp(), mp(gail.key(P), "st"), 2);
+    b.update(doc(gail.db, "roomCards", P), { alive: serverTimestamp() });
+    await b.commit();
+  });
+
+  // ---- The crew takes the hat at 15 minutes, before the room counts as over at 25 ----
+  const hatWrite = (u, code, card, stamp) => {
+    const b = writeBatch(u.db);
+    if (stamp) b.update(stampRef(u), { openIn: code });
+    b.update(doc(u.db, "rooms", code), "host", u.key(code), mp(u.key(code), "seen"), serverTimestamp(), ...(card.listed === false ? ["listed", false] : []));
+    b.update(doc(u.db, "roomCards", code), { alive: serverTimestamp(), ...card });
+    return b.commit();
+  };
+  await setup("age Gail's seen by 10 min, Hank's by 1", async () => { await age(`rooms/${P}`, `m.${gail.key(P)}.seen`, 10); await ageSeen(hank, P, 1); });
+  await expect("Hank can't take the hat after 10 quiet minutes", false, () => hatWrite(hank, P, {}, true));
+  await setup("age Gail's seen by 16 min", () => age(`rooms/${P}`, `m.${gail.key(P)}.seen`, 16));
+  await expect("Nobody can clear a room whose skipper has been quiet only 16 minutes", false, () => gone(jay, P));
+  await expect("Hank can't take the hat and keep the room listed without naming it as his open room", false, () => hatWrite(hank, P, {}, false));
+  await expect("Hank takes the hat after 16 quiet minutes, keeping the room listed as his open room", true, () => hatWrite(hank, P, {}, true));
+
+  // ---- Reporting after leaving ----
+  await setup("age Gail's seen", () => ageSeen(gail, P, 1));
+  await expect("Gail leaves Hank's room (her private note stays)", true, () => removal(gail, P, gail.key(P), 0));
+  await expect("Gail, who left, can still report the room", true, () => report(gail, P, "off", true));
+  // Coming back after leaving: the note she kept can't be rewritten (only made), so the app's join leaves it out.
+  await setup("age Gail's join stamp", () => ageJoinStamp(gail));
+  await expect("Gail can't rejoin with a batch that rewrites her kept note", false, () => join(gail, P));
+  await expect("Gail rejoins with the app's batch (her kept note left as it is)", true, () => join(gail, P, { note: false }));
+  await expect("A private note can't be made for a room you're not aboard", false, () => setDoc(doc(jay.db, "users", jay.uid, "rooms", P), { at: serverTimestamp() }));
+  await expect("Jay (never aboard) still can't report it", false, () => report(jay, P, "spam", true));
   await setup("age Jay's join stamp and seen", async () => { await ageJoinStamp(jay); await ageSeen(jay, J, 1); });
   await expect("Jay can't list his invite room", false, () => captainWrite(jay, J, ["listed", true], { listed: true }));
 
@@ -525,20 +731,10 @@ async function studyRooms(nobody) {
     await b.commit();
   });
   await expect("The skipper can't delete a room and keep its card (a ghost on the open list)", false, () => deleteDoc(doc(jay.db, "rooms", J)));
-  await expect("…or delete it with its card but not its deck", false, async () => {
-    const b = writeBatch(jay.db);
-    b.delete(doc(jay.db, "rooms", J));
-    b.delete(doc(jay.db, "roomCards", J));
-    await b.commit();
-  });
-  await expect("Jay closes his room with its card, deck and note", true, async () => {
-    const b = writeBatch(jay.db);
-    b.delete(doc(jay.db, "rooms", J, "deck", "cards"));
-    b.delete(doc(jay.db, "rooms", J));
-    b.delete(doc(jay.db, "roomCards", J));
-    b.delete(doc(jay.db, "users", jay.uid, "rooms", J));
-    await b.commit();
-    for (const p of [`rooms/${J}`, `roomCards/${J}`, `rooms/${J}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
+  await expect("…or delete it with its card emptied but not its deck", false, () => gone(jay, J, { deck: false }));
+  await expect("Jay closes his room with its deck and note, its card emptied for good", true, async () => {
+    await gone(jay, J, { note: true });
+    for (const p of [`rooms/${J}`, `rooms/${J}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
   });
   const G = roomCode("GHST");
   await setup("leave a card and a deck whose room is gone (as an older app could)", async () => {
@@ -547,18 +743,49 @@ async function studyRooms(nobody) {
     await ownerSet(`rooms/${G}/deck/cards`, { cards: { arrayValue: { values: [] } } });
   });
   await expect("Anyone clears a leftover card and deck with the app's tidy-up batch", true, async () => {
-    const b = writeBatch(gail.db);
-    b.delete(doc(gail.db, "rooms", G, "deck", "cards"));
-    b.delete(doc(gail.db, "rooms", G));
-    b.delete(doc(gail.db, "roomCards", G));
-    await b.commit();
-    for (const p of [`roomCards/${G}`, `rooms/${G}/deck/cards`]) if (await ownerExists(p)) throw new Error(p + " is still there");
+    await gone(gail, G);
+    if (await ownerExists(`rooms/${G}/deck/cards`)) throw new Error("deck is still there");
+    if ((await openList(gail)).docs.some((d) => d.id === G)) throw new Error("the leftover card is still on the list");
   });
 
   const dump = JSON.stringify(await ownerGet(`rooms/${O}`)) + JSON.stringify(await ownerGet(`roomCards/${O}`)) + JSON.stringify(await ownerGet(`rooms/${P}`));
   await expect("No account id or email appears in any room or card document", true, async () => {
     for (const u of crew) if (dump.includes(u.uid) || dump.includes(`${u.name}.${run}`)) throw new Error("found " + u.name);
   });
+
+  // ---- Over is final: one account can't keep an old open room alive beside a new one ----
+  const R1 = roomCode("REVV"), R2 = roomCode("REVV"), R3 = roomCode("REVV");
+  await expect("Lena opens an open room", true, () => create(lena, R1, "open"));
+  await setup("Mo joins it", () => join(mo, R1));
+  await setup("Lena goes quiet 26 minutes; her open cooldown is over", async () => {
+    await age(`rooms/${R1}`, `m.${lena.key(R1)}.seen`, 26);
+    await ageStamp(lena);
+  });
+  // The revive write: Lena's own entry in R1, with the card's alive refreshed (cardFresh).
+  const revive = (b) => {
+    b.update(doc(lena.db, "rooms", R1), mp(lena.key(R1), "seen"), serverTimestamp());
+    b.update(doc(lena.db, "roomCards", R1), { alive: serverTimestamp() });
+  };
+  await expect("Lena can't open a new open room and revive the old one in one batch", false, async () => {
+    const b = writeBatch(lena.db);
+    b.update(stampRef(lena), openStamp(R2, "open"));
+    b.set(doc(lena.db, "users", lena.uid, "rooms", R2), { at: serverTimestamp() });
+    b.set(doc(lena.db, "rooms", R2), roomData(lena, R2, "open"));
+    b.set(doc(lena.db, "roomCards", R2), cardData("open"));
+    revive(b);
+    await b.commit();
+  });
+  await expect("Lena opens a new open room once the old one is over", true, () => create(lena, R2, "open"));
+  await expect("…and can't revive the old one afterwards", false, async () => { const b = writeBatch(lena.db); revive(b); await b.commit(); });
+  await expect("…not even its card's alive on its own", false, () => updateDoc(doc(lena.db, "roomCards", R1), { alive: serverTimestamp() }));
+  await setup("age Mo's seen", () => ageSeen(mo, R1, 1));
+  await expect("Mo can't take the hat of the room that's over", false, () => hatWrite(mo, R1, {}, true));
+  await expect("…nor write his own entry there", false, () => own(mo, R1, { st: 1 }));
+  await expect("…nor leave it by himself (it can only be cleared)", false, () => removal(mo, R1, mo.key(R1), 0));
+  await expect("Mo can still report the room that's over", true, () => report(mo, R1, "spam", true));
+  await setup("age Lena's stamp again", () => ageStamp(lena));
+  await expect("With R1 over and R2 hers, Lena still can't open a third open room", false, () => create(lena, R3, "open"));
+  await expect("Mo clears the room that's over, with its deck and his note, its card emptied", true, () => gone(mo, R1, { note: true }));
 
   // ---- Account deletion (lib/cloudSync.ts deleteCloudData) takes back a sailor's bottles ----
   // Each bottle (and its deck cards) costs one lookup of the sharer's private note, and a batch
@@ -575,20 +802,21 @@ async function studyRooms(nobody) {
     const b = writeBatch(u.db);
     for (const id of some) {
       b.delete(doc(u.db, "bottles", id, "deck", "cards"));
-      b.delete(doc(u.db, "bottles", id));
+      b.set(doc(u.db, "bottles", id), { gone: true });
     }
     await b.commit();
   };
   await expect("Account deletion can't take back 21 bottles in one batch (over the lookup limit)", false, () => takeBack(kim, ids.slice(0, 21)));
   await expect("It takes back 25 bottles in batches of 10, 10 and 5", true, async () => {
     for (let i = 0; i < ids.length; i += 10) await takeBack(kim, ids.slice(i, i + 10));
-    for (const id of ids) if (await ownerExists(`bottles/${id}`)) throw new Error("bottle still there");
+    for (const id of ids) if (JSON.stringify((await ownerGet(`bottles/${id}`)).fields) !== JSON.stringify({ gone: { booleanValue: true } })) throw new Error("bottle not emptied");
+    for (const id of ids) if (await ownerExists(`bottles/${id}/deck/cards`)) throw new Error("cards still there");
   });
 
   // Leave the emulator as it was found: rooms switched on, and no rooms of this run on the list.
   await ownerDelete("config/rooms");
-  for (const c of [O, P, P2, J]) for (const p of [`rooms/${c}/deck/cards`, `rooms/${c}`, `roomCards/${c}`]) await ownerDelete(p);
-  for (const id of [hiddenDeck, goodDeck, otherDeck]) await ownerDelete(`bottles/${id}`);
+  for (const c of [O, P, P2, J, A, D2, R1, R2, R3, G]) for (const p of [`rooms/${c}/deck/cards`, `rooms/${c}`, `roomCards/${c}`]) await ownerDelete(p);
+  for (const id of [hiddenDeck, goodDeck, otherDeck, goneDeck]) await ownerDelete(`bottles/${id}`);
 }
 
 (async () => {

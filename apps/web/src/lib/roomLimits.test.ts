@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { NICK_NUMBER_SKIP, ROOM_ACCESSORIES, ROOM_CHEERS, ROOM_CODE_ALPHABET, ROOM_COSTUMES, ROOM_LIMITS, ROOM_REPORT_REASONS, STICKER_IDS } from "@ship/shared-types";
+import { NICK_NUMBER_SKIP, ROOM_ACCESSORIES, ROOM_CHEERS, ROOM_CODE_ALPHABET, ROOM_COSTUMES, ROOM_GAME_ENGINE, ROOM_LIMITS, ROOM_REPORT_REASONS, STICKER_IDS } from "@ship/shared-types";
 
 // The drift guard. firestore.rules can't import ROOM_LIMITS, so its numbers are copied by hand;
 // these tests read the rules file and fail when a number in it no longer matches the app's.
@@ -14,12 +14,15 @@ const IN_RULES: Record<string, string[]> = {
   size: [`n.m.size() <= ${L.size}`, `n.game.seats.size() <= ${L.size}`],
   codeLength: [`roomId.matches('[A-HJ-NP-Z2-9]{${L.codeLength}}')`, `docId.matches('[A-HJ-NP-Z2-9]{${L.codeLength}}')`],
   writeGapSeconds: [`o.seen + duration.value(${L.writeGapSeconds}, 's')`],
-  staleMinutes: [`staleAt(o.m[o.host].seen, ${L.staleMinutes})`, `staleAt(o.m[gone].seen, ${L.staleMinutes})`, `staleAt(d.m[d.host].seen, ${L.staleMinutes})`],
+  staleMinutes: [`!staleAt(o.m[o.host].seen, ${L.staleMinutes})`, `staleAt(o.m[gone].seen, ${L.staleMinutes})`, `staleAt(d.m[d.host].seen, ${L.staleMinutes})`],
+  hatMinutes: [`(!(o.host in o.m) || staleAt(o.m[o.host].seen, ${L.hatMinutes}))`],
+  cardFreshMinutes: [`!staleAt(getAfter(cardAt(roomId)).data.alive, ${L.cardFreshMinutes})`],
   lifetimeHours: [`o.at + duration.value(${L.lifetimeHours}, 'h')`, `d.at + duration.value(${L.lifetimeHours}, 'h')`],
   createCooldownSeconds: [`stampTime('madeAt', ${L.createCooldownSeconds})`, `stampDue('madeAt', ${L.createCooldownSeconds})`],
   joinCooldownSeconds: [`stampTime('joinedAt', ${L.joinCooldownSeconds})`, `stampDue('joinedAt', ${L.joinCooldownSeconds})`],
   listPage: [`request.query.limit <= ${L.listPage}`],
-  hideAtReports: [`n.rep.size() < ${L.hideAtReports}`, `o.rep.size() < ${L.hideAtReports}`],
+  hideAtReports: [`n.strikes < ${L.hideAtReports}`, `o.strikes < ${L.hideAtReports}`],
+  reportStakeMinutes: [`staleAt(o.m[k].in, ${L.reportStakeMinutes})`, `.in + duration.value(${L.reportStakeMinutes}, 'm')`],
   maxBans: [`n.ban.size() <= ${L.maxBans}`],
   maxReports: [`n.rep.size() <= ${L.maxReports}`],
   wordList: [`x.n[0] < ${L.wordList}`, `x.n[1] < ${L.wordList}`, `d.name[0] < ${L.wordList}`, `d.name[1] < ${L.wordList}`],
@@ -85,6 +88,11 @@ describe("firestore.rules agrees with the room lists", () => {
     expect(rules).toContain(`!(x.n[2] in [${NICK_NUMBER_SKIP.join(", ")}])`);
   });
 
+  it("takes only games dealt by this version of the dealing", () => {
+    expect(rules).toContain(`n.game.v == ${ROOM_GAME_ENGINE} &&`);
+    expect(rules.match(/n\.game\.v ==/g)?.length).toBe(1);
+  });
+
   it("allows one `say` per cheer and sticker", () => {
     expect(rules).toContain(`x.say >= -1 && x.say < ${ROOM_CHEERS.length + STICKER_IDS.length}`);
   });
@@ -116,5 +124,14 @@ describe("firestore.rules agrees with the room lists", () => {
     expect(accepted.sort()).toEqual([...ROOM_CODE_ALPHABET].sort());
     expect(code.test("A".repeat(L.codeLength - 1))).toBe(false);
     expect(code.test("A".repeat(L.codeLength + 1))).toBe(false);
+  });
+});
+
+describe("firestore.rules agrees with Bottle Bay's limits", () => {
+  it("holds the same report cooldown and hides at the same report count", async () => {
+    const { BOTTLE_LIMITS } = await import("@ship/shared-types");
+    expect(rules).toContain(`request.time > resource.data.at + duration.value(${BOTTLE_LIMITS.reportCooldownSeconds}, 's')`);
+    expect(rules).toContain(`request.time < resource.data.at + duration.value(${BOTTLE_LIMITS.reportCooldownSeconds}, 's')`);
+    expect(rules).toContain(`request.resource.data.hidden == (request.resource.data.reports >= ${BOTTLE_LIMITS.hideAtReports})`);
   });
 });

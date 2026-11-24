@@ -11,7 +11,7 @@ import { bottleOrder, bottleQuestion, gradeTypedAnswer } from "@ship/active-reca
 import type { PracticeCard } from "@ship/active-recall-engine";
 import { ROOM_LIMITS } from "@ship/shared-types";
 import type { BottleGame, Room } from "@ship/shared-types";
-import { bottleOver, canTakeHelm, nickText } from "../../../lib/roomRules.js";
+import { bottleOver, canTakeHelm, memberName } from "../../../lib/roomRules.js";
 import type { BottleOutcome } from "../../../lib/roomRules.js";
 import { useRooms } from "../../../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../../../stores/settingsStore.js";
@@ -78,7 +78,7 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
   const iHold = game.holder === myKey;
   const seated = game.seats.includes(myKey);
   const holder = room.members.find((m) => m.key === game.holder) ?? null;
-  const holderName = holder ? nickText(holder.nick) : "A sailor who left";
+  const holderName = holder ? memberName(room, holder.key) : "A sailor who left";
 
   // When a turn lands, everyone sees what happened to the last card, and its answer.
   const seen = useRef<BottleGame | null>(null);
@@ -160,8 +160,8 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
   } else if (over !== 0) {
     body =
       over === 1 ? (
-        <div className="grid justify-items-center gap-2 rounded-2xl border border-[#F1E3A0] bg-[#FFF9DC] px-4 py-5 text-center text-[#4B3A0B]">
-          <DieCutSticker id="plane-pwedo" size={72} />
+        <div className="grid justify-items-center gap-2 rounded-2xl border border-[#F1E3A0] bg-[#FFF9DC] px-4 py-5 text-center text-[#4B3A0B] [--ring:currentColor]">
+          <DieCutSticker id="plane-pwedo" size={72} pop={!reduced} />
           <p className="font-display text-2xl">Island reached!</p>
           <p className="text-sm">
             The crew delivered {plural(game.delivered, "bottle", "bottles")}, with {plural(game.buoys, "lifebuoy", "lifebuoys")} to spare.
@@ -169,7 +169,7 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
           {endExtra}
         </div>
       ) : (
-        <div className="grid justify-items-center gap-2 rounded-2xl border border-[#B2C8E0] bg-[#E6F2FA] px-4 py-5 text-center text-[#2F4F6B]">
+        <div className="grid justify-items-center gap-2 rounded-2xl border border-[#B2C8E0] bg-[#E6F2FA] px-4 py-5 text-center text-[#2F4F6B] [--ring:currentColor]">
           <PastelMinionBadge costume="bunny" size={64} />
           <p className="font-display text-xl">The tide turned: {plural(game.delivered, "bottle", "bottles")} delivered! Try again?</p>
           <p className="text-sm">{game.buoys === 0 ? "Lumi ran out of lifebuoys." : game.turn >= ROOM_LIMITS.bottle.maxTurns ? "That was the longest voyage a bottle can take." : "The deck ran out of cards."}</p>
@@ -182,7 +182,7 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
     body = (
       <div className="space-y-2">
         {game.rescue && (
-          <p className="flex items-center gap-2 rounded-2xl border border-[#DCCCF0] bg-[#F3ECFB] px-2.5 py-1.5 text-sm text-[#56406A]">
+          <p className="flex items-center gap-2 rounded-2xl border border-[#DCCCF0] bg-[#F3ECFB] px-2.5 py-1.5 text-sm text-[#56406A] [--ring:currentColor]">
             <PastelMinionBadge costume="bunny" size={30} />
             Rescue! Lumi threw a lifebuoy: a second try at this card, with the choices shuffled.
           </p>
@@ -190,7 +190,7 @@ export function PassTheBottle({ room, game, myKey, deck, endExtra }: BottleProps
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3.5 py-3">
             <p className="text-xs tracking-wide text-[var(--muted-ink)] uppercase">{iHold ? (question.kind === "choice" ? "Your turn: pick the answer" : "Your turn: type the answer") : `${holderName} is answering…`}</p>
-            <p className="mt-1 font-display text-lg leading-snug whitespace-pre-wrap">{question.card.front}</p>
+            <p className="mt-1 font-display text-lg leading-snug whitespace-pre-wrap wrap-anywhere">{question.card.front}</p>
           </div>
           <SandRing left={deadline - now} />
         </div>
@@ -322,10 +322,10 @@ function RevealCard({ reveal, reduced }: { reveal: Reveal; reduced: boolean }) {
       <p className="font-display text-xl">{w.title}</p>
       <p className="text-sm">{w.line}</p>
       {reveal.kind === "rescue" ? (
-        <p className="mt-1 max-w-md text-sm opacity-80">The answer stays hidden until the rescue is over.</p>
+        <p className="mt-1 max-w-md text-sm opacity-90">The answer stays hidden until the rescue is over.</p>
       ) : (
         <p className="mt-1 max-w-md text-sm">
-          <span className="opacity-80">{reveal.front}</span>
+          <span className="opacity-90">{reveal.front}</span>
           <span aria-hidden="true"> · </span>
           <span className="font-display">{reveal.answer}</span>
         </p>
@@ -341,10 +341,10 @@ function Seats({ room, game, myKey }: { room: Room; game: BottleGame; myKey: str
       {game.seats.map((k) => {
         const m = room.members.find((x) => x.key === k);
         const holds = k === game.holder;
-        const name = m ? `${nickText(m.nick)}${k === myKey ? " (you)" : ""}` : "Left the room";
+        const name = m ? `${memberName(room, k)}${k === myKey ? " (you)" : ""}` : "Left the room";
         return (
-          <li key={k} className={cx("relative flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs", holds ? "bg-[#FFF9DC] text-[#4B3A0B] ring-2 ring-[#E8C64A]" : "bg-[var(--surface-2)] text-[var(--muted-ink)]", !m && "opacity-50")}>
-            {m ? <PastelMinionBadge costume={costumeOf(m.costume)} accessory={accessoryOf(m.accessory)} size={26} /> : <span className="size-[26px]" aria-hidden="true" />}
+          <li key={k} className={cx("relative flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs", holds ? "bg-[#FFF9DC] text-[#4B3A0B] ring-2 ring-[#E8C64A]" : m ? "bg-[var(--surface-2)] text-[var(--muted-ink)]" : "border border-dashed border-[var(--border-subtle)] text-[var(--muted-ink)]")}>
+            {m ? <PastelMinionBadge costume={costumeOf(m.costume)} accessory={accessoryOf(m.accessory)} size={26} /> : <span className="size-[26px] rounded-full border border-dashed border-[var(--border-subtle)]" aria-hidden="true" />}
             <span>{name}</span>
             {holds && <span className="sr-only">(has the bottle)</span>}
           </li>

@@ -9,7 +9,7 @@ import { useRooms } from "../../stores/roomStore.js";
 import { IconRefresh } from "../icons.js";
 import { cx } from "../ui.js";
 import { LookPicker } from "./LookPicker.js";
-import { PAPER_CARD, ROOM_FOCUS_RING, YELLOW_BUTTON, chipClass, roomAction, roomPastel } from "./roomStyle.js";
+import { HELD, PAPER_CARD, ROOM_FOCUS_RING, YELLOW_BUTTON, chipClass, heldButton, roomAction, roomPastel } from "./roomStyle.js";
 
 const MODES: { id: RoomMode; title: string; line: string }[] = [
   { id: "invite", title: "Invite only", line: "friends with the link" },
@@ -57,7 +57,7 @@ export function StartRoom({ look, onLook, onRules }: { look: RoomLook; onLook: (
                   )}
                 >
                   <span className="block font-display text-base">{m.title}</span>
-                  <span className="block text-xs opacity-80">{m.line}</span>
+                  <span className="block text-xs opacity-90">{m.line}</span>
                 </button>
               );
             })}
@@ -91,8 +91,8 @@ export function StartRoom({ look, onLook, onRules }: { look: RoomLook; onLook: (
       </div>
 
       <div className="space-y-3 lg:sticky lg:top-0 lg:self-start">
-        <div className="rounded-2xl border px-4 py-4" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
-          <p className="text-xs tracking-[0.18em] uppercase opacity-80">Your room</p>
+        <div className="rounded-2xl border px-4 py-4 [--ring:currentColor]" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
+          <p className="text-xs tracking-[0.18em] uppercase opacity-90">Your room</p>
           <div className="mt-1 flex items-center gap-2">
             <p className="min-w-0 flex-1 font-display text-2xl leading-tight">{roomNameText(name)}</p>
             <button
@@ -108,12 +108,16 @@ export function StartRoom({ look, onLook, onRules }: { look: RoomLook; onLook: (
           <p className="mt-1 text-sm opacity-85">
             {ROOM_SUBJECTS[subject]} <span aria-hidden="true">·</span> {mode === "open" ? "Open room" : "Invite room"}
           </p>
-          <p className="mt-2 text-xs opacity-80">Room names are made up, so nobody types anything others see. The room ends after 12 hours.</p>
+          <p className="mt-2 text-xs opacity-90">Room names are made up, so nobody types anything others see. The room ends after 12 hours.</p>
         </div>
-        <button type="button" disabled={busy} onClick={() => void open()} className={cx(YELLOW_BUTTON, "w-full py-2.5 font-display text-base font-normal")}>
+        <button type="button" {...heldButton(busy, () => void open())} className={cx(YELLOW_BUTTON, HELD, "w-full py-2.5 font-display text-base font-normal")}>
           {busy ? "Opening the room…" : "Open the room"}
         </button>
-        {error && <p className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">
+            {error}
+          </p>
+        )}
         <div className={cx(PAPER_CARD, "px-3 py-2.5 text-xs text-[var(--muted-ink)]")}>
           You'll be the <strong className="font-normal text-[var(--page-ink)]">Skipper</strong>: you can set sail for the crew, lock the door, ask someone to leave, and close the room.
         </div>

@@ -5,6 +5,7 @@ import {
   beginShoreLeave,
   blockEndsAt,
   dayKey,
+  focusEndsAt,
   focusProgress,
   focusedMs,
   fruitForVoyage,
@@ -94,5 +95,16 @@ describe("streaks and stats", () => {
 
   it("uses local calendar days", () => {
     expect(dayKey(new Date(2026, 0, 5, 23, 59).getTime())).toBe("2026-01-05");
+  });
+});
+
+describe("focusEndsAt", () => {
+  it("is the planned end of the running block, counting time banked before a pause, and null while paused", () => {
+    const c = startVoyage("custom", 25, 5, 1000);
+    expect(focusEndsAt(c)).toBe(1000 + 25 * MINUTE_MS);
+    const paused = pause(c, "manual", 1000 + 10 * MINUTE_MS);
+    expect(focusEndsAt(paused)).toBeNull();
+    const back = resume(paused, 1000 + 30 * MINUTE_MS);
+    expect(focusEndsAt(back)).toBe(1000 + 45 * MINUTE_MS);
   });
 });

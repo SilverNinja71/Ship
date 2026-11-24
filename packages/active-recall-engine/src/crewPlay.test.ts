@@ -146,3 +146,37 @@ describe("Tidy the Deck", () => {
     expect(tidyPatches(blanks, 3, 2)).toEqual([]);
   });
 });
+
+describe("decks with reversed cards", () => {
+  // Four biology cards, and each the other way round ("Also add it the other way round").
+  const forward = [
+    card("0", "Powerhouse of the cell", "Mitochondria"),
+    card("1", "Protein maker", "Ribosome"),
+    card("2", "Storage", "Vacuole"),
+    card("3", "Holds DNA", "Nucleus"),
+  ];
+  const reversed = forward.map((c) => card(`${c.id}r`, c.back, c.front));
+  const deck = [...forward, ...reversed];
+
+  it("never deals two tiles that read the same in Tidy the Deck", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      for (const patch of tidyPatches(deck, seed, 2)) {
+        const texts = patch.map((t) => normalize(t.text));
+        expect(new Set(texts).size).toBe(texts.length);
+      }
+    }
+    // One card of each pair is kept, so the deck still makes a board.
+    expect(tidyPatches(deck, 1, 1)).toHaveLength(1);
+    expect(tidyPatches(deck, 1, 1)[0]).toHaveLength(8);
+  });
+
+  it("never offers the question's own words as a wrong answer in Pass the Bottle", () => {
+    const order = bottleOrder(deck.length, 4);
+    for (let i = 0; i < deck.length; i++) {
+      for (let turn = 0; turn < 5; turn++) {
+        const q = bottleQuestion(deck, order, i, 4, turn);
+        if (q.kind === "choice") expect(q.options.map(normalize)).not.toContain(normalize(q.card.front));
+      }
+    }
+  });
+});

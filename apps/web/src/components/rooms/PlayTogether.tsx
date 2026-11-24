@@ -9,7 +9,7 @@ import { tidyPatches } from "@ship/active-recall-engine";
 import type { PracticeCard } from "@ship/active-recall-engine";
 import { ROOM_LIMITS, newReviewSchedule } from "@ship/shared-types";
 import type { DeckSource, Room, RoomGame } from "@ship/shared-types";
-import { DECK_HIDDEN_TEXT, bottleOver, cardTextId, gameSeats, roomNameText, roomStateFor, subjectText, tidyStatus } from "../../lib/roomRules.js";
+import { DECK_HIDDEN_TEXT, bottleOver, cardTextId, gameSeats, roomNameText, roomRecordId, roomStateFor, subjectText, tidyStatus } from "../../lib/roomRules.js";
 import type { TidyMemo } from "../../lib/roomRules.js";
 import { useRecall } from "../../stores/recallStore.js";
 import { gameDeck, useRooms } from "../../stores/roomStore.js";
@@ -21,7 +21,7 @@ import { cx } from "../ui.js";
 import { DeckPicker, bottleInfo, knownBottleTitle } from "./DeckPicker.js";
 import { PassTheBottle } from "./games/PassTheBottle.js";
 import { TidyTheDeck } from "./games/TidyTheDeck.js";
-import { PAPER_CARD, QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, skipperAction, useTicker } from "./roomStyle.js";
+import { CatchFocus, HELD, PAPER_CARD, QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, heldButton, skipperAction, useReturnFocus, useTicker } from "./roomStyle.js";
 
 type GameKind = RoomGame["kind"];
 
@@ -125,6 +125,9 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
   const [busy, setBusy] = useState<"tidy" | "bottle" | "end" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const area = useRef<HTMLDivElement>(null);
+  // Closing the deck picker (a deck used, or Close) gives the keyboard back to "Change deck".
+  const deckButton = useRef<HTMLButtonElement>(null);
+  useReturnFocus(picking, deckButton);
 
   const over = game ? gameOver(room, game, deck, now, tidyMemo) : false;
   const live = game !== null && !over;
@@ -137,6 +140,12 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
   useEffect(() => {
     if (game && deckCards) void useRooms.getState().loadDeck();
   }, [game?.seed, deckBottle, deckCards]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The game is in front of this sailor now: the banner won't call them to it ("is starting").
+  const shown = game !== null && hidden !== game.seed;
+  useEffect(() => {
+    if (shown && game) useRooms.getState().seenGame(game.seed);
+  }, [shown, game?.seed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A new game you're seated in comes into view by itself once.
   useEffect(() => {
@@ -182,7 +191,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
   const deckLabel = room.deck
     ? `${room.deck.bottleId ? (knownBottleTitle(room.deck.bottleId) ?? "A Bottle Bay deck") : "The skipper's own deck"} · ${room.deck.cards} cards`
     : "None yet";
-  const keep = <KeepCards room={room} deck={deck} />;
+  const keep = <KeepCards room={room} myKey={myKey} deck={deck} />;
 
   return (
     <section aria-label="Play together" className={cx(PAPER_CARD, "px-4 py-3.5")}>
@@ -198,7 +207,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
         <span className="text-xs tracking-[0.18em] text-[var(--muted-ink)] uppercase">Deck</span>
         <span>{deckLabel}</span>
         {iSkipper && !game && !picking && (
-          <button type="button" disabled={busy !== null} onClick={() => setPicking(true)} className={QUIET_BUTTON}>
+          <button ref={deckButton} type="button" {...heldButton(busy !== null, () => setPicking(true))} className={cx(QUIET_BUTTON, HELD)}>
             {room.deck ? "Change deck" : "Pick a deck"}
           </button>
         )}
@@ -211,12 +220,12 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
           const isThis = game?.kind === g.kind;
           const open = isThis && game !== null && hidden !== game.seed;
           return (
-            <li key={g.kind} className="flex flex-col gap-2 rounded-2xl border px-3.5 py-3" style={{ background: g.fill, borderColor: g.border, color: g.ink }}>
+            <li key={g.kind} className="flex flex-col gap-2 rounded-2xl border px-3.5 py-3 [--ring:currentColor]" style={{ background: g.fill, borderColor: g.border, color: g.ink }}>
               <div className="flex items-center gap-2.5">
                 <PastelMinionBadge costume={g.costume} size={44} />
                 <div className="min-w-0 flex-1">
                   <p className="font-display text-lg leading-tight">{g.title}</p>
-                  <p className="text-xs opacity-80">
+                  <p className="text-xs opacity-90">
                     {g.time} <span aria-hidden="true">·</span> {g.host}
                   </p>
                 </div>
@@ -225,7 +234,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
               <p className="text-sm">{g.blurb}</p>
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
                 {iSkipper && !(isThis && live) && (
-                  <button type="button" disabled={!!startProblem || live || busy !== null || sending} onClick={() => void start(g.kind)} className={cx(YELLOW_BUTTON, "text-sm")}>
+                  <button type="button" disabled={!!startProblem || live} {...heldButton(busy !== null || sending, () => void start(g.kind))} className={cx(YELLOW_BUTTON, HELD, "text-sm")}>
                     {busy === g.kind ? "Starting…" : isThis ? "Play again" : "Start"}
                   </button>
                 )}
@@ -257,7 +266,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
         </p>
       )}
       {game && !deck && deckProblem && (
-        <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-1.5 text-sm text-[#8A3B31]">
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-1.5 text-sm text-[#8A3B31] [--ring:currentColor]">
           <span className="min-w-0 flex-1">{deckHidden ? deckProblem : `Couldn't fetch the game's cards. ${deckProblem}`}</span>
           {!deckHidden && (
             <button type="button" onClick={() => void useRooms.getState().loadDeck()} className="shrink-0 rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-semibold hover:bg-white">
@@ -267,7 +276,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
         </div>
       )}
 
-      {game && hidden !== game.seed && (
+      {game && shown && (
         <div ref={area} tabIndex={-1} aria-label={game.kind === "tidy" ? "Tidy the Deck" : "Pass the Bottle"} className="mt-3 scroll-mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3.5 outline-none">
           {game.kind === "tidy" ? (
             <TidyTheDeck key={game.seed} room={room} game={game} myKey={myKey} deck={deck} endExtra={keep} />
@@ -276,7 +285,7 @@ function Games({ room, myKey, deck, now }: { room: Room; myKey: string; deck: Pr
           )}
           {iSkipper && (
             <div className="mt-3 flex justify-end border-t border-dashed border-[var(--border-subtle)] pt-2.5">
-              <button type="button" disabled={busy !== null} onClick={() => void end()} className={QUIET_BUTTON}>
+              <button type="button" {...heldButton(busy !== null, () => void end())} className={cx(QUIET_BUTTON, HELD)}>
                 {busy === "end" ? "Putting it away…" : over ? "Put the game away" : "End game"}
               </button>
             </div>
@@ -292,11 +301,12 @@ const pairKey = (front: string, back: string) => `${front.trim()}\u0000${back.tr
 /**
  * "Keep these cards": adds the game's cards to this sailor's flashcards. A Bottle Bay deck keeps
  * Bottle Bay's ids (bottle:<id>), and one hidden after reports can't be kept. A skipper's own
- * decks go into one deck per room (room:<code>:<at>), each card named by its two sides, so a
- * second deck played in the same room adds its own cards. Cards already there are left exactly
- * as they are, so no review progress is ever reset.
+ * decks go into one deck per room (roomRecordId: never the room code, which would work as an
+ * invite key in a backup), each card named by its two sides, so a second deck played in the same
+ * room adds its own cards. Cards already there are left exactly as they are, so no review
+ * progress is ever reset.
  */
-function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) {
+function KeepCards({ room, myKey, deck }: { room: Room; myKey: string; deck: PracticeCard[] | null }) {
   const cards = useRecall((s) => s.cards);
   const hidden = useRooms((s) => s.deckProblem === DECK_HIDDEN_TEXT);
   const [busy, setBusy] = useState(false);
@@ -308,8 +318,9 @@ function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) 
   }, [cards, deck]);
   const ref = room.deck;
   if (!ref || !deck?.length) return null;
-  if (hidden || refused) return <p className="text-xs opacity-80">Bottle Bay hid this deck after reports, so its cards can't be kept.</p>;
-  if (!fresh.length) return <p className="text-xs opacity-80">These cards are already in your flashcards.</p>;
+  // Each of these replaces the Keep button once it's pressed, so it takes the focus the button had.
+  if (hidden || refused) return <CatchFocus className="text-xs opacity-90">Bottle Bay hid this deck after reports, so its cards can't be kept.</CatchFocus>;
+  if (!fresh.length) return <CatchFocus className="text-xs opacity-90">These cards are already in your flashcards.</CatchFocus>;
 
   const keep = async () => {
     setBusy(true);
@@ -340,7 +351,7 @@ function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) 
         subject = info.subject || roomSubject;
       }
     } else {
-      deckId = `room:${room.code}:${room.at}`;
+      deckId = roomRecordId(myKey, room.at);
     }
     const recall = useRecall.getState();
     const ids = new Set(recall.cards.map((c) => c.id));
@@ -358,10 +369,10 @@ function KeepCards({ room, deck }: { room: Room; deck: PracticeCard[] | null }) 
 
   return (
     <div className="grid justify-items-center gap-1">
-      <button type="button" disabled={busy} onClick={() => void keep()} className={cx(SEAFOAM_BUTTON, "text-sm")}>
+      <button type="button" {...heldButton(busy, () => void keep())} className={cx(SEAFOAM_BUTTON, HELD, "text-sm")}>
         {busy ? "Keeping…" : `Keep these cards (${fresh.length})`}
       </button>
-      <p className="text-xs opacity-80">They start fresh in your Flashcards, ready to review.</p>
+      <p className="text-xs opacity-90">They start fresh in your Flashcards, ready to review.</p>
     </div>
   );
 }

@@ -16,7 +16,11 @@ import {
   formatCode,
   gameSeats,
   inviteLink,
+  hasTwin,
+  isRoomOver,
   isSkipperGone,
+  isSkipperQuiet,
+  memberName,
   joinProblem,
   listView,
   listedAfterReport,
@@ -34,6 +38,11 @@ import {
   nickText,
   normalizeCode,
   parseInviteHash,
+  inviteHashProblem,
+  readInviteLink,
+  steadySailWords,
+  reportIsStrike,
+  stayedAboard,
   presence,
   presetFor,
   randomLook,
@@ -41,11 +50,14 @@ import {
   reportKey,
   roomNameText,
   roomProblem,
+  roomRecordId,
   roomRewards,
+  roomSessionStop,
   roomStateFor,
   sailOffer,
   sailStatus,
   sceneMates,
+  shownQuest,
   statusLine,
   subjectText,
   sweepAction,
@@ -96,6 +108,7 @@ function room(members: RoomMember[], extra: Partial<Room> = {}): Room {
     banned: [],
     reportKeys: [],
     why: { spam: 0, unkind: 0, personal: 0, off: 0 },
+    strikes: 0,
     banked: 0,
     last: null,
     sail: null,
@@ -111,7 +124,7 @@ function card(code: string, extra: Partial<RoomCard> = {}): RoomCard {
 }
 
 function bottle(extra: Partial<BottleGame> = {}): BottleGame {
-  return { kind: "bottle", v: 1, seed: 99, at: T0, seats: [A, B, C], cards: 12, turn: 0, holder: A, turnAt: T0, card: 0, delivered: 0, buoys: 5, rescue: false, goal: 6, end: 0, ...extra };
+  return { kind: "bottle", v: 2, seed: 99, at: T0, seats: [A, B, C], cards: 12, turn: 0, holder: A, turnAt: T0, card: 0, delivered: 0, buoys: 5, rescue: false, goal: 6, end: 0, ...extra };
 }
 
 describe("privacy", () => {
@@ -161,6 +174,19 @@ describe("codes and links", () => {
     expect(formatCode(CODE)).toBe("K7MP 2QXA");
   });
 
+  it("gives screen readers steady words for a sail call, never minutes that change each minute", () => {
+    const sail: RoomSail = { at: T0, focus: 25, brk: 5, cycles: 2 };
+    const docked = { phase: "docked" as const, prepEndsAt: null };
+    const four = sailOffer(sail, docked, T0 + 3 * MIN + 30 * SEC);
+    const three = sailOffer(sail, docked, T0 + 4 * MIN + 30 * SEC);
+    expect(four).toMatchObject({ kind: "hop-aboard", leg: 1 });
+    expect(three).toMatchObject({ kind: "hop-aboard", leg: 1 });
+    expect((four as { focusMinutes: number }).focusMinutes).not.toBe((three as { focusMinutes: number }).focusMinutes);
+    expect(steadySailWords(four as { kind: "hop-aboard"; leg: number })).toBe(steadySailWords(three as { kind: "hop-aboard"; leg: number }));
+    expect(steadySailWords({ kind: "hop-aboard", leg: 2 })).toBe("Next leg is starting: hop aboard?");
+    expect(steadySailWords({ kind: "sail-with" })).not.toMatch(/\d/);
+  });
+
   it("reads invite links and leaves other #fragments alone", () => {
     expect(parseInviteHash("#room=k7mp-2qxa")).toBe(CODE);
     expect(parseInviteHash("#room=K7MP%202QXA")).toBe(CODE);
@@ -176,6 +202,19 @@ describe("codes and links", () => {
     expect(withoutInviteHash("#room=K7MP2QXA")).toBe("");
     expect(withoutInviteHash("#tab=1&room=K7MP2QXA")).toBe("#tab=1");
     expect(withoutInviteHash("#top")).toBe("#top");
+  });
+
+  it("says what's wrong with a broken invite link (cut short, or an O for a 0), and nothing for a good one or none", () => {
+    expect(inviteHashProblem("#room=K7MP2QX")).toMatch(/^That invite link doesn't work: that code is too short/);
+    expect(inviteHashProblem("#room=K7MP-2QXO")).toMatch(/never use the letters I or O/);
+    expect(inviteHashProblem("#room=")).toMatch(/type the room's code/);
+    expect(inviteHashProblem("#room=K7MP2QXA")).toBeNull();
+    expect(inviteHashProblem("#top")).toBeNull();
+    expect(inviteHashProblem("")).toBeNull();
+    // What the page does with a link: a good one opens its room; a broken one is still taken out, with its problem.
+    expect(readInviteLink("#room=K7MP2QXA")).toEqual({ code: CODE, problem: null });
+    expect(readInviteLink("#room=K7MP2QX")).toMatchObject({ code: null, problem: expect.stringMatching(/too short/) });
+    expect(readInviteLink("#top")).toBeNull();
   });
 });
 
@@ -259,7 +298,7 @@ describe("reading a room back", () => {
   const data = () => ({
     v: 1, mode: "open", name: [3, 4], subj: 5, at: ts(T0), host: B, listed: true, locked: false, ban: [C], rep: [], why: { spam: 1 }, banked: 10, last: null,
     sail: { at: ts(T0), f: 25, b: 5, c: 2 }, deck: { b: "BOTTLE1", n: 12 },
-    game: { kind: "bottle", v: 1, seed: 9, at: ts(T0), seats: [B, A], n: 11, turn: 2, holder: A, tAt: ts(T0 + MIN), card: 1, del: 1, buoys: 5, res: true, goal: 6, end: 0 },
+    game: { kind: "bottle", v: 2, seed: 9, at: ts(T0), seats: [B, A], n: 11, turn: 2, holder: A, tAt: ts(T0 + MIN), card: 1, del: 1, buoys: 5, res: true, goal: 6, end: 0 },
     m: { [A]: entry(T0 + MIN), [B]: entry(T0), [D]: { ...entry(T0), n: [1, 2, 69] } },
   });
 
@@ -272,6 +311,17 @@ describe("reading a room back", () => {
     // D's nickname number is one nobody gets, so that entry is left out.
     expect(r.members.map((m) => m.key)).toEqual([B, A]);
     expect(r.members[1]).toMatchObject({ nick: [1, 2, 3], costume: 1, accessory: 2, state: 1, endsAt: T0 + 20 * MIN, dmg: 4, say: 25, tidy: { gid: 7, patches: 3, ms: 1000, mixups: 2 } });
+  });
+
+  it("rounds a fractional banked total down instead of losing the room, and drops a game with half a turn", () => {
+    expect(toRoom(CODE, { ...data(), banked: 10.5 })?.banked).toBe(10);
+    expect(toRoom(CODE, { ...data(), banked: -1 })).toBeNull();
+    const half = toRoom(CODE, { ...data(), game: { ...data().game, del: 0.5 } })!;
+    expect(half.game).toBeNull();
+  });
+
+  it("sits out a game dealt by another version of the dealing", () => {
+    expect(toRoom(CODE, { ...data(), game: { ...data().game, v: 1 } })!.game).toBeNull();
   });
 
   it("refuses things that aren't rooms, and drops a broken game or sail", () => {
@@ -332,15 +382,21 @@ describe("the crew", () => {
     expect(sweepAction(room([fresh(A), fresh(B)]), A, now)).toBeNull();
   });
 
-  it("with a stale skipper, has the present sailor with the smallest key take the hat first", () => {
-    const r = room([stale(F), fresh(D), fresh(C), member(B, { seenAt: now - 13 * MIN })], { host: F });
-    expect(isSkipperGone(r, now)).toBe(true);
-    expect(sweepAction(r, C, now)).toEqual({ kind: "take-hat" });
-    expect(sweepAction(r, D, now)).toBeNull();
-    expect(sweepAction(r, B, now)).toBeNull(); // away, so not present
-    expect(sweepAction(r, E, now)).toBeNull(); // not aboard
-    // Once C has the hat, C sweeps the old skipper.
-    expect(sweepAction({ ...r, host: C }, C, now)).toEqual({ kind: "sweep", key: F });
+  it("takes the hat 15 minutes into the skipper's silence, well before the room is over at 25", () => {
+    const quiet = (minutes: number) => room([member(F, { seenAt: now - minutes * MIN }), fresh(D), fresh(C), member(B, { seenAt: now - 13 * MIN })], { host: F });
+    // 10 minutes: nobody acts yet.
+    expect(sweepAction(quiet(10), C, now)).toBeNull();
+    // 16 minutes: the present sailor with the smallest key takes it; the room isn't over, so nobody outside can clear it.
+    expect(isSkipperQuiet(quiet(16), now)).toBe(true);
+    expect(isSkipperGone(quiet(16), now)).toBe(false);
+    expect(sweepAction(quiet(16), C, now)).toEqual({ kind: "take-hat" });
+    expect(sweepAction(quiet(16), D, now)).toBeNull();
+    // 21 minutes (that sailor's device may be asleep): anyone here tries; a lost race is refused harmlessly.
+    expect(sweepAction(quiet(21), D, now)).toEqual({ kind: "take-hat" });
+    expect(sweepAction(quiet(21), B, now)).toBeNull(); // away, so not present
+    expect(sweepAction(quiet(21), E, now)).toBeNull(); // not aboard
+    // Once C has the hat, C sweeps the old skipper when they go stale.
+    expect(sweepAction({ ...quiet(26), host: C }, C, now)).toEqual({ kind: "sweep", key: F });
   });
 
   it("hands the hat to the longest-aboard sailor who's here", () => {
@@ -377,10 +433,33 @@ describe("the crew", () => {
     expect(deadCards(Array.from({ length: 5 }, (_, i) => card(`DEADXXX${i + 2}`, { aliveAt: T0 })), now)).toHaveLength(3);
   });
 
-  it("takes an open room off the list at its third report", () => {
-    expect(listedAfterReport(room([member(A)], { listed: true, reportKeys: ["r1"] }))).toBe(true);
-    expect(listedAfterReport(room([member(A)], { listed: true, reportKeys: ["r1", "r2"] }))).toBe(false);
-    expect(listedAfterReport(room([member(A)], { listed: false }))).toBe(false);
+  it("takes an open room off the list at its third strike, never at a report that isn't one", () => {
+    expect(listedAfterReport(room([member(A)], { listed: true, strikes: 1 }), true)).toBe(true);
+    expect(listedAfterReport(room([member(A)], { listed: true, strikes: 2 }), true)).toBe(false);
+    // Reports without a stake are counted, but never take a room off the list, however many there are.
+    expect(listedAfterReport(room([member(A)], { listed: true, strikes: 2, reportKeys: ["r1", "r2", "r3", "r4"] }), false)).toBe(true);
+    expect(listedAfterReport(room([member(A)], { listed: false }), true)).toBe(false);
+  });
+
+  it("counts a report as a strike only with a stake: 5 minutes aboard (or a stay of 5 when leaving), in the room joined last", () => {
+    const at = { code: CODE, joinedIn: CODE, stayed: false, serverNow: T0 + 5 * MIN };
+    expect(reportIsStrike({ ...at, aboardSince: T0 })).toBe(true);
+    expect(reportIsStrike({ ...at, aboardSince: T0 + 10 * SEC })).toBe(false);
+    // Came aboard elsewhere since: a sailor weighs in one room at a time.
+    expect(reportIsStrike({ ...at, joinedIn: "OTHERRMS", aboardSince: T0 - 60 * MIN })).toBe(false);
+    // Not aboard any more: their note says whether they stayed 5 minutes when they left.
+    expect(reportIsStrike({ ...at, aboardSince: null, stayed: true })).toBe(true);
+    expect(reportIsStrike({ ...at, aboardSince: null, stayed: false })).toBe(false);
+    // A stay is never claimed on a guess: half a minute past the rules' 5.
+    expect(stayedAboard({ joinedAt: T0 }, T0 + 5 * MIN + 10 * SEC)).toBe(false);
+    expect(stayedAboard({ joinedAt: T0 }, T0 + 5 * MIN + 30 * SEC)).toBe(true);
+  });
+
+  it("reads a room's strikes (none for a room from before them), and refuses half a strike", () => {
+    const data = { v: 1, mode: "open", name: [1, 2], subj: 0, at: T0, host: A, listed: true, locked: false, ban: [], rep: [], why: {}, banked: 0, last: null, sail: null, deck: null, game: null, m: {} };
+    expect(toRoom(CODE, data)?.strikes).toBe(0);
+    expect(toRoom(CODE, { ...data, strikes: 2 })?.strikes).toBe(2);
+    expect(toRoom(CODE, { ...data, strikes: 0.5 })).toBeNull();
   });
 });
 
@@ -452,15 +531,56 @@ describe("Kraken Watch", () => {
     expect(liveDamage(r, now)).toBe(22 + 5 + 8);
     expect(liveDamage(room([member(A, { state: 1, seenAt: now, endsAt: now - MIN })]), now)).toBe(0);
   });
+
+  it("never counts more live minutes for a sailor than one keep-alive (an idle pause never reaches the room)", () => {
+    const now = T0 + 30 * MIN;
+    const idle = room([member(A, { state: 1, seenAt: now - 18 * MIN, endsAt: now + 7 * MIN })]);
+    expect(liveDamage(idle, now)).toBe(ROOM_LIMITS.keepAliveMinutes);
+  });
+
+  it("shows the beast and the beasts beaten from credited damage, with live minutes filling only the current bar", () => {
+    const now = T0 + 30 * MIN;
+    // 115 credited of the Kraken's 120, and 8 live minutes on the way: the bar stops at 1, the Kraken stays.
+    const r = room([member(A, { dmg: 115, state: 1, seenAt: now - 8 * MIN, endsAt: now + 10 * MIN })]);
+    const shown = shownQuest(r, now);
+    expect(shown).toMatchObject({ beastIndex: 0, defeated: 0, hp: 1, maxHp: 120 });
+    // Those minutes are credited after all: now the Kraken is beaten, once.
+    const credited = room([member(A, { dmg: 123, state: 1, seenAt: now, endsAt: now + 10 * MIN })]);
+    expect(shownQuest(credited, now)).toMatchObject({ beastIndex: 1, defeated: 1, hp: 197 });
+    // Live minutes below the line just fill the bar.
+    expect(shownQuest(room([member(A, { dmg: 20, state: 1, seenAt: now - 3 * MIN, endsAt: now + 10 * MIN })]), now).hp).toBe(97);
+  });
 });
 
 describe("rewards", () => {
   const base = (members: RoomMember[], extra: Partial<Room> = {}) => room(members, { banked: 0, ...extra });
 
-  it("pays nothing on the first snapshot, or across two different rooms", () => {
+  it("names rewards by the sailor's key, never the room code (they go into synced data and backups)", async () => {
+    const key = await memberKey("alice", CODE);
+    const prev = base([member(key, { dmg: 10 }), member(B, { dmg: 100 })]);
+    const next = base([member(key, { dmg: 20 }), member(B, { dmg: 200 })]);
+    const ids = roomRewards(prev, next, key).map((r) => r.id);
+    expect(ids).toHaveLength(1);
+    for (const id of ids) expect(id).not.toContain(CODE);
+    expect(roomRecordId(key, T0)).toBe(`room:${key.slice(0, 16)}:${T0}`);
+  });
+
+  it("pays no beasts on the first snapshot, or across two different rooms", () => {
     const next = base([member(A, { dmg: 200 })]);
     expect(roomRewards(null, next, A)).toEqual([]);
     expect(roomRewards({ ...next, at: T0 - 1 }, next, A)).toEqual([]);
+  });
+
+  it("pays a game that ended before this device's first snapshot (a reload): once per game, by its id", () => {
+    const deck = { bottleId: "B1", cards: 20 };
+    const island = base([member(A), member(B)], { deck, game: bottle({ seats: [A, B], delivered: 6, turn: 8, end: 1 }) });
+    const paid = roomRewards(null, island, A);
+    expect(paid).toEqual([{ id: `${roomRecordId(A, T0)}:bottle:99`, doubloons: 16, xp: 32, reason: "Pass the Bottle: island reached!" }]);
+    // The next snapshot of the same finished game pays nothing new (and earnOnce pays each id once anyway).
+    expect(roomRewards(island, island, A)).toEqual([]);
+    const game: TidyGame = { kind: "tidy", v: 2, seed: 42, at: T0, seats: [A, B] };
+    const done = base([member(A, { tidy: { gid: 42, patches: 1, ms: 50 * SEC, mixups: 0 } }), member(B, { tidy: { gid: 42, patches: 2, ms: 70 * SEC, mixups: 0 } })], { game, deck: { bottleId: null, cards: 24 } });
+    expect(roomRewards(null, done, A).map((r) => r.id)).toEqual([`${roomRecordId(A, T0)}:tidy:42`]);
   });
 
   it("pays once per beast beaten, with its figurehead", () => {
@@ -468,8 +588,8 @@ describe("rewards", () => {
     const next = base([member(A, { dmg: 40 }), member(B, { dmg: 290 })]);
     const rewards = roomRewards(prev, next, A);
     expect(rewards.map((r) => [r.id, r.doubloons, r.xp, r.figurehead])).toEqual([
-      [`room:${CODE}:${T0}:beast:0`, 20, 50, "kraken"],
-      [`room:${CODE}:${T0}:beast:1`, 20, 50, "dragon"],
+      [`${roomRecordId(A, T0)}:beast:0`, 20, 50, "kraken"],
+      [`${roomRecordId(A, T0)}:beast:1`, 20, 50, "dragon"],
     ]);
     expect(rewards[0]!.reason).toBe("The crew beat the Procrastination Kraken!");
     expect(roomRewards(next, next, A)).toEqual([]);
@@ -483,14 +603,14 @@ describe("rewards", () => {
   });
 
   it("pays Tidy the Deck once, when the crew finishes, to sailors who cleared a patch", () => {
-    const game: TidyGame = { kind: "tidy", v: 1, seed: 42, at: T0, seats: [A, B, C] };
+    const game: TidyGame = { kind: "tidy", v: 2, seed: 42, at: T0, seats: [A, B, C] };
     const deck = { bottleId: null, cards: 24 };
     const playing = base([member(A, { tidy: { gid: 42, patches: 1, ms: 50 * SEC, mixups: 0 } }), member(B), member(C)], { game, deck });
     const done = base(
       [member(A, { tidy: { gid: 42, patches: 1, ms: 50 * SEC, mixups: 0 } }), member(B, { tidy: { gid: 42, patches: 2, ms: 70 * SEC, mixups: 1 } }), member(C, { tidy: { gid: 42, patches: 4, ms: 60 * SEC, mixups: 0 } })],
       { game, deck },
     );
-    expect(roomRewards(playing, done, A)).toEqual([{ id: `room:${CODE}:${T0}:tidy:42`, doubloons: 5, xp: 10, reason: "Tidy the Deck: ship shape!" }]);
+    expect(roomRewards(playing, done, A)).toEqual([{ id: `${roomRecordId(A, T0)}:tidy:42`, doubloons: 5, xp: 10, reason: "Tidy the Deck: ship shape!" }]);
     expect(roomRewards(done, done, A)).toEqual([]);
     const helperless = base([...done.members, member(D)], { game, deck });
     expect(roomRewards(playing, helperless, D)).toEqual([]);
@@ -502,7 +622,7 @@ describe("rewards", () => {
     const deck = { bottleId: "B1", cards: 20 };
     const playing = base([member(A), member(B), member(D)], { deck, game: bottle({ seats: [A, B], delivered: 5, turn: 7 }) });
     const island = base([member(A), member(B), member(D)], { deck, game: bottle({ seats: [A, B], delivered: 6, turn: 8, end: 1 }) });
-    expect(roomRewards(playing, island, A)).toEqual([{ id: `room:${CODE}:${T0}:bottle:99`, doubloons: 16, xp: 32, reason: "Pass the Bottle: island reached!" }]);
+    expect(roomRewards(playing, island, A)).toEqual([{ id: `${roomRecordId(A, T0)}:bottle:99`, doubloons: 16, xp: 32, reason: "Pass the Bottle: island reached!" }]);
     expect(roomRewards(playing, island, D)).toEqual([]);
     expect(roomRewards(island, island, A)).toEqual([]);
     const tide = base([member(A), member(B)], { deck, game: bottle({ seats: [A, B], delivered: 3, buoys: 0, turn: 9, end: 2 }) });
@@ -612,7 +732,7 @@ describe("Pass the Bottle", () => {
 });
 
 describe("Tidy the Deck", () => {
-  const game: TidyGame = { kind: "tidy", v: 1, seed: 42, at: T0, seats: [A, B, C] };
+  const game: TidyGame = { kind: "tidy", v: 2, seed: 42, at: T0, seats: [A, B, C] };
   const crew = (members: RoomMember[]) => room(members, { game });
 
   it("covers patches from everyone's progress in this game, and times the crew", () => {
@@ -698,5 +818,37 @@ describe("messages", () => {
     // A skipper's game start or door change refused: the room moved on, not a turn or a message.
     expect(roomProblem("permission-denied", "skipper")).toBe("The room changed just now. Try again.");
     expect(roomProblem("permission-denied", "report")).toBe("Couldn't send the report just now. Try again in a moment.");
+  });
+});
+
+describe("stopping a tab's room session", () => {
+  it("keeps the room and this tab's saved minutes when signed out, and lets them go when signed in with no room", () => {
+    expect(roomSessionStop("alice", CODE)).toBeNull();
+    expect(roomSessionStop(null, CODE)).toBe("keep");
+    expect(roomSessionStop("alice", null)).toBe("forget");
+    expect(roomSessionStop(null, null)).toBe("keep");
+  });
+});
+
+describe("twin nicknames", () => {
+  it("tells sailors with the same nickname apart by when they came aboard, everywhere the name shows", () => {
+    const r = room([member(A, { nick: [0, 0, 42], joinedAt: T0 }), member(B, { nick: [0, 0, 42], joinedAt: T0 + MIN }), member(C, { nick: [1, 2, 7] }), member(D, { nick: [0, 0, 42], joinedAt: T0 + 2 * MIN })]);
+    expect(memberName(r, A)).toBe(nickText([0, 0, 42]));
+    expect(memberName(r, B)).toBe(`${nickText([0, 0, 42])} (2)`);
+    expect(memberName(r, D)).toBe(`${nickText([0, 0, 42])} (3)`);
+    expect(memberName(r, C)).toBe(nickText([1, 2, 7]));
+    expect([hasTwin(r, A), hasTwin(r, B), hasTwin(r, C)]).toEqual([true, true, false]);
+    // The scenes and cheer bubbles use the same names.
+    expect(sceneMates(r, C, T0 + 3 * MIN, [], false).map((m) => m.label)).toEqual([memberName(r, A), memberName(r, B), memberName(r, D)]);
+  });
+});
+
+describe("a room that's over", () => {
+  it("is over once the skipper has left or been quiet 25 minutes, or it's 12 hours old, as the rules say", () => {
+    const r = room([member(A, { seenAt: T0 }), member(B, { seenAt: T0 + 20 * MIN })]);
+    expect(isRoomOver(r, T0 + 24 * MIN)).toBe(false);
+    expect(isRoomOver(r, T0 + 25 * MIN)).toBe(true);
+    expect(isRoomOver(room([member(B)], { host: A }), T0)).toBe(true);
+    expect(isRoomOver(room([member(A, { seenAt: T0 + 12 * 60 * MIN })]), T0 + 12 * 60 * MIN)).toBe(true);
   });
 });

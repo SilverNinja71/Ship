@@ -3,8 +3,11 @@
 //
 //   rooms/{code}             the room, readable only by the sailors aboard
 //   rooms/{code}/deck/cards  a skipper's own flashcards for a game (invite rooms only)
-//   roomCards/{code}         its public card: made-up name, subject, how many are aboard
-//   users/{uid}/rooms/{code} the private note "I'm in this room", so account deletion can find it
+//   roomCards/{code}         its public card: made-up name, subject, how many are aboard; once the
+//                            room goes, {gone: true} for good, so its code is never used again
+//   users/{uid}/rooms/{code} the private note "I'm in (or was in) this room": account deletion finds
+//                            rooms by it, and it lets a sailor who left still report one until it ends
+//                            (`stayed`: they were aboard 5 minutes when they last left, so it's a strike)
 //   users/{uid}/meta/rooms   the cooldown stamp, the room rules version accepted and the 13+ tick
 //   config/rooms             the operator's off switch (console only)
 //
@@ -20,6 +23,8 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  documentId,
+  endBefore,
   getDoc,
   getDocFromServer,
   getDocs,
@@ -30,12 +35,13 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  startAt,
   updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
 import type { DocumentData, DocumentReference, WriteBatch } from "firebase/firestore";
-import { ROOM_LIMITS, ROOM_RULES_VERSION } from "@ship/shared-types";
+import { ROOM_GAME_ENGINE, ROOM_LIMITS, ROOM_RULES_VERSION } from "@ship/shared-types";
 import type { BottleCard, Room, RoomCard, RoomLook, RoomMode, RoomReportReason } from "@ship/shared-types";
 import { playableCards } from "@ship/active-recall-engine";
 import type { PracticeCard } from "@ship/active-recall-engine";
@@ -43,14 +49,17 @@ import { bottleStillShared, deckCards } from "./bottleBay.js";
 import { firestore } from "./db.js";
 import {
   creditableMinutes,
+  isRoomOver,
   joinProblem,
   listedAfterReport,
   memberKey,
   newMemberFields,
   newRoomCode,
   nextSkipper,
+  reportIsStrike,
   reportKey,
   roomNameText,
+  stayedAboard,
   toCard,
   toPracticeCards,
   toRoom,
@@ -64,15 +73,26 @@ export interface SkipperChange {
   sail?: { focus: number; brk: number; cycles: number } | null;
   /** A Bottle Bay deck, or the skipper's own cards (invite rooms only), or none. */
   deck?: { bottleId: string; cards: number } | { own: BottleCard[] } | null;
-  /** A new game (seated from `seats`), or null to end the current one. A bottle game deals `cards` (the deck's playable cards). */
-  game?: { kind: "tidy" } | { kind: "bottle"; goal: number; cards: number } | null;
+  /** A new game (seated from `seats`), or null to end the current one. A bottle game deals `cards` (the deck's playable cards). `seed`: the game's own (newSeed), else a fresh one. */
+  game?: { kind: "tidy"; seed?: number } | { kind: "bottle"; goal: number; cards: number; seed?: number } | null;
   seats?: string[];
-  /** Pass the skipper's hat to this sailor. */
+  /** Pass the skipper's hat to this sailor. In an open room this takes it off the list until they put it back. */
   host?: string;
+  /**
+   * Put an open room back on the list if it's off it (unlocking, or after the hat came here). The
+   * rules list an open room only while its skipper runs it as their one open room, so the
+   * skipper's stamp names it in the same batch (refused while they still run another).
+   */
+  list?: boolean;
 }
 
 /** Room minutes are worked out from this device's clock; a few seconds' slack keeps a claim inside what the rules allow. */
 const CLOCK_MARGIN_MS = 5000;
+/** The skipper clears their own room as over only this far past the line (the rules would let them delete it any time). */
+const SKIPPER_CLEAR_MARGIN_MS = 30_000;
+
+/** What a room's card becomes when the room goes: empty, for good, so its code can't be opened again (firestore.rules' cardGone). */
+export const CARD_GONE = { gone: true } as const;
 
 const roomRef = (code: string) => doc(firestore(), "rooms", code);
 const cardRef = (code: string) => doc(firestore(), "roomCards", code);
@@ -114,7 +134,7 @@ function selfPairs(key: string, patch: SelfPatch): Pair[] {
 }
 
 /** A random whole number for a game's seed, small enough that seed * 31 + turn stays exact. */
-function newSeed(): number {
+export function newSeed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0]! & 0x7fffffff;
 }
 
@@ -149,10 +169,20 @@ export async function getRoomFromServer(code: string): Promise<Room | null> {
   return snap.exists() ? toRoom(code, snap.data({ serverTimestamps: "estimate" })) : null;
 }
 
-/** The open list: listed cards, 20 at most. No orderBy, so no composite index is needed; the panel sorts. */
-export async function listOpenCards(): Promise<RoomCard[]> {
-  const snap = await getDocs(query(collection(firestore(), "roomCards"), where("listed", "==", true), limit(ROOM_LIMITS.listPage)));
-  return snap.docs.map((d) => toCard(d.id, d.data({ serverTimestamps: "estimate" }))).filter((c): c is RoomCard => c !== null);
+/**
+ * The open list: 20 listed cards at most, from a window that starts at a random code and wraps
+ * round, so nobody can take the first 20 places by picking codes that sort first. Ordered by code
+ * only, so no composite index is needed; the panel sorts.
+ */
+export async function listOpenCards(randomBytes: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n))): Promise<RoomCard[]> {
+  const cards = collection(firestore(), "roomCards");
+  const page = ROOM_LIMITS.listPage;
+  const from = newRoomCode(randomBytes);
+  const listed = where("listed", "==", true);
+  const after = await getDocs(query(cards, listed, orderBy(documentId()), startAt(from), limit(page)));
+  let docs = after.docs;
+  if (docs.length < page) docs = [...docs, ...(await getDocs(query(cards, listed, orderBy(documentId()), endBefore(from), limit(page - docs.length)))).docs];
+  return docs.map((d) => toCard(d.id, d.data({ serverTimestamps: "estimate" }))).filter((c): c is RoomCard => c !== null);
 }
 
 /**
@@ -231,31 +261,47 @@ export function watchRoom(code: string, on: { room(r: Room | null, meta: { fromC
 
 // ---- The sailor's own folder ------------------------------------------------------------------
 
-/** What this account said on the room rules card (users/{uid}/meta/rooms): the version accepted (0 = never) and the 13+ tick. */
+/** What this account said on the room rules card (users/{uid}/meta/rooms): the version accepted (0 = never) and the 13+ tick, and when it last joined (ms), from the same read. */
 export interface RulesStamp {
   rules: number;
   over13: boolean;
+  joinedAt?: number | null;
 }
 
 /** This account's answer on the room rules card, as the database has it. Signing in on a shared computer never inherits someone else's. */
 export async function readRulesStamp(uid: string): Promise<RulesStamp> {
   const data = (await getDoc(stampRef(uid))).data();
-  return { rules: typeof data?.rules === "number" ? data.rules : 0, over13: data?.over13 === true };
+  return { rules: typeof data?.rules === "number" ? data.rules : 0, over13: data?.over13 === true, joinedAt: timeMs(data?.joinedAt) };
+}
+
+/** When this account last joined or opened a room (the 10 s join cooldown counts from it), in server ms, or null. */
+export async function readJoinedAt(uid: string): Promise<number | null> {
+  return timeMs((await getDoc(stampRef(uid))).data()?.joinedAt);
+}
+
+/** A Firestore time (or plain ms, in tests) as ms, or null. */
+function timeMs(v: unknown): number | null {
+  const ms = typeof v === "number" ? v : typeof (v as { toMillis?: unknown } | null)?.toMillis === "function" ? (v as { toMillis: () => number }).toMillis() : null;
+  return typeof ms === "number" && Number.isFinite(ms) ? ms : null;
 }
 
 /**
  * Records that this account accepted the room rules, with exactly the 13+ answer the sailor gave
  * on the card (nothing else ever writes it). A stamp from an older app gets the newer fields.
+ * `keepOver13`: the card couldn't show the account's own answer (it couldn't be read), so an
+ * unticked box isn't taken as taking a "yes" back.
  */
-export async function acceptRoomRules(uid: string, over13: boolean): Promise<void> {
+export async function acceptRoomRules(uid: string, over13: boolean, opts: { keepOver13?: boolean } = {}): Promise<boolean> {
   const snap = await getDoc(stampRef(uid));
   if (!snap.exists()) {
     await setDoc(stampRef(uid), { madeAt: null, joinedAt: null, madeIn: null, joinedIn: null, openIn: null, rules: ROOM_RULES_VERSION, over13 });
-    return;
+    return over13;
   }
   const data = snap.data();
+  const answer = over13 || (opts.keepOver13 === true && data.over13 === true);
   const missing = Object.fromEntries((["madeIn", "joinedIn", "openIn"] as const).filter((f) => !(f in data)).map((f) => [f, null]));
-  await updateDoc(stampRef(uid), { ...missing, rules: ROOM_RULES_VERSION, over13 });
+  await updateDoc(stampRef(uid), { ...missing, rules: ROOM_RULES_VERSION, over13: answer });
+  return answer;
 }
 
 /** Deletes the private note that this sailor is in `code` (after leaving, removal or the room's end). */
@@ -266,17 +312,14 @@ export async function forgetRoom(uid: string, code: string): Promise<void> {
 /**
  * The open room this account opened last and still skippers, by name, or null. The rules allow
  * one such room per account, so a second open room is refused until this one closes, ends or is
- * handed on (pass the hat).
+ * handed on (pass the hat). Judged by the server's clock (`serverNow`), not this device's.
  */
-export async function skipperingOpenRoom(uid: string): Promise<string | null> {
+export async function skipperingOpenRoom(uid: string, serverNow: number): Promise<string | null> {
   const code: unknown = (await getDoc(stampRef(uid))).data()?.openIn;
   if (typeof code !== "string") return null;
-  const card = await getCard(code);
-  const problem = card && joinProblem(card, Date.now());
-  if (!card || problem === "ended" || problem === "skipper-away") return null;
   // Only sailors aboard can read a room: one this account has left reads as not theirs.
   const [room, key] = await Promise.all([getRoom(code).catch(() => null), memberKey(uid, code)]);
-  return room?.host === key ? roomNameText(room.name) : null;
+  return room?.host === key && !isRoomOver(room, serverNow) ? roomNameText(room.name) : null;
 }
 
 // ---- Opening and joining ----------------------------------------------------------------------
@@ -304,6 +347,7 @@ export async function openRoom(uid: string, draft: { mode: RoomMode; name: [numb
     ban: [],
     rep: [],
     why: { spam: 0, unkind: 0, personal: 0, off: 0 },
+    strikes: 0,
     banked: 0,
     last: null,
     sail: null,
@@ -341,18 +385,36 @@ export async function writeSelf(code: string, key: string, patch: SelfPatch, opt
 }
 
 /**
- * The skipper's tools, with their own entry stamped. Keeps `listed` and the card in step with the
- * door. `cardAlive` also refreshes the card's `alive` (only while the hat stays: it must equal the
- * skipper's own new `seen`), so a skipper busy with games still shows joiners the room is alive.
+ * Whether an open room may be on the list after a write: door open, fewer than 3 reports, the hat
+ * staying where it is, and either already listed or named in the skipper's stamp by this write.
  */
-export async function skipperWrite(room: Room, key: string, change: SkipperChange, self: SelfPatch, opts: { cardAlive?: boolean } = {}): Promise<void> {
+export function listedAfter(room: Room, change: Pick<SkipperChange, "locked" | "host" | "list">): { listed: boolean; claim: boolean } {
+  const locked = change.locked ?? room.locked;
+  const passing = change.host !== undefined && change.host !== room.host;
+  const could = room.mode === "open" && !locked && room.strikes < ROOM_LIMITS.hideAtReports && !passing;
+  const claim = could && !room.listed && change.list === true;
+  return { listed: could && (room.listed || claim), claim };
+}
+
+/**
+ * The skipper's tools, with their own entry stamped. Keeps `listed` and the card in step with the
+ * door and the hat (listedAfter). `cardAlive` also refreshes the card's `alive` (only while the
+ * hat stays: it must equal the skipper's own new `seen`), so a skipper busy with games still shows
+ * joiners the room is alive; the rules want it no more than 10 minutes old on a skipper's write.
+ * `uid` is needed only to put an open room back on the list (`change.list`).
+ */
+export async function skipperWrite(room: Room, key: string, change: SkipperChange, self: SelfPatch, opts: { cardAlive?: boolean; uid?: string } = {}): Promise<void> {
   const code = room.code;
   const batch = writeBatch(firestore());
   const pairs = selfPairs(key, self);
   const top = (name: string) => new FieldPath(name);
 
   const locked = change.locked ?? room.locked;
-  const listed = room.mode === "open" && !locked && room.reportKeys.length < ROOM_LIMITS.hideAtReports;
+  const { listed, claim } = listedAfter(room, change);
+  if (claim) {
+    if (!opts.uid) throw new Error("Putting an open room back on the list needs the skipper's account.");
+    batch.update(stampRef(opts.uid), { openIn: code });
+  }
   if (locked !== room.locked) pairs.push([top("locked"), locked]);
   if (listed !== room.listed) pairs.push([top("listed"), listed]);
 
@@ -383,7 +445,8 @@ export async function skipperWrite(room: Room, key: string, change: SkipperChang
     else {
       const seats = (change.seats ?? []).slice(0, ROOM_LIMITS.size);
       if (!seats.length) throw new Error("A game needs at least one seat.");
-      const base = { kind: g.kind, v: 1, seed: newSeed(), at: serverTimestamp(), seats };
+      const seed = g.seed !== undefined && Number.isInteger(g.seed) && g.seed >= 0 ? g.seed : newSeed();
+      const base = { kind: g.kind, v: ROOM_GAME_ENGINE, seed, at: serverTimestamp(), seats };
       const { bottle } = ROOM_LIMITS;
       pairs.push([
         top("game"),
@@ -408,19 +471,44 @@ export async function skipperWrite(room: Room, key: string, change: SkipperChang
   await batch.commit();
 }
 
-/** Takes the hat when the skipper has been gone 25 minutes. The card's `alive` follows the new skipper in the same batch. */
-export async function takeHat(room: Room, key: string, self: SelfPatch): Promise<void> {
-  const batch = writeBatch(firestore());
-  updatePairs(batch, roomRef(room.code), [...selfPairs(key, self), [new FieldPath("host"), key]]);
-  batch.update(cardRef(room.code), { alive: serverTimestamp() });
-  await batch.commit();
+/**
+ * Takes the hat when the skipper has been quiet 15 minutes (or left). The card's `alive` follows
+ * the new skipper in the same batch. An open room stays on the list only as this sailor's one open
+ * room (their stamp names it); if they still run another, it comes off the list instead.
+ */
+export async function takeHat(uid: string, room: Room, key: string, self: SelfPatch): Promise<void> {
+  const could = room.mode === "open" && !room.locked && room.strikes < ROOM_LIMITS.hideAtReports;
+  const send = async (claim: boolean) => {
+    const listed = could && claim;
+    const batch = writeBatch(firestore());
+    if (claim) batch.update(stampRef(uid), { openIn: room.code });
+    const pairs: Pair[] = [...selfPairs(key, self), [new FieldPath("host"), key]];
+    if (listed !== room.listed) pairs.push([new FieldPath("listed"), listed]);
+    updatePairs(batch, roomRef(room.code), pairs);
+    batch.update(cardRef(room.code), { alive: serverTimestamp(), ...(listed !== room.listed ? { listed } : {}) });
+    await batch.commit();
+  };
+  if (!could) return send(false);
+  try {
+    await send(true);
+  } catch (e) {
+    // Refused: most likely this account still runs another open room, so this one leaves the list.
+    if (roomErrorCode(e) !== "permission-denied") throw e;
+    await send(false);
+  }
 }
 
-/** One Pass the Bottle turn: field paths under `game`, with no read. The rules refuse a second sailor writing the same turn. */
-export async function playTurn(code: string, patch: BottleTurnPatch): Promise<void> {
+/**
+ * One Pass the Bottle turn: field paths under `game`, with no read. The rules refuse a second
+ * sailor writing the same turn. It names the game's seed (unchanged, so the rules let it be), so a
+ * turn that waited offline is refused if another game has started since, never played on its turn 0.
+ */
+export async function playTurn(code: string, seed: number, patch: BottleTurnPatch): Promise<void> {
   const g = (name: string) => new FieldPath("game", name);
   await updateDoc(
     roomRef(code),
+    g("seed"),
+    seed,
     g("turn"),
     patch.turn,
     g("holder"),
@@ -450,56 +538,130 @@ export async function removeSailor(room: Room, key: string, gone: string, opts: 
     [top("banked"), increment(member.dmg)],
     [top("last"), gone],
   ];
+  // A departing skipper hands on the hat, and an open room leaves the list until the new one puts it back.
+  const unlist = gone === room.host && room.listed;
   if (gone === room.host) {
     const next = nextSkipper(room, gone, Date.now());
     if (next) pairs.push([top("host"), next]);
   }
+  if (unlist) pairs.push([top("listed"), false]);
   if (opts.ban) pairs.push([top("ban"), arrayUnion(gone)]);
   const batch = writeBatch(firestore());
   updatePairs(batch, roomRef(room.code), pairs);
-  batch.update(cardRef(room.code), { n: increment(-1) });
+  batch.update(cardRef(room.code), { n: increment(-1), ...(unlist ? { listed: false } : {}) });
   await batch.commit();
 }
 
-function leaveBatch(uid: string, room: Room, key: string, extraMinutes: number, serverNow: number): WriteBatch | null {
-  const me = room.members.find((m) => m.key === key);
-  if (!me) return null;
+/** Deletes a room with its deck, empties its card for good (CARD_GONE), and (with `uid`) deletes my note for it. */
+function goneBatch(code: string, uid: string | null): WriteBatch {
   const batch = writeBatch(firestore());
-  if (room.members.length <= 1) {
-    // Only ever from a copy read from the server just now (leaveRoom checks), so nobody who has just come aboard loses the room.
-    // The last one out closes the room for good.
-    batch.delete(deckRef(room.code));
-    batch.delete(roomRef(room.code));
-    batch.delete(cardRef(room.code));
-  } else {
-    const extra = Math.max(0, Math.min(Math.floor(extraMinutes), creditableMinutes(me, serverNow - CLOCK_MARGIN_MS)));
-    const top = (name: string) => new FieldPath(name);
-    const pairs: Pair[] = [
-      [new FieldPath("m", key), deleteField()],
-      [top("banked"), increment(me.dmg + extra)],
-      [top("last"), key],
-    ];
-    if (room.host === key) {
-      const next = nextSkipper(room, key, serverNow);
-      if (next) pairs.push([top("host"), next]);
-    }
-    updatePairs(batch, roomRef(room.code), pairs);
-    batch.update(cardRef(room.code), { n: increment(-1) });
-  }
-  batch.delete(noteRef(uid, room.code));
+  batch.delete(deckRef(code));
+  batch.delete(roomRef(code));
+  batch.set(cardRef(code), CARD_GONE);
+  if (uid) batch.delete(noteRef(uid, code));
   return batch;
 }
 
 /**
- * Leaves by myself, keeping my minutes with the crew and adding the ones since my last credit
- * (the rules cap them). A departing skipper hands on the hat. The last one out deletes the room,
- * its card and deck instead, but only after reading the room from the server: a copy that says
- * I'm alone may be old (someone may have just come aboard). If that read can't be made (offline),
- * nothing is deleted and the private note stays: the room ends by itself 25 minutes after I was
- * last seen, and the note lets a later visit clear it. If my copy of the room was out of date,
- * it reads it again and tries once more, without the extra minutes.
+ * My leave. `note`: my private note records whether I stayed 5 minutes this time (`stayed`), so a
+ * report I make after leaving counts as a strike only then; left out on a retry, in case the note
+ * was the problem (an older join may not have made one).
  */
-export async function leaveRoom(uid: string, room: Room, key: string, extraMinutes: number, serverNow: number): Promise<void> {
+function leaveBatch(uid: string, room: Room, key: string, extraMinutes: number, serverNow: number, opts: { note?: boolean } = {}): WriteBatch | null {
+  const me = room.members.find((m) => m.key === key);
+  if (!me) return null;
+  if (room.members.length <= 1) {
+    // Only ever from a copy read from the server just now (leaveRoom checks), so nobody who has just come aboard loses the room.
+    // The last one out closes the room for good, and their note goes with it.
+    return goneBatch(room.code, uid);
+  }
+  const batch = writeBatch(firestore());
+  // Whole minutes only: the rules refuse anything else, and the room would be unreadable with it.
+  const extra = Math.max(0, Math.min(Math.floor(extraMinutes), creditableMinutes(me, serverNow - CLOCK_MARGIN_MS)));
+  const top = (name: string) => new FieldPath(name);
+  const pairs: Pair[] = [
+    [new FieldPath("m", key), deleteField()],
+    [top("banked"), increment(Math.floor(me.dmg) + extra)],
+    [top("last"), key],
+  ];
+  // A departing skipper hands on the hat, and an open room leaves the list until the new one puts it back.
+  const unlist = room.host === key && room.listed;
+  if (room.host === key) {
+    const next = nextSkipper(room, key, serverNow);
+    if (next) pairs.push([top("host"), next]);
+  }
+  if (unlist) pairs.push([top("listed"), false]);
+  updatePairs(batch, roomRef(room.code), pairs);
+  batch.update(cardRef(room.code), { n: increment(-1), ...(unlist ? { listed: false } : {}) });
+  // The private note stays (it's tidied away with the room), so a sailor who left can still report the room.
+  // Whether I stayed 5 minutes is never claimed on a guess (stayedAboard keeps a margin); the rules check it.
+  if (opts.note !== false) batch.set(noteRef(uid, room.code), { stayed: stayedAboard(me, serverNow) }, { merge: true });
+  return batch;
+}
+
+/**
+ * A room that's over can't be written to any more, only deleted (the rules make "over" final), so
+ * leaving it means clearing it, with its card, deck and my note. False when the rules say it isn't
+ * over after all (this device's clock is off): then it's left the ordinary way.
+ */
+async function clearOverRoom(uid: string, code: string): Promise<boolean> {
+  try {
+    await goneBatch(code, uid).commit();
+    return true;
+  } catch (e) {
+    if (roomErrorCode(e) === "permission-denied") return false;
+    throw e;
+  }
+}
+
+/**
+ * The room from the server for a leave: null when it's gone or I may not read it (I'm no longer
+ * aboard). Any other problem (offline, out of free use) is thrown, so nothing is deleted on a guess.
+ */
+async function roomForLeaving(code: string): Promise<Room | null> {
+  try {
+    return await getRoomFromServer(code);
+  } catch (e) {
+    if (roomErrorCode(e) === "permission-denied") return null;
+    throw e;
+  }
+}
+
+/** How a leave (or close) may judge the room "over": the server's clock as this device knows it, and whether that was measured (an own write's round trip, or a sign-in token's time) rather than guessed. */
+export interface LeaveClock {
+  serverNow: number;
+  measured: boolean;
+}
+
+/**
+ * Whether I may clear this copy of the room as over. Clearing deletes it for everyone. The rules
+ * let a crewmate delete a room only once it's over, so they decide. But they always let its
+ * skipper delete it, so the skipper clears it only from a copy read from the server just now,
+ * judged by a measured clock and a little past the line: never on a guess from an old copy (a
+ * write still on its way, say) or a device clock that's minutes fast.
+ */
+function mayClearAsOver(room: Room, key: string, clock: LeaveClock, fromServer: boolean): boolean {
+  if (room.host !== key) return true;
+  return fromServer && clock.measured && isRoomOver(room, clock.serverNow - SKIPPER_CLEAR_MARGIN_MS);
+}
+
+/**
+ * Leaves by myself, keeping my minutes with the crew and adding the ones since my last credit
+ * (the rules cap them). A departing skipper hands on the hat. My private note for the room stays,
+ * so I can still report it after leaving (it's tidied away once the room ends). The last one out
+ * deletes the room, its deck and note, and empties its card, but only after reading the room from
+ * the server: a copy that says I'm alone may be old (someone may have just come aboard). If that
+ * read can't be made (offline), nothing is deleted and the private note stays: the room ends by
+ * itself 25 minutes after I was last seen, and the note lets a later visit clear it.
+ *
+ * If the leave is refused, my copy was out of date (a write still on its way, someone else leaving,
+ * the door) or the room is over by the server's clock: it reads the room again and leaves from
+ * that, without the extra minutes, or clears it if it's over (mayClearAsOver: never the skipper's
+ * live room on a guess).
+ */
+export async function leaveRoom(uid: string, room: Room, key: string, extraMinutes: number, clock: LeaveClock): Promise<void> {
+  const serverNow = clock.serverNow;
+  let fromServer = false;
   if (room.members.length <= 1) {
     let fresh: Room | null;
     try {
@@ -514,7 +676,9 @@ export async function leaveRoom(uid: string, room: Room, key: string, extraMinut
       return;
     }
     room = fresh;
+    fromServer = true;
   }
+  if (isRoomOver(room, serverNow) && mayClearAsOver(room, key, clock, fromServer) && (await clearOverRoom(uid, room.code))) return;
   const first = leaveBatch(uid, room, key, extraMinutes, serverNow);
   if (!first) {
     await forgetRoom(uid, room.code);
@@ -522,24 +686,47 @@ export async function leaveRoom(uid: string, room: Room, key: string, extraMinut
   }
   try {
     await first.commit();
+    return;
   } catch (e) {
     if (roomErrorCode(e) !== "permission-denied") throw e;
-    const fresh = await getRoomFromServer(room.code).catch(() => null);
-    const again = fresh && leaveBatch(uid, fresh, key, 0, serverNow);
-    if (again) await again.commit();
-    // Unreadable: I'm not aboard any more (removed, swept or the room closed), so only my note is left.
-    else await forgetRoom(uid, room.code);
   }
+  const fresh = await roomForLeaving(room.code);
+  // Unreadable or gone: I'm not aboard any more (removed, swept or the room closed), so only my note is left.
+  if (!fresh || !fresh.members.some((m) => m.key === key)) {
+    await forgetRoom(uid, room.code);
+    return;
+  }
+  // A crewmate tries clearing whatever their clock says (the rules decide); the skipper only when it's surely over.
+  const over = fresh.host !== key || isRoomOver(fresh, serverNow);
+  if (over && mayClearAsOver(fresh, key, clock, true) && (await clearOverRoom(uid, fresh.code))) return;
+  await leaveBatch(uid, fresh, key, 0, serverNow, { note: false })!.commit();
 }
 
-/** The skipper closes the room for everyone: room, card, deck and their own note. Crewmates' notes are tidied by their own devices. */
-export async function closeRoom(uid: string, room: Room): Promise<void> {
-  const batch = writeBatch(firestore());
-  batch.delete(deckRef(room.code));
-  batch.delete(roomRef(room.code));
-  batch.delete(cardRef(room.code));
-  batch.delete(noteRef(uid, room.code));
-  await batch.commit();
+/**
+ * The skipper closes the room for everyone: room, deck and their own note, with its card emptied
+ * for good. Crewmates' notes are tidied by their own devices. If it's refused (the hat moved on
+ * while this device wasn't looking: a crewmate took it after 15 quiet minutes, say), the room is
+ * read from the server: still aboard but not the skipper, I leave it the ordinary way ("left");
+ * not aboard any more, only my note goes ("gone"). Offline, it throws, and nothing changes.
+ */
+export async function closeRoom(uid: string, room: Room, clock: LeaveClock): Promise<"closed" | "left" | "gone"> {
+  try {
+    await goneBatch(room.code, uid).commit();
+    return "closed";
+  } catch (e) {
+    if (roomErrorCode(e) !== "permission-denied") throw e;
+  }
+  const [fresh, key] = await Promise.all([roomForLeaving(room.code), memberKey(uid, room.code)]);
+  if (!fresh || !fresh.members.some((m) => m.key === key)) {
+    await forgetRoom(uid, room.code);
+    return "gone";
+  }
+  if (fresh.host === key) {
+    await goneBatch(room.code, uid).commit();
+    return "closed";
+  }
+  await leaveRoom(uid, fresh, key, 0, clock);
+  return "left";
 }
 
 /** Thrown by reportRoom when this account's report is already counted. */
@@ -550,106 +737,184 @@ export class AlreadyReported extends Error {
   }
 }
 
+/** One shape of report write: whether it's a strike, and `listed` after it (null: left as it is). */
+interface ReportShape {
+  strike: boolean;
+  listed: boolean | null;
+  card: boolean;
+}
+
 /**
  * Reports a room, once per account, with one reason. The report key is a hash nobody can match to
- * a sailor. A sailor aboard knows the room (and reads it again once if another report or the door
- * changed `listed` meanwhile); a removed one only sees the card, so it guesses whether this report
- * is the third (which unlists the room and its card) and tries the other way if refused.
+ * a sailor. Whether it's a strike (counts towards taking an open room off the list: reportIsStrike)
+ * comes from this account's stamp and private note, and for a sailor aboard from how long they've
+ * been aboard by the server's clock. A sailor aboard knows the room; if refused (another report or
+ * the door changed it, or the clock put them either side of 5 minutes), it's read again and both
+ * ways are tried. A removed sailor, or one who left, only sees the card, so whether a strike is the
+ * third (which unlists the room and its card) is guessed, and the other way tried if refused.
  */
-export async function reportRoom(uid: string, code: string, reason: RoomReportReason, known: Room | null): Promise<void> {
-  const rk = await reportKey(uid, code);
-  const write = async (listed: boolean, card: boolean) => {
-    const batch = writeBatch(firestore());
-    updatePairs(batch, roomRef(code), [
+export async function reportRoom(uid: string, code: string, reason: RoomReportReason, known: Room | null, serverNow: number): Promise<void> {
+  const [rk, key, stamp, note] = await Promise.all([
+    reportKey(uid, code),
+    memberKey(uid, code),
+    getDoc(stampRef(uid)).catch(() => null),
+    getDoc(noteRef(uid, code)).catch(() => null),
+  ]);
+  const joinedIn: unknown = stamp?.data()?.joinedIn;
+  const stayed = note?.data()?.stayed === true;
+  const strikeFor = (room: Room | null) =>
+    reportIsStrike({ code, joinedIn: typeof joinedIn === "string" ? joinedIn : null, aboardSince: room?.members.find((m) => m.key === key)?.joinedAt ?? null, stayed, serverNow });
+  const write = async (shape: ReportShape) => {
+    const pairs: Pair[] = [
       [new FieldPath("rep"), arrayUnion(rk)],
       [new FieldPath("why", reason), increment(1)],
-      [new FieldPath("listed"), listed],
-    ]);
-    if (card) batch.update(cardRef(code), { listed });
+    ];
+    if (shape.strike) pairs.push([new FieldPath("strikes"), increment(1)]);
+    if (shape.listed !== null) pairs.push([new FieldPath("listed"), shape.listed]);
+    const batch = writeBatch(firestore());
+    updatePairs(batch, roomRef(code), pairs);
+    if (shape.card) batch.update(cardRef(code), { listed: shape.listed });
     await batch.commit();
+  };
+  const fromRoom = (room: Room, strike: boolean): ReportShape => {
+    const listed = listedAfterReport(room, strike);
+    return { strike, listed, card: listed !== room.listed };
+  };
+  const tryEach = async (shapes: ReportShape[]) => {
+    let last: unknown = null;
+    for (const shape of shapes) {
+      try {
+        await write(shape);
+        return;
+      } catch (e) {
+        if (roomErrorCode(e) !== "permission-denied") throw e;
+        last = e;
+      }
+    }
+    throw last;
   };
   if (known) {
     if (known.reportKeys.includes(rk)) throw new AlreadyReported();
-    const listed = listedAfterReport(known);
     try {
-      await write(listed, listed !== known.listed);
+      await write(fromRoom(known, strikeFor(known)));
+      return;
     } catch (e) {
       if (roomErrorCode(e) !== "permission-denied") throw e;
       const fresh = await getRoomFromServer(code).catch(() => null);
       if (!fresh) throw e;
       if (fresh.reportKeys.includes(rk)) throw new AlreadyReported();
-      const again = listedAfterReport(fresh);
-      await write(again, again !== fresh.listed);
+      const strike = strikeFor(fresh);
+      await tryEach([fromRoom(fresh, strike), fromRoom(fresh, !strike)]);
     }
     return;
   }
   const card = await getCard(code);
   if (!card) throw Object.assign(new Error("That room has closed."), { code: "not-found" });
-  if (!card.listed) {
-    await write(false, false);
+  const strike = strikeFor(null);
+  // Not a strike, or the room is off the list already: `listed` stays as it is.
+  if (!strike || !card.listed) {
+    await tryEach([{ strike, listed: null, card: false }, { strike: !strike, listed: null, card: false }]);
     return;
   }
-  try {
-    await write(true, false);
-  } catch (e) {
-    if (roomErrorCode(e) !== "permission-denied") throw e;
-    await write(false, true);
-  }
+  // A strike on a listed room: the third takes it (and its card) off the list.
+  await tryEach([
+    { strike: true, listed: null, card: false },
+    { strike: true, listed: false, card: true },
+  ]);
 }
 
 // ---- Tidying up -------------------------------------------------------------------------------
 
-/** Deletes a room that's over (skipper gone 25 minutes, or 12 hours old), with its card and deck. Refused, harmlessly, while it's alive. */
+/**
+ * Deletes a room that's over (skipper gone 25 minutes, or 12 hours old), with its deck, and empties
+ * its card for good. Refused, harmlessly, while it's alive, except for its skipper, whom the rules
+ * always let delete it: so the skipper's device calls this only when the room is surely over.
+ */
 export async function clearDeadRoom(code: string): Promise<void> {
-  const batch = writeBatch(firestore());
-  batch.delete(deckRef(code));
-  batch.delete(roomRef(code));
-  batch.delete(cardRef(code));
-  await batch.commit();
+  await goneBatch(code, null).commit();
 }
 
-const TIDY_PER_CALL = 5;
+/** How many of my notes a tidy looks through (oldest first), and how many room cards it reads per call. */
+const TIDY_WINDOW = 50;
+const TIDY_READS_PER_CALL = 5;
+/** Where the next tidy carries on, so notes for rooms that are still alive never hold back newer ones. */
+let tidyAfter: { uid: string; code: string } | null = null;
 
-/** Clears my notes for rooms that are gone or over, oldest first, at most 5 per call. Notes for live rooms stay. */
-export async function tidyMyRooms(uid: string, current: string | null): Promise<void> {
-  const snap = await getDocs(query(collection(firestore(), "users", uid, "rooms"), orderBy("at"), limit(TIDY_PER_CALL + 1)));
-  const now = Date.now();
-  for (const d of snap.docs.filter((n) => n.id !== current).slice(0, TIDY_PER_CALL)) {
+/**
+ * Clears my notes for rooms that are gone or over, oldest first. A note older than a room can last
+ * (12 hours) needs no read: its room is over or gone. Other notes cost a card read each, at most 5
+ * per call; notes for rooms still alive stay, and the next call carries on after the last one
+ * looked at, so they never block the notes behind them.
+ */
+export async function tidyMyRooms(uid: string, current: string | null, now: number = Date.now()): Promise<void> {
+  const snap = await getDocs(query(collection(firestore(), "users", uid, "rooms"), orderBy("at"), limit(TIDY_WINDOW)));
+  const notes = snap.docs.filter((n) => n.id !== current);
+  const from = tidyAfter?.uid === uid ? notes.findIndex((n) => n.id === tidyAfter?.code) + 1 : 0;
+  let reads = 0;
+  for (const d of [...notes.slice(from), ...notes.slice(0, from)]) {
+    const at = timeMs((d.data() as { at?: unknown } | undefined)?.at);
+    // Clock slack, so a device a few minutes fast doesn't call a live room old.
+    const old = at !== null && now - at > ROOM_LIMITS.lifetimeHours * 3_600_000 + 30 * 60_000;
+    if (!old && reads >= TIDY_READS_PER_CALL) break;
+    tidyAfter = { uid, code: d.id };
     try {
-      const card = await getCard(d.id);
-      if (!card) {
-        await deleteDoc(d.ref);
-        continue;
+      if (!old) {
+        reads++;
+        const card = await getCard(d.id);
+        if (!card) {
+          await deleteDoc(d.ref);
+          continue;
+        }
+        const problem = joinProblem(card, now);
+        if (problem !== "ended" && problem !== "skipper-away") continue;
       }
-      const problem = joinProblem(card, now);
-      if (problem === "ended" || problem === "skipper-away") {
-        // Only once the room is really gone: if the rules say it's still alive, the note stays.
-        await clearDeadRoom(d.id);
-        await deleteDoc(d.ref);
-      }
+      // Only once the room is really gone: if the rules say it's still alive, the note stays.
+      await clearDeadRoom(d.id);
+      await deleteDoc(d.ref);
     } catch {
       // Next visit tries again.
     }
   }
 }
 
+/** Errors that mean the database couldn't be reached at all (rather than a refusal). */
+const unreachable = (e: unknown) => ["unavailable", "deadline-exceeded", "resource-exhausted", "cancelled"].includes(roomErrorCode(e));
+
 /**
- * For account deletion: out of every room this account is in, one batch per room, best effort.
- * A room I skipper closes; any other I leave; one I can't read any more just loses its note.
+ * For account deletion: out of every room this account is in, one batch per room. A room I skipper
+ * closes; any other I leave; one I can't read any more just loses its note. The open room this
+ * account runs (named in its stamp) is closed too, even without a note, since the stamp can't go
+ * while it's theirs. A room that can't be reached stops it all (thrown), so nothing is deleted on a
+ * guess; a refusal for one room is skipped. Returns how many rooms it dealt with.
  */
-export async function leaveAllRooms(uid: string): Promise<void> {
+export async function leaveAllRooms(uid: string): Promise<number> {
   (await import("./roomSession.js")).stopRoomSession({ forget: true });
   const notes = await getDocs(collection(firestore(), "users", uid, "rooms"));
-  for (const d of notes.docs) {
+  const codes = notes.docs.map((d) => d.id);
+  const openIn: unknown = (await getDoc(stampRef(uid))).data()?.openIn;
+  if (typeof openIn === "string" && /^[A-HJ-NP-Z2-9]{8}$/.test(openIn) && !codes.includes(openIn)) codes.push(openIn);
+  let done = 0;
+  for (const code of codes) {
     try {
-      const key = await memberKey(uid, d.id);
-      const room = await getRoom(d.id).catch(() => null);
+      const key = await memberKey(uid, code);
+      let room: Room | null;
+      try {
+        room = await getRoom(code);
+      } catch (e) {
+        if (roomErrorCode(e) !== "permission-denied") throw e;
+        room = null;
+      }
       if (room && room.members.some((m) => m.key === key)) {
-        if (room.host === key) await closeRoom(uid, room);
-        else await leaveRoom(uid, room, key, 0, Date.now());
-      } else await deleteDoc(d.ref);
+        // No measured clock here: a room is never cleared as over on this device's guess (mayClearAsOver).
+        const clock = { serverNow: Date.now(), measured: false };
+        if (room.host === key) await closeRoom(uid, room, clock);
+        else await leaveRoom(uid, room, key, 0, clock);
+      } else if (notes.docs.some((d) => d.id === code)) await deleteDoc(noteRef(uid, code));
+      done++;
     } catch (e) {
+      if (unreachable(e)) throw e;
       console.warn("Ship couldn't leave a study room while deleting the account.", e);
     }
   }
+  return done;
 }

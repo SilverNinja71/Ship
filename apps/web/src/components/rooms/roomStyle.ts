@@ -3,8 +3,8 @@
 // looks like (Full Color's navy, Midnight Moon, Deep Sea Jellyfish). Small time helpers live
 // here too, so every room part words times the same way.
 
-import { useEffect, useState } from "react";
-import type { RefObject } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import { ROOM_ACCESSORIES, ROOM_COSTUMES } from "@ship/shared-types";
 import type { RoomAccessory, RoomCostume, RoomMember, RoomState } from "@ship/shared-types";
 import { presence, roomProblem } from "../../lib/roomRules.js";
@@ -103,7 +103,19 @@ export function memberStatus(m: RoomMember, serverNow: number): BadgeStatus {
 
 // ---- Buttons and cards (Bottle Bay and Banana Planna's chunky pastel style) ------------------
 
-const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]";
+/**
+ * The keyboard focus ring: the page's ink, except inside a fixed pastel card (ON_PASTEL), where the
+ * page's ink can be near-white (Midnight Moon, Deep Sea Jellyfish, Full Color) and would vanish.
+ */
+const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring,var(--page-ink))]";
+
+/**
+ * For any card with its own fixed pastel fill: focus rings inside it take the focused control's
+ * own (dark) text color instead of the page's ink. Popovers on the page's surface inside such a
+ * card reset it (PAGE_RING).
+ */
+export const ON_PASTEL = "[--ring:currentColor]";
+export const PAGE_RING = "[--ring:var(--page-ink)]";
 
 /** The main action: chunky butter yellow. */
 export const YELLOW_BUTTON = `inline-flex items-center justify-center gap-1.5 rounded-full bg-[#FFE27A] px-4 py-1.5 font-semibold text-[#4B3A0B] shadow-[0_3px_0_#E8C64A] transition hover:bg-[#FFD95A] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${FOCUS_RING}`;
@@ -113,6 +125,9 @@ export const SEAFOAM_BUTTON = `inline-flex items-center justify-center gap-1.5 r
 
 /** A quiet text button, as the rest of Ship's panels use. */
 export const QUIET_BUTTON = `rounded-md px-1.5 py-0.5 text-sm text-[var(--muted-ink)] underline-offset-4 hover:text-[var(--page-ink)] hover:underline disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
+
+/** The quiet text button inside a fixed pastel card (the banner, Lumi's and Pwedo's cards): the card's own ink, never the theme's. */
+export const PASTEL_QUIET_BUTTON = `rounded-md px-1.5 py-0.5 text-sm underline-offset-4 opacity-90 hover:underline hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
 /**
  * The sticker-edge shadow under anything with the page's own fill. It's cream, which only suits a
@@ -137,17 +152,17 @@ export function chipClass(active: boolean, opts: { pastel?: boolean } = {}): str
  * Closes a small popover (a ⋯ menu, the sticker picker) on Escape or a click outside `ref`. Escape
  * is caught before the page hears it, so it closes only the popover, never the panel around it.
  */
-export function usePopoverDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: () => void): void {
+export function usePopoverDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: (how: "escape" | "outside") => void): void {
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
+      if (!ref.current?.contains(e.target as Node)) close("outside");
     };
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
-      close();
+      close("escape");
     };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", key, true);
@@ -163,6 +178,126 @@ export const ROOM_FOCUS_RING = FOCUS_RING;
 // ---- Time --------------------------------------------------------------------------------
 
 /** Re-renders every `ms` while mounted; returns this device's clock. Add the room's serverOffset for server time. */
+/**
+ * When this element appears in place of what had the focus (the button pressed went away, or the
+ * room was lost while the panel was open, and focus fell back to the page), it takes the focus,
+ * so a keyboard user carries on from here and a screen reader reads it. It never takes the focus
+ * from anywhere else.
+ */
+export function useCatchFocus(ref: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body) ref.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [ref]);
+}
+
+/** Text that takes the focus when it replaces what had it (useCatchFocus), e.g. a card that took a pressed button's place. */
+export function CatchFocus({ as: Tag = "p", className, children }: { as?: "p" | "h3" | "span"; className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null);
+  useCatchFocus(ref);
+  return createElement(Tag, { ref, tabIndex: -1, className: className ? `${className} outline-none` : "outline-none" }, children);
+}
+
+/**
+ * A busy (or waiting) button that keeps the keyboard focus: `aria-disabled` and a guard instead of
+ * `disabled`, which drops the focus to the page (a screen reader then loses its place, and the next
+ * Tab starts again from the top). Spread onto the <button> with HELD in its classes.
+ */
+export function heldButton(held: boolean, onClick: () => void): { "aria-disabled"?: true; onClick: (e: { preventDefault(): void }) => void } {
+  return {
+    ...(held ? { "aria-disabled": true as const } : {}),
+    onClick: (e) => {
+      if (held) e.preventDefault();
+      else onClick();
+    },
+  };
+}
+export const HELD = "aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:shadow-none";
+
+const KEEPER_DELAY_MS = 80;
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Where the focus goes when what had it inside `container` went away: the nearest place still on the page, from the last focused element outwards. */
+export function focusFallback(chain: readonly HTMLElement[], container: HTMLElement): HTMLElement | null {
+  for (const el of chain) {
+    if (!el.isConnected || !container.contains(el)) continue;
+    if (el.matches(FOCUSABLE) || (el.tabIndex === -1 && el.hasAttribute("tabindex"))) return el;
+    const inside = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].find((x) => x.getClientRects().length > 0 && getComputedStyle(x).visibility !== "hidden");
+    if (inside) return inside;
+  }
+  return null;
+}
+
+/**
+ * Keeps the keyboard focus inside `container` when what had it goes away (a button that's removed
+ * or disabled as its action runs: a cheer, a deck picked, a game started or put away, a matched
+ * pair, a hidden room, an answer sent): it moves to the nearest place still there (focusFallback)
+ * instead of falling to the page. Only focus that was inside and was lost; never focus the sailor
+ * moved elsewhere (another control, or a tap outside).
+ */
+export function useFocusKeeper(container: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const el = container.current;
+    if (!el || typeof MutationObserver === "undefined") return;
+    let chain: HTMLElement[] = [];
+    let inside = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onIn = (e: FocusEvent) => {
+      inside = true;
+      chain = [];
+      for (let n = e.target instanceof HTMLElement ? e.target : null; n && n !== el; n = n.parentElement) chain.push(n);
+      chain.push(el);
+    };
+    const onOut = (e: FocusEvent) => {
+      if (e.relatedTarget instanceof Node && !el.contains(e.relatedTarget)) inside = false;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Node) || !el.contains(e.target)) inside = false;
+    };
+    // A moment after the change, so a part that places the focus itself (useCatchFocus,
+    // useReturnFocus: a frame after it renders) does so first.
+    const check = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const active = document.activeElement;
+        if (!inside || (active && active !== document.body)) return;
+        focusFallback(chain, el)?.focus({ preventScroll: true });
+      }, KEEPER_DELAY_MS);
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "class"] });
+    el.addEventListener("focusin", onIn);
+    el.addEventListener("focusout", onOut);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+      el.removeEventListener("focusin", onIn);
+      el.removeEventListener("focusout", onOut);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [container]);
+}
+
+/** Puts the focus back on `ref` (the button that opened something) when `open` turns false: a confirm or a list of reasons closed with Keep or Never mind. */
+export function useReturnFocus(open: boolean, ref: RefObject<HTMLElement | null>): void {
+  const was = useRef(open);
+  useEffect(() => {
+    if (was.current && !open) {
+      const id = requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (ref.current?.isConnected && (!active || active === document.body)) ref.current.focus();
+      });
+      was.current = open;
+      return () => cancelAnimationFrame(id);
+    }
+    was.current = open;
+  }, [open, ref]);
+}
+
 export function useTicker(ms = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

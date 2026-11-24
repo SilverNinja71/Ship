@@ -11,6 +11,7 @@ import {
   NICK_NUMBER_SKIP,
   QUEST_BEASTS,
   ROOM_ACCESSORIES,
+  ROOM_GAME_ENGINE,
   ROOM_CHEERS,
   ROOM_CODE_ALPHABET,
   ROOM_COSTUMES,
@@ -21,10 +22,12 @@ import {
   ROOM_SUBJECTS,
   STICKER_IDS,
   beastsDefeatedBetween,
+  questFromDamage,
 } from "@ship/shared-types";
 import type {
   BottleCard,
   BottleGame,
+  QuestState,
   Room,
   RoomCard,
   RoomCostume,
@@ -86,6 +89,28 @@ export function formatCode(code: string): string {
   return code.length === ROOM_LIMITS.codeLength ? `${code.slice(0, 4)} ${code.slice(4)}` : code;
 }
 
+/**
+ * What's wrong with an invite link's code, when its #fragment has `room=` but no code that works
+ * (cut short by a chat app, or an O typed for a 0), in plain words; null for a good link or none.
+ */
+export function inviteHashProblem(hash: string): string | null {
+  const m = /(?:^#?|[#&])room=([^&#]*)/i.exec(hash);
+  if (!m) return null;
+  const r = normalizeCode(decode(m[1]!));
+  return r.ok ? null : `That invite link doesn't work: ${r.reason.charAt(0).toLowerCase()}${r.reason.slice(1)} Ask your friend to send it again, or type the code from their ticket.`;
+}
+
+/**
+ * An invite link's #fragment, read for the page: its code, or what's wrong with it (a link that
+ * doesn't work is still taken out of the address bar, and its problem shown); null with no `room=`.
+ */
+export function readInviteLink(hash: string): { code: string; problem: null } | { code: null; problem: string } | null {
+  const code = parseInviteHash(hash);
+  if (code) return { code, problem: null };
+  const problem = inviteHashProblem(hash);
+  return problem ? { code: null, problem } : null;
+}
+
 /** The room code in an invite link's #fragment ("#room=k7mp-2qxa" gives "K7MP2QXA"), or null. */
 export function parseInviteHash(hash: string): string | null {
   const m = /(?:^#?|[#&])room=([^&#]*)/i.exec(hash);
@@ -134,6 +159,29 @@ export function nickText(n: readonly [number, number, number]): string {
 }
 
 /** "Mellow Lighthouse". */
+/**
+ * A crewmate's nickname as shown in the room. Nicknames can repeat (a copy, or a rare chance), so
+ * sailors with the same one are told apart by when they came aboard: the first keeps it as it is,
+ * the next reads "(2)", then "(3)". Everywhere a name shows (the crew list, cheers, games, the
+ * scenes, "Remove … from this room?") uses this, so a copycat never reads as the sailor they copied.
+ */
+export function memberName(room: Pick<Room, "members">, key: string): string {
+  const m = room.members.find((x) => x.key === key);
+  if (!m) return "";
+  const text = nickText(m.nick);
+  const twins = room.members
+    .filter((x) => x.nick[0] === m.nick[0] && x.nick[1] === m.nick[1] && x.nick[2] === m.nick[2])
+    .sort((x, y) => x.joinedAt - y.joinedAt || (x.key < y.key ? -1 : 1));
+  const place = twins.findIndex((x) => x.key === key);
+  return place > 0 ? `${text} (${place + 1})` : text;
+}
+
+/** Whether another sailor aboard has the same nickname (the crew list then says when each came aboard). */
+export function hasTwin(room: Pick<Room, "members">, key: string): boolean {
+  const m = room.members.find((x) => x.key === key);
+  return !!m && room.members.some((x) => x.key !== key && x.nick[0] === m.nick[0] && x.nick[1] === m.nick[1] && x.nick[2] === m.nick[2]);
+}
+
 export function roomNameText(name: readonly [number, number]): string {
   const first = ROOM_NAME_FIRST[name[0]];
   const place = ROOM_NAME_PLACE[name[1]];
@@ -324,12 +372,13 @@ function toDeck(v: unknown): RoomDeckRef | null {
   return { bottleId: v.b, cards: v.n };
 }
 
+/** A game dealt by another version of the dealing (ROOM_GAME_ENGINE) reads as none: this device sits it out rather than dealing different cards. */
 function toGame(v: unknown): RoomGame | null {
-  if (!isObject(v) || v.v !== 1 || !isInt(v.seed)) return null;
+  if (!isObject(v) || v.v !== ROOM_GAME_ENGINE || !isInt(v.seed)) return null;
   const at = timeOf(v.at);
   const seats = strings(v.seats, ROOM_LIMITS.size);
   if (at === undefined || !seats || !seats.length) return null;
-  if (v.kind === "tidy") return { kind: "tidy", v: 1, seed: v.seed, at, seats };
+  if (v.kind === "tidy") return { kind: "tidy", v: ROOM_GAME_ENGINE, seed: v.seed, at, seats };
   if (v.kind !== "bottle") return null;
   const b = ROOM_LIMITS.bottle;
   const turnAt = timeOf(v.tAt);
@@ -338,7 +387,7 @@ function toGame(v: unknown): RoomGame | null {
   if (!isInt(v.buoys, 0, b.buoys) || typeof v.res !== "boolean" || !isInt(v.goal, b.goal.min, b.goal.max) || !isInt(v.end, 0, 2)) return null;
   return {
     kind: "bottle",
-    v: 1,
+    v: ROOM_GAME_ENGINE,
     seed: v.seed,
     at,
     seats,
@@ -365,8 +414,13 @@ export function toRoom(code: string, data: unknown): Room | null {
   const banned = strings(data.ban, ROOM_LIMITS.maxBans);
   const reportKeys = strings(data.rep, ROOM_LIMITS.maxReports);
   if (at === undefined || typeof data.host !== "string" || typeof data.listed !== "boolean" || typeof data.locked !== "boolean" || !banned || !reportKeys) return null;
-  if (!isInt(data.banked, 0) || (data.last !== null && typeof data.last !== "string") || !isObject(data.m)) return null;
+  // The rules keep `banked` whole; a fraction from before that (or a forged one) is rounded down rather than losing the room.
+  const banked = typeof data.banked === "number" && Number.isFinite(data.banked) && data.banked >= 0 ? Math.floor(data.banked) : null;
+  if (banked === null || (data.last !== null && typeof data.last !== "string") || !isObject(data.m)) return null;
   const whyData = isObject(data.why) ? data.why : {};
+  // Strikes (reports that count towards unlisting) are a whole number; a room from before them has none.
+  const strikes = data.strikes === undefined ? 0 : isInt(data.strikes, 0) ? data.strikes : null;
+  if (strikes === null) return null;
   const why = Object.fromEntries(ROOM_REPORT_REASONS.map((r) => [r, isInt(whyData[r], 0) ? whyData[r] : 0])) as Record<RoomReportReason, number>;
   const members = Object.entries(data.m)
     .map(([key, value]) => toMember(key, value))
@@ -384,7 +438,8 @@ export function toRoom(code: string, data: unknown): Room | null {
     banned,
     reportKeys,
     why,
-    banked: data.banked,
+    strikes,
+    banked,
     last: data.last,
     sail: toSail(data.sail),
     deck: toDeck(data.deck),
@@ -400,6 +455,16 @@ export function toCard(code: string, data: unknown): RoomCard | null {
   const aliveAt = timeOf(data.alive);
   if (at === undefined || aliveAt === undefined || typeof data.listed !== "boolean" || typeof data.locked !== "boolean" || !isInt(data.n, 0, ROOM_LIMITS.size)) return null;
   return { code, mode: data.mode, name: [data.name[0], data.name[1]], subject: data.subj, at, listed: data.listed, locked: data.locked, aboard: data.n, aliveAt };
+}
+
+/**
+ * What a room is called in this sailor's own saved records (rewards paid, kept cards): from their
+ * key in the room (a one-way hash of account and code, the same on each of their devices) and
+ * when it opened, never the code itself. Those records sync and go into backups, and a room code
+ * works as an invite key, so a backup must not carry one.
+ */
+export function roomRecordId(myKey: string, at: number): string {
+  return `room:${myKey.slice(0, 16)}:${at}`;
 }
 
 /** A shared deck's cards for the practice engine. Ids are the card's place in the deck, so every device agrees. */
@@ -462,11 +527,28 @@ export function statusLine(m: RoomMember, serverNow: number): string {
 const memberOf = (room: Room, key: string) => room.members.find((m) => m.key === key);
 const isStale = (m: RoomMember, serverNow: number) => presence(m, serverNow) === "stale";
 
-/** The skipper has left or hasn't been seen for 25 minutes (the rules' roomOver and takeHat test). */
+/** The skipper has left or hasn't been seen for 25 minutes (the rules' roomOver test: anyone may then clear the room). */
 export function isSkipperGone(room: Room, serverNow: number): boolean {
   const skipper = memberOf(room, room.host);
   return !skipper || isStale(skipper, serverNow);
 }
+
+/**
+ * The rules' roomOver: the skipper has left or hasn't been seen for 25 minutes, or the room is 12
+ * hours old. Over is final: nobody can write to it again (only report it), and anyone may delete it.
+ */
+export function isRoomOver(room: Room, serverNow: number): boolean {
+  return serverNow >= room.at + ROOM_LIMITS.lifetimeHours * HOUR || isSkipperGone(room, serverNow);
+}
+
+/** The skipper has left or been quiet `minutes` (the rules let the crew take the hat from 15, well before the room is over at 25). */
+export function isSkipperQuiet(room: Room, serverNow: number, minutes: number = ROOM_LIMITS.hatMinutes): boolean {
+  const skipper = memberOf(room, room.host);
+  return !skipper || serverNow - skipper.seenAt >= minutes * MINUTE;
+}
+
+/** After this long without the skipper, anyone here tries for the hat, not only the sailor with the smallest key (who may be asleep). */
+const ANYONE_TAKES_HAT_MINUTES = ROOM_LIMITS.hatMinutes + 5;
 
 const PRESENCE_RANK = { here: 0, away: 1, stale: 2 } as const;
 
@@ -480,9 +562,11 @@ export function nextSkipper(room: Room, leavingKey: string, serverNow: number): 
 export type SweepAction = { kind: "take-hat" } | { kind: "sweep"; key: string };
 
 /**
- * What this device should tidy up, if anything. Only one sailor acts, so devices don't race:
- * the skipper sweeps out the longest-quiet stale sailor; with no live skipper, the sailor here
- * with the smallest key takes the hat first (and sweeps on a later check).
+ * What this device should tidy up, if anything. Mostly only one sailor acts, so devices don't
+ * race: the skipper sweeps out the longest-quiet stale sailor. Once the skipper has been quiet 15
+ * minutes (10 before the room counts as over and anyone could clear it), the sailor here with the
+ * smallest key takes the hat; 5 minutes later anyone here tries, in case that sailor's device is
+ * asleep. A lost race is refused harmlessly. The new skipper sweeps on a later check.
  */
 export function sweepAction(room: Room, myKey: string, serverNow: number): SweepAction | null {
   const me = memberOf(room, myKey);
@@ -491,9 +575,9 @@ export function sweepAction(room: Room, myKey: string, serverNow: number): Sweep
     const stale = room.members.filter((m) => m.key !== myKey && isStale(m, serverNow)).sort((x, y) => x.seenAt - y.seenAt || (x.key < y.key ? -1 : 1));
     return stale[0] ? { kind: "sweep", key: stale[0].key } : null;
   }
-  if (!isSkipperGone(room, serverNow)) return null;
+  if (!isSkipperQuiet(room, serverNow) || presence(me, serverNow) !== "here") return null;
   const here = room.members.filter((m) => presence(m, serverNow) === "here").map((m) => m.key).sort();
-  return here[0] === myKey ? { kind: "take-hat" } : null;
+  return here[0] === myKey || isSkipperQuiet(room, serverNow, ANYONE_TAKES_HAT_MINUTES) ? { kind: "take-hat" } : null;
 }
 
 export type JoinProblem = "gone" | "ended" | "skipper-away" | "full" | "locked" | "refused";
@@ -529,9 +613,39 @@ export function deadCards(cards: readonly RoomCard[], serverNow: number): string
   return cards.filter((c) => cardOver(c, serverNow)).slice(0, DEAD_ROOMS_PER_VISIT).map((c) => c.code);
 }
 
-/** Whether the room stays on the open list after one more report (the third takes it off). */
-export function listedAfterReport(room: Room): boolean {
-  return room.listed && room.reportKeys.length + 1 < ROOM_LIMITS.hideAtReports;
+/** Whether the room stays on the open list after one more report: only the third strike takes it off. */
+export function listedAfterReport(room: Pick<Room, "listed" | "strikes">, strike: boolean): boolean {
+  return room.listed && room.strikes + (strike ? 1 : 0) < ROOM_LIMITS.hideAtReports;
+}
+
+/** A little past the rules' 5 minutes, so a leave never claims a stay the server's clock doesn't see yet. */
+const STAKE_MARGIN_MS = 30 * SECOND;
+
+/**
+ * What a screen reader hears for a sail call: steady words, never the countdown or the minutes
+ * left (which the banner shows), so its live line doesn't change, and get read out again, as time
+ * passes.
+ */
+export function steadySailWords(offer: { kind: "sail-with" } | { kind: "hop-aboard"; leg: number }): string {
+  if (offer.kind === "sail-with") return "Your crew sets sail in a minute!";
+  return offer.leg > 1 ? "Next leg is starting: hop aboard?" : "Your crew is sailing: hop aboard?";
+}
+
+/** Whether a sailor leaving now has been aboard long enough for a later report to be a strike (their note's `stayed`). Never claimed on a guess. */
+export function stayedAboard(m: Pick<RoomMember, "joinedAt">, serverNow: number): boolean {
+  return serverNow - m.joinedAt >= ROOM_LIMITS.reportStakeMinutes * MINUTE + STAKE_MARGIN_MS;
+}
+
+/**
+ * Whether this sailor's report counts towards taking an open room off the list (the rules' `stake`):
+ * the room is the one they came aboard last (their stamp's `joinedIn`), and they've been aboard 5
+ * minutes now (`aboardSince`), or were the last time they left by themselves (their note's
+ * `stayed`). Sailors who come aboard only to report and leave can't unlist a room, and one account
+ * weighs in one room at a time.
+ */
+export function reportIsStrike(r: { code: string; joinedIn: string | null; aboardSince: number | null; stayed: boolean; serverNow: number }): boolean {
+  if (r.joinedIn !== r.code) return false;
+  return r.aboardSince !== null ? r.serverNow - r.aboardSince >= ROOM_LIMITS.reportStakeMinutes * MINUTE : r.stayed;
 }
 
 // ---- Sailing together -----------------------------------------------------------------------
@@ -619,15 +733,32 @@ export function creditedDamage(room: Room): number {
   return room.banked + room.members.reduce((sum, m) => sum + m.dmg, 0);
 }
 
-/** For the hp bar only: credited damage plus the minutes each focusing sailor has sailed since their last write. */
+/**
+ * For the hp bar only: credited damage plus the minutes each focusing sailor has sailed since
+ * their last write. A focusing sailor's device writes at least every 10 minutes (its keep-alive),
+ * so no more than that is counted for anyone: past it the guess is stale (an idle pause never
+ * reaches the room, say), and it would only run ahead and then step back.
+ */
 export function liveDamage(room: Room, serverNow: number): number {
   let live = creditedDamage(room);
   for (const m of room.members) {
     if (m.state !== 1) continue;
     const until = m.endsAt === null ? serverNow : Math.min(serverNow, m.endsAt);
-    live += Math.max(0, Math.floor((until - m.seenAt) / MINUTE));
+    live += Math.min(ROOM_LIMITS.keepAliveMinutes, Math.max(0, Math.floor((until - m.seenAt) / MINUTE)));
   }
   return live;
+}
+
+/**
+ * Kraken Watch as shown: which beast, and how many are beaten, from the credited damage everyone
+ * agrees on (so neither runs ahead of the captain's cheer, or steps back); the live minutes only
+ * fill the current beast's bar, down to its last hp point at most.
+ */
+export function shownQuest(room: Room, serverNow: number): QuestState & { beastIndex: number } {
+  const credited = creditedDamage(room);
+  const quest = questFromDamage(credited);
+  const extra = Math.max(0, liveDamage(room, serverNow) - credited);
+  return { ...quest, hp: Math.max(Math.min(quest.hp, 1), quest.hp - extra) };
 }
 
 export interface RoomReward {
@@ -650,8 +781,12 @@ const popcount = (bits: number) => {
   return count;
 };
 
-/** How many Tidy the Deck patches a game has, worked out from the room alone (exact unless the deck repeats answers). */
-function estimatedTidyPatches(room: Room, game: TidyGame): number {
+/**
+ * How many Tidy the Deck patches a game has, worked out from the room alone, for before its cards
+ * load: never fewer than the real count, and more when the deck has repeated answers or reversed
+ * cards (tidyPatches deals only cards whose tiles all differ). The real count wins once known.
+ */
+export function estimatedTidyPatches(room: Room, game: TidyGame): number {
   const usable = room.deck?.cards ?? 0;
   return Math.min(game.seats.length, Math.floor(usable / 4), ROOM_LIMITS.tidy.maxPatches);
 }
@@ -672,10 +807,12 @@ function bottleEarned(room: Room, myKey: string): BottleGame | null {
 const beastReason = (name: string) => `The crew beat ${name.replace(/^The /, "the ")}!`;
 
 /**
- * What this snapshot newly pays me. The first snapshot (prev null) is only a baseline, so
- * joining never pays for beasts beaten before. A beast pays only with 10 of my own minutes in
+ * What this snapshot newly pays me. For beasts, the first snapshot (prev null) is only a baseline,
+ * so joining never pays for beasts beaten before. A beast pays only with 10 of my own minutes in
  * the room; Tidy the Deck once the crew finishes, if I cleared a patch; Pass the Bottle once
- * the game ends, if I had a seat. `tidyPatches` is the game's real patch count when the deck
+ * the game ends, if I had a seat. Games need no baseline: their reward ids are one per game (its
+ * seed), and earnOnce pays each id once on every device, so a game that ended while this tab was
+ * reloading (or asleep) still pays when the first snapshot already shows it over. `tidyPatches` is the game's real patch count when the deck
  * is loaded (tidyPatches(...).length); without it, it's worked out from the deck's size.
  * `tidyBefore` and `tidyAfter` are the device's Tidy memory before and after this snapshot, so
  * a patch cleared by a sailor who then left still counts.
@@ -686,14 +823,15 @@ export function roomRewards(
   myKey: string,
   opts: { tidyPatches?: number; tidyBefore?: TidyMemo | null; tidyAfter?: TidyMemo | null } = {},
 ): RoomReward[] {
-  if (!prev || prev.code !== next.code || prev.at !== next.at) return [];
   const me = memberOf(next, myKey);
   if (!me) return [];
-  const base = `room:${next.code}:${next.at}`;
+  // A snapshot of another room (or none before it) is a baseline for beasts only.
+  const same = prev !== null && prev.code === next.code && prev.at === next.at ? prev : null;
+  const base = roomRecordId(myKey, next.at);
   const rewards: RoomReward[] = [];
 
-  if (me.dmg >= ROOM_LIMITS.rewardMinDmg) {
-    for (const beast of beastsDefeatedBetween(creditedDamage(prev), creditedDamage(next))) {
+  if (same && me.dmg >= ROOM_LIMITS.rewardMinDmg) {
+    for (const beast of beastsDefeatedBetween(creditedDamage(same), creditedDamage(next))) {
       const name = QUEST_BEASTS.find((b) => b.id === beast.beastId)?.name ?? "a beast";
       rewards.push({ id: `${base}:beast:${beast.index}`, ...BEAST_REWARD, reason: beastReason(name), figurehead: beast.reward });
     }
@@ -702,12 +840,12 @@ export function roomRewards(
   if (next.game?.kind === "tidy") {
     const game = next.game;
     const patches = opts.tidyPatches ?? estimatedTidyPatches(next, game);
-    const before = prev.game?.kind === "tidy" && prev.game.seed === game.seed ? tidyEarned(prev, myKey, patches, opts.tidyBefore ?? null) : null;
+    const before = same?.game?.kind === "tidy" && same.game.seed === game.seed ? tidyEarned(same, myKey, patches, opts.tidyBefore ?? null) : null;
     if (!before && tidyEarned(next, myKey, patches, opts.tidyAfter ?? null)) rewards.push({ id: `${base}:tidy:${game.seed}`, ...TIDY_REWARD, reason: "Tidy the Deck: ship shape!" });
   }
 
   const bottle = bottleEarned(next, myKey);
-  const bottleBefore = bottle && prev.game?.kind === "bottle" && prev.game.seed === bottle.seed ? bottleEarned(prev, myKey) : null;
+  const bottleBefore = bottle && same?.game?.kind === "bottle" && same.game.seed === bottle.seed ? bottleEarned(same, myKey) : null;
   if (bottle && !bottleBefore) {
     const island = bottle.end === 1;
     const doubloons = bottle.delivered * BOTTLE_PER_DELIVERY.doubloons + (island ? BOTTLE_ISLAND.doubloons : 0);
@@ -896,7 +1034,7 @@ export function sceneMates(room: Room, myKey: string, serverNow: number, hidden:
       const fresh = m.say >= 0 && m.sayAt !== null && serverNow - m.sayAt >= 0 && serverNow - m.sayAt < ROOM_LIMITS.cheerShowSeconds * SECOND;
       return {
         key: m.key,
-        label: nickText(m.nick),
+        label: memberName(room, m.key),
         costume: ROOM_COSTUMES[m.costume] ?? "pwedo",
         accessory: ROOM_ACCESSORIES[m.accessory] ?? "none",
         skipper: m.key === room.host,
@@ -907,12 +1045,30 @@ export function sceneMates(room: Room, myKey: string, serverNow: number, hidden:
     });
 }
 
+// ---- The session ----------------------------------------------------------------------------
+
+/**
+ * How a tab stops its room session when the sailor isn't aboard there any more. Signed out, the
+ * room stays remembered for logging back in, with this tab's saved minutes and Tidy memory
+ * ("keep"). Signed in with no room (they left, or ran Start over or Delete everything, maybe from
+ * another tab), those go too ("forget"), as the Cookies & Storage text promises.
+ */
+export function roomSessionStop(uid: string | null, current: string | null): "keep" | "forget" | null {
+  if (uid && current) return null;
+  return uid ? "forget" : "keep";
+}
+
 // ---- Messages -------------------------------------------------------------------------------
 
 /** When Bottle Bay has hidden the room's deck after reports (or its sharer took it back). */
 export const DECK_HIDDEN_TEXT = "Bottle Bay hid this deck after reports, or its sharer took it back, so it can't be played any more. The skipper can pick another one.";
 /** Asking for a deck change while a game is on. */
 export const DECK_LOCKED_TEXT = "End this game to change the deck.";
+/** Tidy the Deck with a deck that leaves fewer than 4 cards to deal (startGame refuses it; the board says it too). */
+export const TIDY_DECK_TOO_SMALL_TEXT =
+  "Tidy the Deck needs at least 4 cards whose sides all read differently (a card and its reversed copy count as one). Try Pass the Bottle, or pick a bigger deck.";
+/** A join refused by the 10 s between joins (a join or a new room a moment ago, in another tab or on another device). */
+export const JOIN_COOLDOWN_TEXT = "Wait a few seconds, then try again: you came aboard or opened a room a moment ago.";
 
 /** What was being tried, for the words: `game` is a Pass the Bottle turn, `skipper` any skipper tool (door, sail plan, deck, games, the hat). */
 export type RoomAction = "load" | "open" | "join" | "write" | "leave" | "report" | "game" | "skipper";

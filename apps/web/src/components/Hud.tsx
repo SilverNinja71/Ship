@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
+import { useAuthUser } from "../hooks/useAuthUser.js";
 import { useModalBehavior } from "../hooks/useModalBehavior.js";
 import {
   dismissSignInPromptStorage,
@@ -27,7 +28,7 @@ import { LegalModal, type LegalTab } from "./LegalModal.js";
 import { OnboardingModal, SignInPromptToast } from "./OnboardingModal.js";
 import { PastelMinionBadge } from "./PastelMinionBadge.js";
 import { CrewStrip } from "./rooms/CrewStrip.js";
-import { RoomBanner } from "./rooms/RoomBanner.js";
+import { RoomBanner, TOAST_STACK_ID } from "./rooms/RoomBanner.js";
 import {
   IconCabin,
   IconCalendar,
@@ -510,10 +511,13 @@ function LoginModal({ authUser, onClose }: { authUser: User | null; onClose: () 
 function RoomsButton() {
   const openPanel = useUi((s) => s.openPanel);
   const aboard = useRooms((s) => (s.current !== null && s.room ? s.room.members.length : 0));
-  const offer = useRooms((s) => (s.current !== null && s.offer !== null) || s.notice !== null);
+  // A note from Lumi is the signed-in account's own: no dot for it signed out, or for someone else on this browser.
+  const user = useAuthUser();
+  const offer = useRooms((s) => (s.current !== null && s.offer !== null) || (s.notice !== null && user !== null && s.uid === user.uid));
   return (
     <button
       type="button"
+      data-panel-opener="rooms"
       onClick={() => openPanel("rooms")}
       className={cx("flex items-center gap-1.5 py-1 text-sm", SOFT_PILL)}
       title="Study Rooms (R)"
@@ -556,7 +560,8 @@ function Toasts() {
   const toasts = useUi((s) => s.toasts);
   const dismiss = useUi((s) => s.dismissToast);
   return (
-    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-16 z-40 flex flex-col items-center gap-2 px-3">
+    // The study room banner reads this stack's height (by its id) and moves down out of its way.
+    <div id={TOAST_STACK_ID} aria-live="polite" className="pointer-events-none fixed inset-x-0 top-16 z-40 flex flex-col items-center gap-2 px-3">
       {toasts.map((t) => (
         <button
           key={t.id}

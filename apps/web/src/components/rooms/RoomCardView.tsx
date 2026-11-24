@@ -34,7 +34,7 @@ export function RoomCardView({ card, now, serverOffset = 0, onBoard, onHide }: {
   const pastel = roomPastel(card.subject);
   const full = card.aboard >= ROOM_LIMITS.size;
   return (
-    <article className="flex h-full flex-col gap-2 rounded-2xl border px-3.5 py-3 shadow-[3px_3px_0_rgb(0_0_0_/_0.05)]" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
+    <article className="flex h-full flex-col gap-2 rounded-2xl border px-3.5 py-3 shadow-[3px_3px_0_rgb(0_0_0_/_0.05)] [--ring:currentColor]" style={{ background: pastel.fill, borderColor: pastel.line, color: pastel.ink }}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <h3 className="font-display text-lg leading-snug">{roomNameText(card.name)}</h3>
@@ -43,7 +43,7 @@ export function RoomCardView({ card, now, serverOffset = 0, onBoard, onHide }: {
         <MoreMenu label={`More for ${roomNameText(card.name)}`} ink={pastel.ink} items={[{ label: "Hide this room (on this device)", onSelect: onHide }]} />
       </div>
       <AboardDots aboard={card.aboard} ink={pastel.ink} />
-      <p className="text-xs opacity-80">
+      <p className="text-xs opacity-90">
         opened {agoText(now - card.at)} <span aria-hidden="true">·</span> closes {closesAt(card, serverOffset)}
       </p>
       <div className="mt-auto pt-1">

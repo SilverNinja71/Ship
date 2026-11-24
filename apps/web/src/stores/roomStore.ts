@@ -12,7 +12,8 @@ import { persist } from "zustand/middleware";
 import { ROOM_LIMITS, ROOM_RULES_VERSION, BOTTLE_LIMITS } from "@ship/shared-types";
 import type { BottleCard, Room, RoomCard, RoomLook, RoomMode, RoomReportReason, VoyagePhase } from "@ship/shared-types";
 import type { PracticeCard } from "@ship/active-recall-engine";
-import { DECK_HIDDEN_TEXT, DECK_LOCKED_TEXT, NEXT_LEG_CALL_MS, bottleGoal, bottleOver, bottleStep, deadCards, gameSeats, joinProblem, legStartedAt, memberKey, presetFor, randomNick, roomProblem, sailOffer } from "../lib/roomRules.js";
+import { tidyPatches } from "@ship/active-recall-engine";
+import { DECK_HIDDEN_TEXT, DECK_LOCKED_TEXT, JOIN_COOLDOWN_TEXT, NEXT_LEG_CALL_MS, TIDY_DECK_TOO_SMALL_TEXT, bottleGoal, bottleOver, bottleStep, deadCards, estimatedTidyPatches, gameSeats, joinProblem, legStartedAt, memberKey, presetFor, randomNick, roomProblem, sailOffer, tidyStatus } from "../lib/roomRules.js";
 import type { BottleOutcome, JoinProblem, RoomAction, SailOffer, TidyMemo } from "../lib/roomRules.js";
 import type { SkipperChange } from "../lib/rooms.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
@@ -22,7 +23,8 @@ import { useVoyage } from "./voyageStore.js";
 
 /** `elsewhere`: another Ship tab in this browser runs the room; this one waits and takes over when it closes. */
 export type RoomStatus = "idle" | "joining" | "aboard" | "error" | "elsewhere";
-export type RoomNotice = "removed" | "drifted" | "gone" | "closed" | "ended";
+/** `left`: this sailor tapped Leave (shown only in the panel, with Report, since a sailor who left can still report the room). */
+export type RoomNotice = "removed" | "drifted" | "gone" | "closed" | "ended" | "left";
 export type RoomOffer = SailOffer | { kind: "game"; game: "tidy" | "bottle"; seed: number } | { kind: "your-turn"; seed: number; turn: number };
 
 export interface RecentRoom {
@@ -54,6 +56,14 @@ export interface RoomPrefs {
   reported: string[];
   /** The newest sail plan whose "sail with us" offer was answered, so it doesn't pop up again. */
   lastSailSeen: number;
+  /**
+   * Lumi's note about losing (or leaving) a room, and which room. Saved, so every Ship tab shows
+   * it: the tab that ran the room may be in the background while the sailor looks at another.
+   */
+  notice: RoomNotice | null;
+  noticeRoom: { code: string; name: [number, number] } | null;
+  /** When the notice came (local ms): a saved one older than a room can last is dropped. */
+  noticeAt: number;
 }
 
 export interface RoomStoreState extends RoomPrefs {
@@ -71,9 +81,8 @@ export interface RoomStoreState extends RoomPrefs {
   /** Everything this device has seen of the current Tidy the Deck game, so a sailor leaving never undoes a patch. */
   tidyMemo: TidyMemo | null;
   offer: RoomOffer | null;
-  notice: RoomNotice | null;
-  /** Which room a notice is about (its name for the words, its code for Hop back in and Report). */
-  noticeRoom: { code: string; name: [number, number] } | null;
+  /** Whose room rules answer this page has read from the account (`read` false: the read failed), so the rules card never acts on a guess. */
+  rulesState: { uid: string; read: boolean } | null;
   /** What the last action couldn't do, in plain words (the action's own card or toast shows it). */
   error: string | null;
   /** A problem from the room's background work (listener, keep-alive, cheers): the panel shows it while aboard. */
@@ -88,11 +97,12 @@ export interface RoomStoreState extends RoomPrefs {
   forAccount(uid: string): void;
   /** Reads this account's room rules answer (version and 13+ tick) into rulesOk and over13. */
   syncRules(): Promise<void>;
-  acceptRules(over13: boolean): Promise<void>;
+  /** `sawAccount`: the card's tick started from the account's own answer (so an unticked box means "no"). */
+  acceptRules(over13: boolean, opts?: { sawAccount?: boolean }): Promise<void>;
   openRoom(draft: { mode: RoomMode; name: [number, number]; subject: number; look: RoomLook }): Promise<void>;
   joinRoom(code: string, look: RoomLook): Promise<void>;
-  /** Also used by Start over and sign-out. Clears this device's room at once, then tells the room. */
-  leaveRoom(): Promise<void>;
+  /** Also used by Start over and sign-out. Clears this device's room at once, then tells the room. `tell`: the Leave button's own leave, which leaves a note in the panel with Report. */
+  leaveRoom(opts?: { tell?: boolean }): Promise<void>;
   closeRoom(): Promise<void>;
   lock(locked: boolean): Promise<void>;
   /** Removal with a ban for the room's life. */
@@ -122,6 +132,8 @@ export interface RoomStoreState extends RoomPrefs {
   setMuted(muted: boolean): void;
   dismissNotice(): void;
   dismissOffer(): void;
+  /** This sailor has the game in front of them in the panel: its "is starting" call won't pop up. */
+  seenGame(seed: number): void;
   /** Takes an offer (the waiting one, or the one the Sail together card shows): sail-with, hop-aboard and sail-on start Pwedo Pomo; a game opens the panel at the game. */
   acceptOffer(offer?: RoomOffer): void;
 }
@@ -144,6 +156,8 @@ const NOT_ABOARD = "You're not in a room right now.";
 const ONLY_SKIPPER = "Only the skipper can do that.";
 const NEW_ROOMS_RESTING = "New rooms are resting for now. You can still join one with its code.";
 const OVER13_ONLY = "Open rooms are for sailors 13 and older.";
+/** Close room was refused because the hat had moved on (a crewmate took it while this device slept), so the sailor left instead. */
+export const CLOSED_AS_LEFT = "You weren't the skipper any more (a crewmate took the hat while you were away), so you left the room instead of closing it.";
 
 /** A problem to show as it is, not a database error. */
 class RoomActionError extends Error {}
@@ -168,9 +182,57 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /** When this page last opened or joined a room: the rules want 10 s between joins. */
 let lastJoinAt = 0;
 
-/** This account's rules answer as last read on this page (reads once per page and account). */
+/** This account's rules answer as last read on this page (read again when another tab changes it, or when the store disagrees). */
 let rulesRead: { uid: string; rules: number; over13: boolean } | null = null;
-const waitJoinCooldown = () => sleep(lastJoinAt + (ROOM_LIMITS.joinCooldownSeconds + 0.5) * SECOND - Date.now());
+/** When the stamp says this account last joined, from a read moments ago (the same read as the rules answer), so a join doesn't read it twice. */
+let stampRead: { uid: string; joinedAt: number | null; at: number } | null = null;
+const STAMP_FRESH_MS = 5 * SECOND;
+const JOIN_GAP_MS = (ROOM_LIMITS.joinCooldownSeconds + 0.5) * SECOND;
+
+/**
+ * Another Ship tab changed the saved room preferences (it left, joined, or answered the rules
+ * card): read them again, and read the account's rules answer afresh next time, so this tab never
+ * writes an older answer back over the newer one.
+ */
+export async function roomsChangedElsewhere(): Promise<void> {
+  rulesRead = null;
+  await rereadRooms();
+}
+
+/**
+ * The server's clock minus this device's, before a room session has measured it: from the issue
+ * time of a fresh sign-in token (Google's clock, to the second). Measured at most every 15 minutes
+ * (a laptop's clock can be reset, or sleep); null if it can't be. A device whose clock is half an
+ * hour out would otherwise see every room as finished.
+ */
+const TOKEN_CLOCK_KEEP_MS = 15 * MINUTE;
+let tokenClock: { at: number; offset: Promise<number | null> } | null = null;
+/** For tests: forget the measured token clock. */
+export function forgetTokenClock(): void {
+  tokenClock = null;
+}
+export async function tokenClockOffset(): Promise<number | null> {
+  if (!tokenClock || Math.abs(Date.now() - tokenClock.at) > TOKEN_CLOCK_KEEP_MS) {
+    tokenClock = {
+      at: Date.now(),
+      offset: (async () => {
+        const { auth } = await import("../lib/firebase.js");
+        const user = auth.currentUser;
+        if (!user) return null;
+        const sent = Date.now();
+        const token = await user.getIdTokenResult(true);
+        const ack = Date.now();
+        const issued = Date.parse(token.issuedAtTime);
+        // A slow answer can't place the clock well enough; the issue time is whole seconds (+0.5 s).
+        if (!Number.isFinite(issued) || ack - sent > 10 * SECOND) return null;
+        return issued + 500 - (sent + ack) / 2;
+      })().catch(() => null),
+    };
+  }
+  const offset = await tokenClock.offset;
+  if (offset === null) tokenClock = null;
+  return offset;
+}
 
 // ---- Offers ---------------------------------------------------------------------------------
 
@@ -204,8 +266,18 @@ export function offerKey(offer: RoomOffer, room: Room | null): string {
  * The one offer to show now, if any: your turn with the bottle, then a game starting, then the
  * crew's sail plan. A sail call pops up for 5 minutes after the skipper makes it (sail-with, then
  * hop-aboard), and "sail on" at the start of each later leg; none while this sailor's own timer runs.
+ * A game is announced only while it's still on (a Tidy the Deck the crew has finished isn't), and
+ * never once this sailor has seen it in the panel (seenGame). `tidy` gives the game's real patch
+ * count and this device's Tidy memory, when known.
  */
-export function pickOffer(room: Room, myKey: string, voyage: { phase: VoyagePhase; prepEndsAt: number | null }, serverNow: number, lastSailSeen: number): RoomOffer | null {
+export function pickOffer(
+  room: Room,
+  myKey: string,
+  voyage: { phase: VoyagePhase; prepEndsAt: number | null },
+  serverNow: number,
+  lastSailSeen: number,
+  tidy: { patches?: number; memo?: TidyMemo | null } = {},
+): RoomOffer | null {
   const fresh = (o: RoomOffer) => (dismissedOffers.has(offerKey(o, room)) ? null : o);
   const me = room.members.find((m) => m.key === myKey);
   const focusing = me?.state === 1;
@@ -215,7 +287,12 @@ export function pickOffer(room: Room, myKey: string, voyage: { phase: VoyagePhas
       const o = fresh({ kind: "your-turn", seed: g.seed, turn: g.turn });
       if (o) return o;
     }
-    const live = g.kind === "bottle" ? bottleOver(g) === 0 : serverNow < g.at + ROOM_LIMITS.tidy.timeLimitMs;
+    const tidyOn = () => {
+      if (g.kind !== "tidy" || serverNow >= g.at + ROOM_LIMITS.tidy.timeLimitMs) return false;
+      const t = tidyStatus(room, g, tidy.patches ?? estimatedTidyPatches(room, g), serverNow, tidy.memo ?? null);
+      return !t.done && !t.timedOut;
+    };
+    const live = g.kind === "bottle" ? bottleOver(g) === 0 : tidyOn();
     if (live && serverNow - g.at < GAME_OFFER_MS) {
       const o = fresh({ kind: "game", game: g.kind, seed: g.seed });
       if (o) return o;
@@ -274,13 +351,17 @@ export function lookFor(code: string | null): RoomLook {
 
 /**
  * Which deck a room's games deal from. A Bottle Bay deck never changes once afloat; a skipper's
- * own deck can be swapped for another of the same size, so each game reads it afresh.
+ * own deck can be swapped for another of the same size, so each game reads it afresh. `seed`: the
+ * game about to start (the room's own game otherwise).
  */
-export function deckIdentity(room: Room | null): string | null {
+export function deckIdentity(room: Room | null, seed: number | null = room?.game?.seed ?? null): string | null {
   const d = room?.deck;
   if (!room || !d) return null;
-  return d.bottleId !== null ? `${room.code}:bottle:${d.bottleId}:${d.cards}` : `${room.code}:own:${d.cards}:${room.game?.seed ?? "-"}`;
+  return d.bottleId !== null ? `${room.code}:bottle:${d.bottleId}:${d.cards}` : `${room.code}:own:${d.cards}:${seed ?? "-"}`;
 }
+
+/** The cards the skipper's own device read to start a game, kept so loading that game's deck doesn't read them again. */
+let dealtDeck: { id: string; cards: PracticeCard[] } | null = null;
 
 /** The game's cards, only when they're the room's current deck (null while the right ones load). */
 export function gameDeck(s: Pick<RoomStoreState, "room" | "deck" | "deckId">): PracticeCard[] | null {
@@ -292,6 +373,20 @@ let deckLoading: string | null = null;
 /** Clears everything about the live room on this device (not the preferences). */
 const LEFT = { current: null, room: null, myKey: null, status: "idle", offer: null, deck: null, deckId: null, deckProblem: null, tidyMemo: null, alert: null } as const;
 
+/**
+ * Signing out: Lumi's note about the last account's room, and any invite or refusal it was
+ * answering, go, so the next person on this browser never sees them (or comes aboard that room).
+ */
+export function roomsSignedOut(): void {
+  if (useRooms.getState().notice !== null) useRooms.setState({ notice: null, noticeRoom: null, noticeAt: 0 });
+  useUi.setState({ roomInvite: null, roomInviteRefusal: null, roomLinkProblem: null });
+}
+
+/** Signing in: a refusal recorded while signed out ("Log in to study with a crew") never shows on the Join card. The invite itself stays, for the sailor who logged in to answer it. */
+export function roomsSignedIn(): void {
+  if (useUi.getState().roomInviteRefusal !== null) useUi.setState({ roomInviteRefusal: null });
+}
+
 /** Reads the saved room preferences again (another Ship tab may have just left or joined). Does nothing where storage is missing. */
 export async function rereadRooms(): Promise<void> {
   try {
@@ -302,7 +397,7 @@ export async function rereadRooms(): Promise<void> {
 }
 
 /** Preferences as they are for an account seen on this browser for the first time. */
-const FRESH_PREFS: Omit<RoomPrefs, "uid"> = { current: null, recent: [], hidden: [], hiddenRooms: [], muted: false, rulesOk: 0, over13: false, myLook: null, reported: [], lastSailSeen: 0 };
+const FRESH_PREFS: Omit<RoomPrefs, "uid"> = { current: null, recent: [], hidden: [], hiddenRooms: [], muted: false, rulesOk: 0, over13: false, myLook: null, reported: [], lastSailSeen: 0, notice: null, noticeRoom: null, noticeAt: 0 };
 
 /** Plain words for a failed action. A refusal on opening, joining or loading checks whether the rules are published or rooms are switched off. */
 async function explain(e: unknown, action: RoomAction, extra: { mode?: RoomMode; join?: JoinProblem | null } = {}): Promise<string> {
@@ -322,11 +417,57 @@ async function explain(e: unknown, action: RoomAction, extra: { mode?: RoomMode;
   return roomProblem(code, action, extra.join);
 }
 
+const NOTICES: readonly RoomNotice[] = ["removed", "drifted", "gone", "closed", "ended", "left"];
+
+/** A saved notice, if it's one this app knows and no older than a room can last. */
+function savedNotice(p: Partial<RoomPrefs>, now: number): Pick<RoomPrefs, "notice" | "noticeRoom" | "noticeAt"> {
+  const room = p.noticeRoom;
+  const fresh = typeof p.noticeAt === "number" && now - p.noticeAt < RECENT_KEEP_MS && now - p.noticeAt >= -MINUTE;
+  const roomOk = !!room && typeof room.code === "string" && CODE_PATTERN.test(room.code) && Array.isArray(room.name) && room.name.length === 2 && room.name.every(Number.isInteger);
+  if (!fresh || !p.notice || !NOTICES.includes(p.notice)) return { notice: null, noticeRoom: null, noticeAt: 0 };
+  return { notice: p.notice, noticeRoom: roomOk ? { code: room.code, name: [room.name[0], room.name[1]] } : null, noticeAt: p.noticeAt! };
+}
+
 const sanitizeLook = (v: unknown): RoomLook | null => {
   const l = v as RoomLook | null;
   return l && Array.isArray(l.nick) && l.nick.length === 3 && l.nick.every(Number.isInteger) && Number.isInteger(l.costume) && Number.isInteger(l.accessory) ? l : null;
 };
 const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(-max) : []);
+
+/** What ship:rooms keeps on this device: the preferences, and Lumi's note (so every Ship tab shows it). */
+export function savedRoomPrefs({ uid, current, recent, hidden, hiddenRooms, muted, rulesOk, over13, myLook, reported, lastSailSeen, notice, noticeRoom, noticeAt }: RoomPrefs): RoomPrefs {
+  return { uid, current, recent, hidden, hiddenRooms, muted, rulesOk, over13, myLook, reported, lastSailSeen, notice, noticeRoom, noticeAt };
+}
+
+/** Saved room preferences, checked field by field, so a hand-edited or older copy can't break the panel. */
+export function loadedRoomPrefs(persisted: unknown): RoomPrefs {
+  const p = (persisted ?? {}) as Partial<RoomPrefs>;
+  const now = Date.now();
+  const recent = Array.isArray(p.recent)
+    ? p.recent.filter(
+        (r): r is RecentRoom =>
+          !!r && typeof r.code === "string" && CODE_PATTERN.test(r.code) && Array.isArray(r.name) && r.name.length === 2 && typeof r.at === "number" && now - r.at < RECENT_KEEP_MS,
+      )
+    : [];
+  const nick = (v: unknown): [number, number, number] | undefined => (Array.isArray(v) && v.length === 3 && v.every(Number.isInteger) ? [v[0], v[1], v[2]] : undefined);
+  return {
+    uid: typeof p.uid === "string" && p.uid ? p.uid : null,
+    current: typeof p.current === "string" && CODE_PATTERN.test(p.current) ? p.current : null,
+    recent: recent.slice(0, RECENT_MAX).map((r) => {
+      const n = nick(r.nick);
+      return { code: r.code, name: [r.name[0], r.name[1]], at: r.at, skipper: Boolean(r.skipper), ...(n ? { nick: n } : {}) };
+    }),
+    hidden: strings(p.hidden, 100),
+    hiddenRooms: strings(p.hiddenRooms, 100),
+    muted: p.muted === true,
+    rulesOk: typeof p.rulesOk === "number" ? p.rulesOk : 0,
+    over13: p.over13 === true,
+    myLook: sanitizeLook(p.myLook),
+    reported: strings(p.reported, 50),
+    lastSailSeen: typeof p.lastSailSeen === "number" ? p.lastSailSeen : 0,
+    ...savedNotice(p, now),
+  };
+}
 
 // ---- The store --------------------------------------------------------------------------------
 
@@ -361,7 +502,7 @@ export const useRooms = create<RoomStoreState>()(
             const passing = ch.host !== undefined && ch.host !== now.host;
             const alive = !passing && s.cardAliveDue();
             s.sendingNow();
-            await rooms.skipperWrite(now, s.key, ch, self, { cardAlive: alive });
+            await rooms.skipperWrite(now, s.key, ch, self, { cardAlive: alive, uid: s.uid });
             if (alive) s.noteCardAlive();
           });
           return true;
@@ -375,15 +516,55 @@ export const useRooms = create<RoomStoreState>()(
         }
       };
 
-      /** This account's rules answer, read once per page (acceptRules keeps it current). A missing or older one puts the rules card back. */
+      /**
+       * This account's rules answer, read once per page (acceptRules keeps it current). If this
+       * page's copy and the store disagree, another tab changed it: it's read from the account
+       * again, never written back from the copy. A missing or older one puts the rules card back.
+       */
       const accountRules = async (uid: string): Promise<{ rules: number; over13: boolean }> => {
-        if (rulesRead?.uid !== uid) {
+        const copy = rulesRead?.uid === uid ? rulesRead : null;
+        if (!copy || get().rulesOk !== copy.rules || get().over13 !== copy.over13) {
           const stamp = await (await roomsModule()).readRulesStamp(uid);
-          rulesRead = { uid, ...stamp };
+          rulesRead = { uid, rules: stamp.rules, over13: stamp.over13 };
+          if (stamp.joinedAt !== undefined) stampRead = { uid, joinedAt: stamp.joinedAt, at: Date.now() };
         }
-        const { rules, over13 } = rulesRead;
+        const { rules, over13 } = rulesRead!;
         if (get().rulesOk !== rules || get().over13 !== over13) set({ rulesOk: rules, over13 });
+        set({ rulesState: { uid, read: true } });
         return { rules, over13 };
+      };
+
+      /** The server's clock as a sign-in token measures it, for leaving a room this tab doesn't run (or this device's, unmeasured). */
+      const measuredClock = async (): Promise<{ serverNow: number; measured: boolean }> => {
+        const offset = await tokenClockOffset();
+        return offset === null ? { serverNow: Date.now() + get().serverOffset, measured: false } : { serverNow: Date.now() + offset, measured: true };
+      };
+
+      /** The server's clock offset for judging cards before any room session has measured it. */
+      const clockForCards = async (): Promise<number> => {
+        if (sessionLoaded && (await sessionLoaded).roomSession()) return get().serverOffset;
+        const offset = await tokenClockOffset();
+        if (offset !== null && !get().current) set({ serverOffset: offset });
+        return get().serverOffset;
+      };
+
+      /**
+       * Waits out the 10 s between joins: from this page's last join, and from the account's own
+       * stamp (another tab, a page before a reload, or another device), at most one cooldown long.
+       */
+      const waitJoinCooldown = async (uid: string, rooms: RoomsModule): Promise<void> => {
+        // The stamp read for the rules a moment ago (requireRules) already says when this account last joined.
+        const recent = stampRead?.uid === uid && Date.now() - stampRead.at < STAMP_FRESH_MS ? stampRead : null;
+        const [stampAt, offset] = await Promise.all([recent ? recent.joinedAt : rooms.readJoinedAt(uid).catch(() => null), clockForCards().catch(() => get().serverOffset)]);
+        const fromStamp = stampAt === null ? 0 : Math.min(stampAt - offset + JOIN_GAP_MS - Date.now(), JOIN_GAP_MS);
+        await sleep(Math.max(lastJoinAt + JOIN_GAP_MS - Date.now(), fromStamp));
+      };
+
+      /** A join refused with nothing on the card to say why: the join cooldown (a join a moment ago from another tab or device), or else a ban. */
+      const joinedJustNow = async (uid: string, rooms: RoomsModule): Promise<boolean> => {
+        const [at, offset] = await Promise.all([rooms.readJoinedAt(uid).catch(() => null), clockForCards().catch(() => get().serverOffset)]);
+        // A few seconds of slack: the clock offset is known to about a second.
+    return at !== null && Date.now() + offset - at < JOIN_GAP_MS + 5 * SECOND;
       };
 
       /** Opening, joining and listing need the room rules accepted by this account, and open rooms its 13+ tick. */
@@ -415,8 +596,7 @@ export const useRooms = create<RoomStoreState>()(
         deckProblem: null,
         tidyMemo: null,
         offer: null,
-        notice: null,
-        noticeRoom: null,
+        rulesState: null,
         error: null,
         alert: null,
         busy: false,
@@ -426,7 +606,7 @@ export const useRooms = create<RoomStoreState>()(
         forAccount: (uid) => {
           if (get().uid === uid) return;
           // Someone else's room, recent codes, nicknames, hidden sailors and 13+ answer stay theirs.
-          set({ ...FRESH_PREFS, ...LEFT, uid, notice: null, noticeRoom: null, openList: null, preview: null, error: null });
+          set({ ...FRESH_PREFS, ...LEFT, uid, openList: null, preview: null, error: null, rulesState: null });
           dismissedOffers.clear();
         },
 
@@ -438,19 +618,21 @@ export const useRooms = create<RoomStoreState>()(
             await accountRules(uid);
           } catch {
             // Unreadable (offline, or the rules aren't published): the card stays as it is; acting says why.
+            set({ rulesState: { uid, read: false } });
           }
         },
 
-        acceptRules: async (over13) => {
+        acceptRules: async (over13, opts = {}) => {
           const uid = await signedInUid();
           if (!uid) return void set({ error: LOG_IN });
           get().forAccount(uid);
           set({ busy: true, error: null });
           try {
             // Exactly what the sailor ticked on the card: nothing else ever writes the 13+ answer.
-            await (await roomsModule()).acceptRoomRules(uid, over13);
-            rulesRead = { uid, rules: ROOM_RULES_VERSION, over13 };
-            set({ rulesOk: ROOM_RULES_VERSION, over13 });
+            // A card that couldn't show the account's answer never takes back a "yes" it didn't show.
+            const answer = await (await roomsModule()).acceptRoomRules(uid, over13, { keepOver13: opts.sawAccount !== true });
+            rulesRead = { uid, rules: ROOM_RULES_VERSION, over13: answer };
+            set({ rulesOk: ROOM_RULES_VERSION, over13: answer, rulesState: { uid, read: true } });
           } catch (e) {
             set({ error: await explain(e, "load") });
           } finally {
@@ -472,7 +654,7 @@ export const useRooms = create<RoomStoreState>()(
           const rooms = await roomsModule();
           try {
             const sessions = await sessionModule();
-            await waitJoinCooldown();
+            await waitJoinCooldown(uid, rooms);
             const sentAt = Date.now();
             const { code, key } = await rooms.openRoom(uid, draft);
             const ackAt = Date.now();
@@ -490,7 +672,13 @@ export const useRooms = create<RoomStoreState>()(
             useUi.getState().setRoomInvite(null);
           } catch (e) {
             // An open room is refused while this account still skippers its last one.
-            const still = draft.mode === "open" && rooms.roomErrorCode(e) === "permission-denied" ? await rooms.skipperingOpenRoom(uid).catch(() => null) : null;
+            // Judged by the server's clock (a sign-in token's), so a device whose clock is fast still gets these words.
+            const still =
+              draft.mode === "open" && rooms.roomErrorCode(e) === "permission-denied"
+                ? await clockForCards()
+                    .then((offset) => rooms.skipperingOpenRoom(uid, Date.now() + offset))
+                    .catch(() => null)
+                : null;
             set({ error: still ? `You're still the skipper of ${still}, an open room. Close it or pass the hat before you open another.` : await explain(e, "open", { mode: draft.mode }) });
           } finally {
             set({ busy: false });
@@ -507,11 +695,16 @@ export const useRooms = create<RoomStoreState>()(
           } catch (e) {
             return void set({ error: await explain(e, "join") });
           }
-          if (get().current) await get().leaveRoom();
-          set({ busy: true, error: null, notice: null, noticeRoom: null, status: "joining" });
+          // Coming aboard is tried first: the room this sailor is in now is left only once the new
+          // one has said yes, so a refused join (full, locked, a ban, the cooldown) leaves them where they were.
+          const previous = get().current;
+          const elsewhere = previous !== null && previous !== code;
+          // A refusal clears the live room only when there's no other room to keep.
+          const refusedState = elsewhere ? {} : LEFT;
+          set({ busy: true, error: null, notice: null, noticeRoom: null, ...(elsewhere ? {} : { status: "joining" as const }) });
           const [rooms, sessions] = await Promise.all([roomsModule(), sessionModule()]);
           try {
-            await waitJoinCooldown();
+            await waitJoinCooldown(uid, rooms);
             const sentAt = Date.now();
             let key: string;
             let hint: { sentAt: number; ackAt: number } | undefined;
@@ -526,13 +719,21 @@ export const useRooms = create<RoomStoreState>()(
               const room = await rooms.getRoom(code).catch(() => null);
               if (!room?.members.some((m) => m.key === key)) {
                 const card = await rooms.getCard(code).catch(() => null);
-                const problem = joinProblem(card, Date.now());
+                const problem = joinProblem(card, Date.now() + get().serverOffset);
                 const over13 = await accountRules(uid).then((r) => r.over13).catch(() => get().over13);
-                const words = !problem && card?.mode === "open" && !over13 ? OVER13_ONLY : await explain(e, "join", { mode: card?.mode, join: problem });
-                set({ ...LEFT, error: words, preview: { code, card, problem } });
+                const words =
+                  !problem && card?.mode === "open" && !over13
+                    ? OVER13_ONLY
+                    : // Nothing on the card says why: the join cooldown (a join a moment ago elsewhere) reads as "wait", never as a ban.
+                      !problem && card && (await joinedJustNow(uid, rooms))
+                      ? JOIN_COOLDOWN_TEXT
+                      : await explain(e, "join", { mode: card?.mode, join: problem });
+                set({ ...refusedState, error: words, preview: { code, card, problem } });
                 return;
               }
             }
+            // Aboard the new room: now the old one is left (its session ends, handing this tab's lock on).
+            if (elsewhere && get().current === previous) await get().leaveRoom();
             sessions.startRoomSession(uid, code, hint);
             const kept = get().recent.find((r) => r.code === code);
             const name = kept?.name ?? get().preview?.card?.name ?? get().openList?.cards.find((c) => c.code === code)?.name ?? null;
@@ -548,19 +749,22 @@ export const useRooms = create<RoomStoreState>()(
             });
             useUi.getState().setRoomInvite(null);
           } catch (e) {
-            set({ ...LEFT, error: await explain(e, "join") });
+            set({ ...(get().current === previous ? refusedState : LEFT), error: await explain(e, "join") });
           } finally {
             set({ busy: false });
           }
         },
 
-        leaveRoom: async () => {
+        leaveRoom: async (opts = {}) => {
           const code = get().current;
           if (!code) return;
           const [rooms, sessions] = await Promise.all([roomsModule(), sessionModule()]);
           const s = sessions.roomSession();
+          const name = get().room?.name ?? get().recent.find((r) => r.code === code)?.name ?? null;
           // This device lets go at once; telling the room follows (and may wait for the connection).
-          set({ ...LEFT, busy: true, error: null, notice: null, noticeRoom: null });
+          // The Leave button's own leave leaves a note in the panel, with Report: reporting still works after leaving.
+          const told = opts.tell && name ? { notice: "left" as const, noticeRoom: { code, name: [name[0], name[1]] as [number, number] } } : { notice: null, noticeRoom: null };
+          set({ ...LEFT, busy: true, error: null, ...told, noticeAt: Date.now() });
           try {
             if (s && s.code === code) await s.leave();
             else {
@@ -568,13 +772,24 @@ export const useRooms = create<RoomStoreState>()(
               const uid = await signedInUid();
               if (uid) {
                 const key = await memberKey(uid, code);
-                const room = await rooms.getRoom(code).catch(() => null);
-                if (room?.members.some((m) => m.key === key)) await rooms.leaveRoom(uid, room, key, 0, Date.now());
+                // Only a refusal (no longer aboard) or a missing room lets the note go: a read that
+                // couldn't be made (offline) leaves nothing and keeps the note.
+                const room = await rooms.getRoom(code).catch((e: unknown) => {
+                  if (rooms.roomErrorCode(e) === "permission-denied") return null;
+                  throw e;
+                });
+                // A measured clock (a sign-in token's), so the skipper's live room is never cleared on this device's guess.
+                if (room?.members.some((m) => m.key === key)) await rooms.leaveRoom(uid, room, key, 0, await measuredClock());
                 else await rooms.forgetRoom(uid, code).catch(() => undefined);
               }
             }
           } catch (e) {
-            set({ error: roomProblem(rooms.roomErrorCode(e), "leave") });
+            const why = rooms.roomErrorCode(e);
+            // The Leave button's leave couldn't reach the room, so the sailor is still aboard: say so and
+            // put the room back, so Leave can be tried again (another tab may have joined a room meanwhile).
+            if (opts.tell && /unavailable|deadline-exceeded|resource-exhausted/.test(why) && get().current === null) {
+              set({ current: code, notice: null, noticeRoom: null, error: `${roomProblem(why, "leave")} You're still aboard, so try Leave again in a moment.` });
+            } else set({ error: roomProblem(why, "leave") });
           } finally {
             set({ busy: false });
           }
@@ -586,18 +801,31 @@ export const useRooms = create<RoomStoreState>()(
           const room = s?.currentRoom();
           if (!s || !room) return void set({ error: NOT_ABOARD });
           if (room.host !== s.key) return void set({ error: ONLY_SKIPPER });
+          const code = room.code;
+          const name: [number, number] = [room.name[0], room.name[1]];
           set({ ...LEFT, busy: true, error: null, notice: null, noticeRoom: null });
           try {
-            await s.close();
+            // Refused because the hat had moved on (this device slept): the sailor leaves it instead, and is told so.
+            if ((await s.close()) === "left") {
+              set({ notice: "left", noticeRoom: { code, name }, noticeAt: Date.now(), error: CLOSED_AS_LEFT });
+            }
           } catch (e) {
-            set({ error: roomProblem(rooms.roomErrorCode(e), "leave") });
+            const why = rooms.roomErrorCode(e);
+            // Nothing changed (offline, say): the sailor is still aboard, so the room comes back and Close can be tried again.
+            if (get().current === null) set({ current: code, error: `${roomProblem(why, "leave")} You're still aboard, so try again in a moment.` });
+            else set({ error: roomProblem(why, "leave") });
           } finally {
             set({ busy: false });
           }
         },
 
         lock: async (locked) => {
-          await skipper({ locked });
+          if (locked) return void (await skipper({ locked }));
+          // Opening the door puts an open room back on the list, as this skipper's one open room. If
+          // that's refused (they still run another open room), the door still opens, off the list.
+          if (await skipper({ locked: false, list: true })) return;
+          const room = get().room;
+          if (room?.mode === "open" && room.locked && get().current === room.code) await skipper({ locked: false });
         },
 
         removeSailor: async (key) => {
@@ -646,7 +874,7 @@ export const useRooms = create<RoomStoreState>()(
             await s.ownWrite(async (self) => {
               const room = s.currentRoom();
               if (!room) throw new RoomActionError(NOT_ABOARD);
-              await rooms.takeHat(room, s.key, self);
+              await rooms.takeHat(s.uid, room, s.key, self);
             });
             s.noteCardAlive();
           } catch (e) {
@@ -730,9 +958,16 @@ export const useRooms = create<RoomStoreState>()(
                 throw new RoomActionError(code === "deck-hidden" ? DECK_HIDDEN_TEXT : `Couldn't read the deck's cards. ${roomProblem(code, "load")}`);
               }
               if (deck.length < ROOM_LIMITS.deckCards.min) throw new RoomActionError("This deck needs at least 4 cards with different answers.");
+              // Tidy the Deck deals only cards whose two sides read differently from every other tile
+              // (a card and its reversed copy count once): a deck that leaves too few deals no patch.
+              if (kind === "tidy" && tidyPatches(deck, 0, seats.length).length === 0) throw new RoomActionError(TIDY_DECK_TOO_SMALL_TEXT);
               // Pass the Bottle deals the deck's playable cards, and its island is never further than those.
               const cards = Math.min(deck.length, r.deck.cards);
-              return { game: kind === "tidy" ? { kind } : { kind, goal: bottleGoal(seats.length, cards), cards }, seats };
+              // The cards just read are this game's deck: loading it (loadDeck) won't read them again.
+              const seed = rooms.newSeed();
+              const id = deckIdentity(r, seed);
+              if (id) dealtDeck = { id, cards: deck };
+              return { game: kind === "tidy" ? { kind, seed } : { kind, goal: bottleGoal(seats.length, cards), cards, seed }, seats };
             },
             (r) => (r && gameSeats(r, Date.now() + get().serverOffset).length === 0 ? "Everyone's focusing now. Games are for breaks." : null),
           );
@@ -757,7 +992,7 @@ export const useRooms = create<RoomStoreState>()(
             const room = s.currentRoom();
             const game = room?.game;
             if (!room || game?.kind !== "bottle" || game.seed !== start.seed || game.turn !== start.turn) return false;
-            await rooms.playTurn(room.code, bottleStep(game, outcome, room, s.serverNow()));
+            await rooms.playTurn(room.code, game.seed, bottleStep(game, outcome, room, s.serverNow()));
             return true;
           };
           try {
@@ -801,7 +1036,9 @@ export const useRooms = create<RoomStoreState>()(
           set({ busy: true, error: null });
           try {
             const room = get().room;
-            await rooms.reportRoom(uid, code, reason, room?.code === code ? room : null);
+            // Whether it's a strike depends on how long this sailor has been aboard, by the server's clock.
+            const offset = room?.code === code ? get().serverOffset : await clockForCards().catch(() => get().serverOffset);
+            await rooms.reportRoom(uid, code, reason, room?.code === code ? room : null, Date.now() + offset);
             set({ reported: uniq([...get().reported, code], 50) });
           } catch (e) {
             const errorCode = rooms.roomErrorCode(e);
@@ -822,6 +1059,8 @@ export const useRooms = create<RoomStoreState>()(
             return;
           }
           if ((id === get().deckId && get().deck) || id === deckLoading) return;
+          // The skipper's own device read these cards to start the game a moment ago.
+          if (dealtDeck?.id === id) return void set({ deck: dealtDeck.cards, deckId: id, deckProblem: null });
           deckLoading = id;
           // Never show the last deck's cards as this one's while the new ones load.
           if (get().deckId !== id) set({ deck: null, deckId: null, deckProblem: null });
@@ -846,8 +1085,9 @@ export const useRooms = create<RoomStoreState>()(
           try {
             // The list's rule reads the 13+ tick from the account: it's the account's own answer, never assumed here.
             await requireRules(uid, true);
-            const cards = await rooms.listOpenCards();
-            const now = Date.now() + get().serverOffset;
+            const [cards, offset] = await Promise.all([rooms.listOpenCards(), clockForCards().catch(() => get().serverOffset)]);
+            // Judged by the server's clock, so a device whose clock is fast doesn't see every room as finished.
+            const now = Date.now() + offset;
             set({ openList: { cards, at: now } });
             // Clearing finished rooms is shared work; a refusal just means one is still alive.
             for (const code of deadCards(cards, now)) void rooms.clearDeadRoom(code).catch(() => undefined);
@@ -864,8 +1104,8 @@ export const useRooms = create<RoomStoreState>()(
           const rooms = await roomsModule();
           set({ busy: true, error: null });
           try {
-            const card = await rooms.getCard(code);
-            set({ preview: { code, card, problem: joinProblem(card, Date.now() + get().serverOffset) } });
+            const [card, offset] = await Promise.all([rooms.getCard(code), clockForCards().catch(() => get().serverOffset)]);
+            set({ preview: { code, card, problem: joinProblem(card, Date.now() + offset) } });
           } catch (e) {
             set({ error: await explain(e, "load") });
           } finally {
@@ -879,7 +1119,13 @@ export const useRooms = create<RoomStoreState>()(
         },
         hideRoom: (code) => set({ hiddenRooms: uniq([...get().hiddenRooms, code], 100) }),
         setMuted: (muted) => set({ muted }),
-        dismissNotice: () => set({ notice: null, noticeRoom: null }),
+        dismissNotice: () => set({ notice: null, noticeRoom: null, noticeAt: 0 }),
+
+        seenGame: (seed) => {
+          dismissedOffers.add(`game:${seed}`);
+          const offer = get().offer;
+          if (offer?.kind === "game" && offer.seed === seed) set({ offer: null });
+        },
 
         dismissOffer: () => {
           const { offer, room } = get();
@@ -938,48 +1184,9 @@ export const useRooms = create<RoomStoreState>()(
       name: storageKey("rooms"),
       storage: shipStorage,
       version: 1,
-      partialize: ({ uid, current, recent, hidden, hiddenRooms, muted, rulesOk, over13, myLook, reported, lastSailSeen }) => ({
-        uid,
-        current,
-        recent,
-        hidden,
-        hiddenRooms,
-        muted,
-        rulesOk,
-        over13,
-        myLook,
-        reported,
-        lastSailSeen,
-      }),
+      partialize: (state) => savedRoomPrefs(state),
       // Saved data is checked field by field, so a hand-edited or older copy can't break the panel.
-      merge: (persisted, state) => {
-        const p = (persisted ?? {}) as Partial<RoomPrefs>;
-        const now = Date.now();
-        const recent = Array.isArray(p.recent)
-          ? p.recent.filter(
-              (r): r is RecentRoom =>
-                !!r && typeof r.code === "string" && CODE_PATTERN.test(r.code) && Array.isArray(r.name) && r.name.length === 2 && typeof r.at === "number" && now - r.at < RECENT_KEEP_MS,
-            )
-          : [];
-        const nick = (v: unknown): [number, number, number] | undefined => (Array.isArray(v) && v.length === 3 && v.every(Number.isInteger) ? [v[0], v[1], v[2]] : undefined);
-        return {
-          ...state,
-          uid: typeof p.uid === "string" && p.uid ? p.uid : null,
-          current: typeof p.current === "string" && CODE_PATTERN.test(p.current) ? p.current : null,
-          recent: recent.slice(0, RECENT_MAX).map((r) => {
-            const n = nick(r.nick);
-            return { code: r.code, name: [r.name[0], r.name[1]], at: r.at, skipper: Boolean(r.skipper), ...(n ? { nick: n } : {}) };
-          }),
-          hidden: strings(p.hidden, 100),
-          hiddenRooms: strings(p.hiddenRooms, 100),
-          muted: p.muted === true,
-          rulesOk: typeof p.rulesOk === "number" ? p.rulesOk : 0,
-          over13: p.over13 === true,
-          myLook: sanitizeLook(p.myLook),
-          reported: strings(p.reported, 50),
-          lastSailSeen: typeof p.lastSailSeen === "number" ? p.lastSailSeen : 0,
-        };
-      },
+      merge: (persisted, state) => ({ ...state, ...loadedRoomPrefs(persisted) }),
     },
   ),
 );

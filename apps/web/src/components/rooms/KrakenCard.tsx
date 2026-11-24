@@ -1,12 +1,13 @@
 // Kraken Watch: every focused minute anyone in the room sails is one bonk on the crew's beast.
-// The bar moves with the live figure (minutes still being sailed); beasts beaten and rewards use
-// the credited figure everyone agrees on. Captain Banan pops up to cheer when one goes down.
+// Which beast, and how many are beaten, come from the credited figure everyone agrees on (so they
+// never run ahead of the cheer, or step back); the live minutes still being sailed only fill the
+// current beast's bar (shownQuest). Captain Banan pops up to cheer when one goes down.
 
 import { useEffect, useRef, useState } from "react";
-import { QUEST_BEASTS, questFromDamage } from "@ship/shared-types";
+import { QUEST_BEASTS } from "@ship/shared-types";
 import type { QuestBeastId, Room } from "@ship/shared-types";
 import { FIGUREHEADS } from "@ship/ship-theme-kit";
-import { creditedDamage, liveDamage, presence } from "../../lib/roomRules.js";
+import { presence, shownQuest } from "../../lib/roomRules.js";
 import { prefersReducedMotion, useSettings } from "../../stores/settingsStore.js";
 import { cx } from "../ui.js";
 import { MinionPortrait } from "./MinionPortrait.js";
@@ -22,9 +23,9 @@ const figureheadName = (id: string) => FIGUREHEADS.find((f) => f.id === id)?.nam
 
 export function KrakenCard({ room, now }: { room: Room; now: number }) {
   const motion = useSettings((s) => s.motion);
-  const quest = questFromDamage(liveDamage(room, now));
+  const quest = shownQuest(room, now);
   const beast = QUEST_BEASTS[quest.beastIndex]!;
-  const beaten = questFromDamage(creditedDamage(room)).defeated;
+  const beaten = quest.defeated;
   const present = room.members.filter((m) => presence(m, now) === "here");
   const formation = present.length >= 2 && present.every((m) => m.state === 1);
 
@@ -44,13 +45,13 @@ export function KrakenCard({ room, now }: { room: Room; now: number }) {
   }, [beaten]);
 
   return (
-    <section aria-label="Kraken Watch" className="relative overflow-hidden rounded-2xl border border-[#F4C7BE] bg-[#FDE8E4] px-4 py-3.5 text-[#8A3B31]">
+    <section aria-label="Kraken Watch" className="relative overflow-hidden rounded-2xl border border-[#F4C7BE] bg-[#FDE8E4] px-4 py-3.5 text-[#8A3B31] [--ring:currentColor]">
       <div className="flex items-center gap-3">
         <span className="grid size-11 shrink-0 place-items-center rounded-full bg-white/75 text-2xl" aria-hidden="true">
           {BEAST_MARK[beast.id]}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs tracking-[0.18em] uppercase opacity-80">Kraken Watch</p>
+          <p className="text-xs tracking-[0.18em] uppercase opacity-90">Kraken Watch</p>
           <h3 className="font-display text-lg leading-tight">{beast.name}</h3>
         </div>
         <p className="shrink-0 font-display text-sm tabular-nums">
@@ -77,7 +78,7 @@ export function KrakenCard({ room, now }: { room: Room; now: number }) {
           <div className="grid justify-items-center gap-1.5">
             <MinionPortrait costume="captain" size={64} />
             <p className="font-display text-base">{cheer}</p>
-            <p className="text-xs opacity-80">Captain Banan</p>
+            <p className="text-xs opacity-90">Captain Banan</p>
           </div>
         </div>
       )}

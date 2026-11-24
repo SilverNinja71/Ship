@@ -54,4 +54,6 @@ export const BOTTLE_LIMITS = {
   hideAtReports: 3,
   /** Seconds between two bottles from the same account. */
   cooldownSeconds: 20,
+  /** Seconds between two bottle reports from the same account, so a few accounts can't hide the whole bay at once. */
+  reportCooldownSeconds: 30,
 } as const;

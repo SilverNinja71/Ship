@@ -25,6 +25,9 @@ export function MatchTiles({
   const [selected, setSelected] = useState<string | null>(null);
   const [wrong, setWrong] = useState<string[]>([]);
   const flash = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const grid = useRef<HTMLDivElement>(null);
+  /** The tile after the pair just cleared, which takes the keyboard focus (the cleared tile can't keep it). */
+  const [focusNext, setFocusNext] = useState<string | null>(null);
 
   // A new board starts with nothing picked or cleared.
   if (board !== tiles) {
@@ -41,6 +44,14 @@ export function MatchTiles({
     [],
   );
 
+  // Only when the keyboard was on the board (a tile it pressed is cleared now), never from elsewhere.
+  useEffect(() => {
+    if (!focusNext) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || grid.current?.contains(active)) grid.current?.querySelector<HTMLElement>(`[data-tile="${CSS.escape(focusNext)}"]`)?.focus();
+    setFocusNext(null);
+  }, [focusNext]);
+
   const pick = (tile: MatchTile) => {
     if (disabled || cleared.has(tile.id)) return;
     if (!selected) return setSelected(tile.id);
@@ -51,6 +62,10 @@ export function MatchTiles({
     if (first.cardId === tile.cardId && first.side !== tile.side) {
       const next = new Set([...cleared, first.id, tile.id]);
       setCleared(next);
+      // The next tile still on the board, after the one just pressed (wrapping round).
+      const at = tiles.findIndex((t) => t.id === tile.id);
+      const after = [...tiles.slice(at + 1), ...tiles.slice(0, at)].find((t) => !next.has(t.id));
+      setFocusNext(after?.id ?? null);
       if (next.size === tiles.length) onCleared();
     } else {
       onMistake?.();
@@ -61,18 +76,20 @@ export function MatchTiles({
   };
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+    <div ref={grid} className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
       {tiles.map((t) => {
         const gone = cleared.has(t.id);
         return (
           <button
             key={t.id}
+            data-tile={t.id}
             type="button"
             disabled={gone || disabled}
             onClick={() => pick(t)}
             aria-pressed={selected === t.id}
             className={cx(
-              "min-h-20 rounded-xl border p-2 text-sm leading-snug transition-[opacity,background-color] duration-200",
+              // Long words (medical terms, links) break inside the tile rather than spill out of it.
+              "min-h-20 min-w-0 rounded-xl border p-2 text-sm leading-snug wrap-anywhere transition-[opacity,background-color] duration-200",
               gone && "invisible",
               !gone && disabled && "opacity-60",
               !gone && selected === t.id && "border-navy-600 bg-[var(--surface-3)] font-bold",

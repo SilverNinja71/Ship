@@ -32,7 +32,8 @@ export function bottleOrder(count: number, seed: number): number[] {
 
 /**
  * The question for bottle `card` on `turn`: choicesFor(card, pool, seededRng(seed * 31 + turn)),
- * so a rescue reshuffles; written when no wrong answers exist.
+ * so a rescue reshuffles; written when no wrong answers exist. A wrong answer that reads the same
+ * as the question itself (a deck with reversed cards has one) is left out of the pool.
  */
 export function bottleQuestion(
   cards: readonly PracticeCard[],
@@ -45,16 +46,38 @@ export function bottleQuestion(
   // The game ends when the cards run out; wrapping keeps a late render from crashing meanwhile.
   const slot = ((Math.floor(card) % order.length) + order.length) % order.length;
   const asked = cards[order[slot]! % cards.length]!;
-  const options = choicesFor(asked, cards, seededRng(seed * 31 + turn));
+  const question = normalize(asked.front);
+  const pool = cards.filter((c) => c === asked || normalize(c.back) !== question);
+  const options = choicesFor(asked, pool, seededRng(seed * 31 + turn));
   return options ? { kind: "choice", card: asked, options } : { kind: "written", card: asked };
 }
 
 /**
- * Tidy the Deck boards: patches = min(seats, floor(usable/4)); pairs = min(pairsPerPatch,
- * floor(usable/patches)); [] when usable < 4.
+ * The cards whose tiles can't be mistaken for another's: no side reads the same as any side of a
+ * card already kept (a reversed card, A→B beside B→A, would put two identical tiles on a board,
+ * and pairing them the "wrong" way would count as a mix-up), and no card reads the same both ways.
+ */
+export function distinctTileCards(cards: readonly PracticeCard[]): PracticeCard[] {
+  const used = new Set<string>();
+  const out: PracticeCard[] = [];
+  for (const card of cards) {
+    const front = normalize(card.front);
+    const back = normalize(card.back);
+    if (!front || !back || front === back || used.has(front) || used.has(back)) continue;
+    used.add(front);
+    used.add(back);
+    out.push(card);
+  }
+  return out;
+}
+
+/**
+ * Tidy the Deck boards from the playable cards whose tiles are all different (distinctTileCards):
+ * patches = min(seats, floor(usable/4)); pairs = min(pairsPerPatch, floor(usable/patches)); []
+ * when usable < 4.
  */
 export function tidyPatches(cards: readonly PracticeCard[], seed: number, seats: number, pairsPerPatch = 6): MatchTile[][] {
-  const usable = playableCards(cards);
+  const usable = distinctTileCards(playableCards(cards));
   if (usable.length < 4) return [];
   // Each sailor's cleared patches travel as bits of a small number, so a room never has more patches than that holds.
   const patches = Math.min(Math.max(1, Math.floor(seats)), Math.floor(usable.length / 4), ROOM_LIMITS.tidy.maxPatches);

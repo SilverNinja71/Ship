@@ -111,23 +111,23 @@ describe("room rewards (earnOnce)", () => {
 });
 
 describe("study rooms store", () => {
-  it("saves only the sailor's room preferences, never the live room", () => {
+  it("saves only the sailor's room preferences and Lumi's note (so every tab shows it), never the live room", () => {
     const options = useRooms.persist.getOptions();
     expect(options.name).toBe("ship:rooms");
     const saved = options.partialize!(useRooms.getState()) as Record<string, unknown>;
     expect(Object.keys(saved).sort()).toEqual(
-      ["current", "hidden", "hiddenRooms", "lastSailSeen", "muted", "myLook", "over13", "recent", "reported", "rulesOk", "uid"].sort(),
+      ["current", "hidden", "hiddenRooms", "lastSailSeen", "muted", "myLook", "notice", "noticeAt", "noticeRoom", "over13", "recent", "reported", "rulesOk", "uid"].sort(),
     );
   });
 
   it("starts fresh when another account signs in on this browser: no 13+ answer, rules, nicknames or hidden sailors carry over", () => {
     const look = { nick: [1, 2, 42] as [number, number, number], costume: 3, accessory: 5 };
     const recent = [{ code: "K7MP2QXA", name: [1, 2] as [number, number], at: Date.now(), skipper: false, nick: look.nick }];
-    useRooms.setState({ uid: "older-sibling", rulesOk: 1, over13: true, myLook: look, hidden: ["k"], reported: ["K7MP2QXA"], recent, current: "K7MP2QXA" });
+    useRooms.setState({ uid: "older-sibling", rulesOk: 1, over13: true, myLook: look, hidden: ["k"], reported: ["K7MP2QXA"], recent, current: "K7MP2QXA", notice: "removed", noticeRoom: { code: "K7MP2QXA", name: [1, 2] }, noticeAt: Date.now() });
     useRooms.getState().forAccount("older-sibling");
     expect(useRooms.getState()).toMatchObject({ over13: true, rulesOk: 1, current: "K7MP2QXA" });
     useRooms.getState().forAccount("younger-sibling");
-    expect(useRooms.getState()).toMatchObject({ uid: "younger-sibling", rulesOk: 0, over13: false, myLook: null, hidden: [], reported: [], recent: [], current: null });
+    expect(useRooms.getState()).toMatchObject({ uid: "younger-sibling", rulesOk: 0, over13: false, myLook: null, hidden: [], reported: [], recent: [], current: null, notice: null, noticeRoom: null });
   });
 
   it("gives every new room a new nickname, and keeps one only to hop back into the same room", () => {
@@ -225,6 +225,48 @@ describe("voyage store", () => {
       useVoyage.getState().cancelPrep();
       useVoyage.getState().start({ presetId: "coastal", prep: true });
       expect(useVoyage.getState().prepEndsAt).toBe(now + 60_000);
+    });
+  });
+
+  describe("a phone that slept", () => {
+    const now = 5_000_000;
+    const MIN = 60_000;
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      useVoyage.setState({ ...DOCKED, prepEndsAt: null, cyclesCompleted: 0, records: [] });
+    });
+    afterEach(() => {
+      useVoyage.setState({ ...DOCKED, prepEndsAt: null, cyclesCompleted: 0 });
+      vi.useRealTimers();
+    });
+
+    it("starts the focus block when the crew's prep ended, not when the phone wakes", () => {
+      useVoyage.getState().start({ presetId: "custom", focusMinutes: 25, breakMinutes: 5, cycles: 2, prep: true, prepUntil: now + 48_000 });
+      // Locked at once, woken 25 minutes later: the focus block began at the end of the prep, with the crew.
+      useVoyage.getState().tick(now + 25 * MIN);
+      expect(useVoyage.getState()).toMatchObject({ phase: "sailing", segmentStartedAt: now + 48_000, voyageStartedAt: now + 48_000 });
+    });
+
+    it("starts the break when the block was planned to end, and the next leg when the break was", () => {
+      useVoyage.getState().start({ presetId: "custom", focusMinutes: 25, breakMinutes: 5, cycles: 2 });
+      // Asleep through the end of the focus block: the break runs on the crew's time, ending 30 minutes after the start.
+      useVoyage.getState().tick(now + 27 * MIN);
+      expect(useVoyage.getState()).toMatchObject({ phase: "shore-leave", breakEndsAt: now + 30 * MIN, cyclesCompleted: 1 });
+      expect(useVoyage.getState().records.at(-1)).toMatchObject({ completed: true, endedAt: now + 25 * MIN, focusedMinutes: 25 });
+      // Asleep through the break too: leg 2 began when the break ended.
+      useVoyage.getState().tick(now + 40 * MIN);
+      expect(useVoyage.getState()).toMatchObject({ phase: "sailing", segmentStartedAt: now + 30 * MIN, cyclesCompleted: 1 });
+    });
+
+    it("catches up through every block it slept through, in order", () => {
+      useVoyage.getState().start({ presetId: "custom", focusMinutes: 25, breakMinutes: 5, cycles: 2 });
+      useVoyage.getState().tick(now + 2 * 60 * MIN);
+      expect(useVoyage.getState()).toMatchObject({ phase: "docked", cyclesCompleted: 2 });
+      expect(useVoyage.getState().records.slice(-2).map((r) => [r.startedAt, r.endedAt])).toEqual([
+        [now, now + 25 * MIN],
+        [now + 30 * MIN, now + 55 * MIN],
+      ]);
     });
   });
 

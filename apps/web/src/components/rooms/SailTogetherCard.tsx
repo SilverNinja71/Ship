@@ -12,7 +12,7 @@ import { useUi } from "../../stores/uiStore.js";
 import { useVoyage } from "../../stores/voyageStore.js";
 import { cx } from "../ui.js";
 import { MinionPortrait } from "./MinionPortrait.js";
-import { PAPER_CARD, ROOM_FOCUS_RING, SEAFOAM_BUTTON, YELLOW_BUTTON, chipClass, clockText, skipperAction } from "./roomStyle.js";
+import { HELD, PAPER_CARD, ROOM_FOCUS_RING, SEAFOAM_BUTTON, YELLOW_BUTTON, chipClass, clockText, heldButton, skipperAction } from "./roomStyle.js";
 
 const MINUTE = 60_000;
 const PRESETS = [
@@ -29,7 +29,8 @@ function offerLabel(o: SailOffer): string {
   const last = o.fromLeg + o.cycles - 1;
   // The first leg has only just begun: it's still sailing with the crew, not sailing on.
   const verb = o.fromLeg === 1 ? "Sail with the crew" : "Sail on";
-  return o.cycles > 1 ? `${verb} (legs ${o.fromLeg}–${last})` : `${verb} (leg ${o.fromLeg})`;
+  // Word joiners keep "1–2" on one line (a narrow button would break after the dash).
+  return o.cycles > 1 ? `${verb} (legs\u00a0${o.fromLeg}\u2060–\u2060${last})` : `${verb} (leg\u00a0${o.fromLeg})`;
 }
 
 export function SailTogetherCard({ room, myKey, now }: { room: Room; myKey: string; now: number }) {
@@ -183,11 +184,11 @@ function SkipperPlan({ hasPlan }: { hasPlan: boolean }) {
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" disabled={busy} onClick={() => void go({ ...plan, cycles })} className={cx(YELLOW_BUTTON, "text-sm")}>
+        <button type="button" {...heldButton(busy, () => void go({ ...plan, cycles }))} className={cx(YELLOW_BUTTON, HELD, "text-sm")}>
           Set sail together · starts in 1 minute
         </button>
         {hasPlan && (
-          <button type="button" disabled={busy} onClick={() => void go(null)} className="text-sm text-[var(--muted-ink)] underline-offset-4 hover:underline">
+          <button type="button" {...heldButton(busy, () => void go(null))} className={cx("text-sm text-[var(--muted-ink)] underline-offset-4 hover:underline", HELD, ROOM_FOCUS_RING)}>
             Clear the plan
           </button>
         )}

@@ -9,7 +9,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { Room } from "@ship/shared-types";
-import { roomNameText } from "../../lib/roomRules.js";
+import { useAuthUser } from "../../hooks/useAuthUser.js";
+import { roomNameText, roomProblem, steadySailWords } from "../../lib/roomRules.js";
 import { lookFor, useRooms } from "../../stores/roomStore.js";
 import type { RoomNotice, RoomOffer } from "../../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../../stores/settingsStore.js";
@@ -17,7 +18,26 @@ import { useUi } from "../../stores/uiStore.js";
 import { cx } from "../ui.js";
 import { BUBBLE_ROW, STRIP_ROW_HEIGHT, stripBubbles, useTopBarHeight, useWideScreen } from "./CrewStrip.js";
 import { MinionPortrait } from "./MinionPortrait.js";
-import { QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, clockText, roomAction, useTicker } from "./roomStyle.js";
+import { HELD, ON_PASTEL, PASTEL_QUIET_BUTTON, SEAFOAM_BUTTON, YELLOW_BUTTON, clockText, heldButton, roomAction, useTicker } from "./roomStyle.js";
+
+/** The toast stack's id (Hud.tsx), and where it starts on screen (its top-16), so the banner can sit under it. */
+export const TOAST_STACK_ID = "ship-toasts";
+const TOAST_STACK_TOP = 64;
+
+/** The toast stack's height now (0 with no toasts). */
+function useToastStackHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = document.getElementById(TOAST_STACK_ID);
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => setHeight(el.getBoundingClientRect().height);
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  return height;
+}
 
 type Who = "captain" | "pwedo" | "bunny" | "teddy";
 
@@ -35,19 +55,25 @@ export function RoomBanner() {
   const top = useTopBarHeight(anchor);
   // An offer belongs to the room this device is in: none shows once it has left (from another tab, say).
   const offer = useRooms((s) => (s.current !== null ? s.offer : null));
-  const notice = useRooms((s) => s.notice);
+  // Leaving by yourself shows its note (with Report) only in the panel, where you left from. A
+  // note is the signed-in account's own: none shows signed out, or to someone else on this browser.
+  const user = useAuthUser();
+  const noticeOwner = useRooms((s) => s.uid);
+  const ownNotice = user !== null && noticeOwner === user.uid;
+  const notice = useRooms((s) => (s.notice === "left" ? null : s.notice));
+  const shownNotice = ownNotice ? notice : null;
   const noticeRoom = useRooms((s) => s.noticeRoom);
   const panelOpen = useUi((s) => s.panel === "rooms");
-  const show = !panelOpen && (notice !== null || offer !== null);
+  const show = !panelOpen && (shownNotice !== null || offer !== null);
   const sceneShowing = useInView(sentinel);
   return (
     <>
       <span ref={anchor} hidden />
       {/* Where the banner sits in the scene; once this has scrolled out of view, the banner pins to the window. */}
       <span ref={sentinel} aria-hidden="true" className="pointer-events-none absolute left-0 h-px w-px" style={{ top: top + 40 }} />
-      {show && <Banner top={top} pinned={!sceneShowing} />}
+      {show && <Banner top={top} pinned={!sceneShowing} showNotice={ownNotice} />}
       <span className="sr-only" role="status" aria-live="polite">
-        {show ? spokenText(offer, notice, noticeRoom ? roomNameText(noticeRoom.name) : "the room") : ""}
+        {show ? spokenText(offer, shownNotice, noticeRoom ? roomNameText(noticeRoom.name) : "the room") : ""}
       </span>
     </>
   );
@@ -66,12 +92,15 @@ function useInView(el: RefObject<HTMLElement | null>): boolean {
   return inView;
 }
 
-/** What a screen reader hears, once per message: the same words, without a ticking countdown. */
+/**
+ * What a screen reader hears, once per message: the same words, without anything that changes as
+ * time passes (the sail countdown, Hop aboard's minutes left), so it isn't read out again.
+ */
 function spokenText(offer: RoomOffer | null, notice: RoomNotice | null, roomName: string): string {
   const message = notice ? noticeMessage(notice, roomName, { dismiss: () => undefined, open: () => undefined, hopBack: null }) : offer ? offerMessage(offer, null, 0) : null;
   if (!message) return "";
-  const text = offer?.kind === "sail-with" && !notice ? "Your crew sets sail in a minute!" : message.text;
-  return `${LOOK[message.who].name}: ${text}`;
+  const steady = (!notice && offer && (offer.kind === "sail-with" || offer.kind === "hop-aboard") ? steadySailWords(offer) : null) ?? message.text;
+  return `${LOOK[message.who].name}: ${steady}`;
 }
 
 interface Message {
@@ -83,9 +112,9 @@ interface Message {
   later: { label: string; run: () => void };
 }
 
-function Banner({ top, pinned }: { top: number; pinned: boolean }) {
+function Banner({ top, pinned, showNotice }: { top: number; pinned: boolean; showNotice: boolean }) {
   const offer = useRooms((s) => (s.current !== null ? s.offer : null));
-  const notice = useRooms((s) => s.notice);
+  const notice = useRooms((s) => (showNotice && s.notice !== "left" ? s.notice : null));
   const noticeRoom = useRooms((s) => s.noticeRoom);
   const room = useRooms((s) => s.room);
   const aboard = useRooms((s) => s.current !== null && s.room !== null);
@@ -99,6 +128,7 @@ function Banner({ top, pinned }: { top: number; pinned: boolean }) {
   const wide = useWideScreen();
   const now = useTicker(1000) + serverOffset;
   const [busy, setBusy] = useState(false);
+  const toasts = useToastStackHeight();
 
   const roomName = noticeRoom ? roomNameText(noticeRoom.name) : "the room";
   const message: Message | null = notice
@@ -115,6 +145,9 @@ function Banner({ top, pinned }: { top: number; pinned: boolean }) {
               setBusy(false);
               if (problem || useRooms.getState().current !== code) {
                 if (problem) toast(problem, "warning");
+                // The panel opens on that room's Join card with the reason, which keeps Report there
+                // for a sailor the skipper removed (as the panel's own Hop back in does).
+                useUi.getState().setRoomInvite(code, problem ?? roomProblem("permission-denied", "join"));
                 openPanel("rooms");
               }
             }
@@ -128,16 +161,20 @@ function Banner({ top, pinned }: { top: number; pinned: boolean }) {
   const look = LOOK[message.who];
   // On a phone the crew's badge row sits under the top bar, with any cheer bubbles hanging under it; the banner goes under those.
   const bubbleRows = aboard && !wide && room && myKey ? stripBubbles(room, myKey, now, hidden, muted).length : 0;
-  const y = top + (aboard && !wide ? STRIP_ROW_HEIGHT + 6 + bubbleRows * BUBBLE_ROW : 4);
+  const under = top + (aboard && !wide ? STRIP_ROW_HEIGHT + 6 + bubbleRows * BUBBLE_ROW : 4);
+  // Toasts ("Set sail!", rewards) sit just under the top bar too, over the banner: while any show,
+  // the banner moves below them, pinned or not.
+  const y = toasts > 0 ? Math.max(under, TOAST_STACK_TOP + toasts + 8) : under;
 
   return (
     <div
-      className={cx("pointer-events-none inset-x-0 z-20 flex justify-center px-3", pinned ? "fixed" : "absolute")}
-      style={{ top: pinned ? "calc(env(safe-area-inset-top, 0px) + 8px)" : y }}
+      className={cx("pointer-events-none inset-x-0 z-20 flex justify-center px-3", pinned ? "fixed" : "absolute", !prefersReducedMotion(motion) && "transition-[top] duration-200")}
+      style={{ top: pinned ? (toasts > 0 ? TOAST_STACK_TOP + toasts + 8 : "calc(env(safe-area-inset-top, 0px) + 8px)") : y }}
     >
       <div
         className={cx(
           "pointer-events-auto flex max-w-xl flex-wrap items-center gap-x-3 gap-y-2 rounded-3xl border py-1.5 pr-2 pl-1.5 shadow-[3px_3px_0_#EAE5DA] sm:flex-nowrap sm:rounded-full [[data-visual-style=storybook]_&]:shadow-none",
+          ON_PASTEL,
           !prefersReducedMotion(motion) && "sticker-pop",
         )}
         style={{ background: look.fill, borderColor: look.line, color: look.ink }}
@@ -155,14 +192,13 @@ function Banner({ top, pinned }: { top: number; pinned: boolean }) {
           {message.action && (
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void message.action!.run()}
-              className={cx(message.action.tone === "seafoam" ? SEAFOAM_BUTTON : YELLOW_BUTTON, "px-3 py-1 text-sm")}
+              {...heldButton(busy, () => void message.action!.run())}
+              className={cx(message.action.tone === "seafoam" ? SEAFOAM_BUTTON : YELLOW_BUTTON, HELD, "px-3 py-1 text-sm")}
             >
               {busy ? "Climbing aboard…" : message.action.label}
             </button>
           )}
-          <button type="button" onClick={message.later.run} className={cx(QUIET_BUTTON, "text-[inherit] opacity-80 hover:text-[inherit] hover:opacity-100")}>
+          <button type="button" onClick={message.later.run} className={PASTEL_QUIET_BUTTON}>
             {message.later.label}
           </button>
         </span>
@@ -234,5 +270,8 @@ function noticeMessage(
       return { who: "bunny", text: "The skipper closed the room. Thanks for sailing together!", later: ok };
     case "ended":
       return { who: "bunny", text: "This room has docked for the day. Start a fresh one?", action: { label: "Open Rooms", run: act.open, tone: "yellow" }, later: ok };
+    case "left":
+      // Never shown here (the panel shows it), but worded in case.
+      return { who: "bunny", text: `You left ${name}.`, later: ok };
   }
 }

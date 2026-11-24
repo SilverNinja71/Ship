@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import { getConsentState, isGpcEnabled, setConsentState } from "../lib/accountData.js";
+import { useUi } from "../stores/uiStore.js";
 import { LegalModal, type LegalTab } from "./LegalModal.js";
 
 export function ConsentBanner() {
   const [consent, setConsent] = useState<"accepted" | "essential-only" | null>(() => getConsentState());
   const [legalTab, setLegalTab] = useState<LegalTab | null>(null);
+  // It waits while a panel or the Log in window is open, so it never covers their buttons (on a
+  // phone it sat over the Rooms panel's only "Log in"); it's back as soon as they close.
+  const covering = useUi((s) => s.panel !== null || s.loginOpen);
 
   if (consent !== null && legalTab === null) return null;
 
@@ -17,7 +21,7 @@ export function ConsentBanner() {
 
   return (
     <>
-      {consent === null && (
+      {consent === null && !covering && (
         <aside
           aria-label="Storage and privacy consent"
           className="pointer-events-auto fixed inset-x-3 bottom-3 z-40 mx-auto max-w-2xl rounded-2xl border border-[rgb(0_0_0_/_0.12)] bg-[var(--color-cream-50)]/95 p-2 shadow-sm backdrop-blur-sm"

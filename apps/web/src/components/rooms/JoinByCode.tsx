@@ -19,9 +19,10 @@ function tidy(input: string): string {
 
 const shown = (raw: string) => (raw.length > 4 ? `${raw.slice(0, 4)} ${raw.slice(4)}` : raw);
 
-export function JoinByCode({ onFind }: { onFind: (code: string) => void }) {
+/** `linkProblem`: what was wrong with an invite link that didn't work, shown until the sailor types. */
+export function JoinByCode({ onFind, linkProblem = null }: { onFind: (code: string) => void; linkProblem?: string | null }) {
   const [raw, setRaw] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(linkProblem);
   const confusing = /[IO01]/.test(raw);
 
   const find = (e: FormEvent) => {
@@ -32,7 +33,7 @@ export function JoinByCode({ onFind }: { onFind: (code: string) => void }) {
   };
 
   return (
-    <form onSubmit={find} className="mx-auto grid max-w-md justify-items-center gap-3 rounded-3xl border border-[#B2C8E0] bg-[#E6F2FA] px-5 py-7 text-center text-[#2F4F6B]">
+    <form onSubmit={find} className="mx-auto grid max-w-md justify-items-center gap-3 rounded-3xl border border-[#B2C8E0] bg-[#E6F2FA] px-5 py-7 text-center text-[#2F4F6B] [--ring:currentColor]">
       <PastelMinionBadge costume="pwedo" size={64} />
       <p className="font-display text-xl">Got a room code?</p>
       <p className="text-sm opacity-85">Type the 8 letters and numbers from your friend's ticket, or paste their invite link.</p>
@@ -55,7 +56,7 @@ export function JoinByCode({ onFind }: { onFind: (code: string) => void }) {
           className="w-full rounded-2xl border border-[#B2C8E0] bg-white px-3 py-2.5 text-center font-display text-2xl tracking-[0.18em] text-[#2F4F6B] tabular-nums placeholder:text-[#2F4F6B]/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F4F6B]"
         />
       </label>
-      <p id="room-code-hint" className="min-h-5 text-xs" aria-live="polite">
+      <p id="room-code-hint" className="min-h-5 text-xs" aria-live="polite" role={problem === linkProblem && problem ? "alert" : undefined}>
         {problem ?? (confusing ? "Room codes never use the letters I or O, or the numbers 0 or 1. Check those characters again." : "")}
       </p>
       <button type="submit" disabled={raw.length < ROOM_LIMITS.codeLength} className={SEAFOAM_BUTTON}>

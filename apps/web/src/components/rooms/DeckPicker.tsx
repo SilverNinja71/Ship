@@ -15,7 +15,7 @@ import { useRooms } from "../../stores/roomStore.js";
 import { useUi } from "../../stores/uiStore.js";
 import { PastelMinionBadge } from "../PastelMinionBadge.js";
 import { cx } from "../ui.js";
-import { ROOM_FOCUS_RING, SEAFOAM_BUTTON, chipClass, skipperAction } from "./roomStyle.js";
+import { HELD, ROOM_FOCUS_RING, SEAFOAM_BUTTON, chipClass, heldButton, skipperAction } from "./roomStyle.js";
 
 const { min: MIN_CARDS, max: MAX_CARDS } = ROOM_LIMITS.deckCards;
 
@@ -197,9 +197,9 @@ function BayDecks({ room, onDone }: { room: Room; onDone: () => void }) {
             const tooSmall = b.cardCount < MIN_CARDS;
             const inUse = b.id === current;
             return (
-              <li key={b.id} className="flex flex-col gap-1.5 rounded-2xl border border-[#DCCCF0] bg-[#F7F2FD] px-3 py-2.5 text-[#56406A]">
-                <p className="font-display text-base leading-snug">{b.title}</p>
-                <p className="text-xs opacity-80">
+              <li key={b.id} className="flex flex-col gap-1.5 rounded-2xl border border-[#DCCCF0] bg-[#F7F2FD] px-3 py-2.5 text-[#56406A] [--ring:currentColor]">
+                <p className="font-display text-base leading-snug wrap-anywhere">{b.title}</p>
+                <p className="text-xs opacity-90">
                   {b.cardCount} {b.cardCount === 1 ? "card" : "cards"}
                   {b.subject && (
                     <>
@@ -212,9 +212,9 @@ function BayDecks({ room, onDone }: { room: Room; onDone: () => void }) {
                   {inUse ? (
                     <span className="rounded-full bg-white/80 px-2.5 py-0.5 text-xs">In use</span>
                   ) : tooBig || tooSmall ? (
-                    <span className="text-xs opacity-80">{tooBig ? `Too big for a room (${MAX_CARDS} cards at most)` : `Too small for a room (${MIN_CARDS} cards at least)`}</span>
+                    <span className="text-xs opacity-90">{tooBig ? `Too big for a room (${MAX_CARDS} cards at most)` : `Too small for a room (${MIN_CARDS} cards at least)`}</span>
                   ) : (
-                    <button type="button" disabled={sending !== null} onClick={() => void use(b)} className={cx(SEAFOAM_BUTTON, "px-3 py-1 text-sm")}>
+                    <button type="button" {...heldButton(sending !== null, () => void use(b))} className={cx(SEAFOAM_BUTTON, HELD, "px-3 py-1 text-sm")}>
                       {sending === b.id ? "Sending…" : "Use this deck"}
                     </button>
                   )}
@@ -303,7 +303,8 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
               }}
               className={chipClass(chosen === m.deck.id)}
             >
-              {m.deck.name} <span className="opacity-70">· {m.count}</span>
+              {/* Full ink: the count is small text, and a faded one fell under 4.5:1 on the chip. */}
+              {m.deck.name} <span>· {m.count}</span>
             </button>
           </li>
         ))}
@@ -319,7 +320,7 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
           </p>
           {sizeProblem && <p className="rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-1.5 text-sm text-[#8A3B31]">{sizeProblem}</p>}
           {blocked.length > 0 ? (
-            <div role="alert" className="rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">
+            <div role="alert" className="rounded-xl border border-[#F4C7BE] bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31] [--ring:currentColor]">
               <p>{ROOM_DECK_CONTACT_PROBLEM}</p>
               <ul className="mt-1 list-disc pl-5 text-xs">
                 {blocked.map((w) => (
@@ -330,7 +331,7 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
           ) : (
             <>
               {warnings.length > 0 && (
-                <div className="rounded-xl border border-[#F1E3A0] bg-[#FFF9DC] px-3 py-2 text-sm text-[#4B3A0B]">
+                <div className="rounded-xl border border-[#F1E3A0] bg-[#FFF9DC] px-3 py-2 text-sm text-[#4B3A0B] [--ring:currentColor]">
                   <p>Have a look before it goes up:</p>
                   <ul className="mt-1 list-disc pl-5 text-xs">
                     {warnings.map((w) => (
@@ -350,7 +351,7 @@ function MyDecks({ room, onDone }: { room: Room; onDone: () => void }) {
               {problem}
             </p>
           )}
-          <button type="button" disabled={!okToShare || blocked.length > 0 || !!sizeProblem || sending} onClick={() => void use()} className={cx(SEAFOAM_BUTTON, "px-3 py-1 text-sm")}>
+          <button type="button" disabled={!okToShare || blocked.length > 0 || !!sizeProblem} {...heldButton(sending, () => void use())} className={cx(SEAFOAM_BUTTON, HELD, "px-3 py-1 text-sm")}>
             {sending ? "Sending…" : "Use this deck"}
           </button>
         </div>

@@ -42,15 +42,22 @@ export function Button({
   );
 }
 
-/** A full-height parchment panel over the scene. Escape closes it; focus moves in and back out. */
-export function Panel({ title, subtitle, icon, onClose, children, wide = false }: { title: string; subtitle?: string; icon?: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean }) {
+/**
+ * A full-height parchment panel over the scene. Escape closes it; focus moves in and back out. If
+ * what opened it has gone meanwhile (a banner's button hides while its panel is open), the focus
+ * goes back to the panel's own button instead (`opener`: an element with data-panel-opener="…").
+ */
+export function Panel({ title, subtitle, icon, onClose, children, wide = false, opener }: { title: string; subtitle?: string; icon?: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; opener?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.focus();
-    return () => previous?.focus?.();
-  }, []);
+    return () => {
+      if (previous?.isConnected && previous !== document.body) previous.focus?.();
+      else if (opener) document.querySelector<HTMLElement>(`[data-panel-opener="${opener}"]`)?.focus();
+    };
+  }, [opener]);
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center bg-[rgb(0_0_0_/_0.26)] p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div

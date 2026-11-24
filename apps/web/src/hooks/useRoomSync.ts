@@ -5,8 +5,9 @@
 
 import { useEffect } from "react";
 import { subscribeAuthUser } from "../lib/firebase.js";
+import { roomSessionStop } from "../lib/roomRules.js";
 import { storageKey } from "../lib/storage.js";
-import { useRooms } from "../stores/roomStore.js";
+import { roomsChangedElsewhere, roomsSignedIn, roomsSignedOut, useRooms } from "../stores/roomStore.js";
 import { useUi } from "../stores/uiStore.js";
 
 type SessionModule = typeof import("../lib/roomSession.js");
@@ -28,10 +29,12 @@ export function useRoomSync(): void {
         void sessionModule().then((m) => m.startRoomSession(who, code));
         return;
       }
-      if (loaded) void loaded.then((m) => m.stopRoomSession());
-      // Signed out while aboard: the room stays remembered (logging back in picks it up), but nothing live shows.
-      // Signed in with no room (it was left from another Ship tab): nothing of the old room's live state may linger either,
-      // or its banner and offers would still show here.
+      // Signed out while aboard: the room stays remembered (logging back in picks it up), and so do
+      // this tab's saved minutes and Tidy memory for it. Signed in with no room (left, Start over or
+      // Delete everything, perhaps from another Ship tab): this tab's saved room things go too.
+      const forget = roomSessionStop(who, code) === "forget";
+      if (loaded) void loaded.then((m) => m.stopRoomSession({ forget }));
+      // Nothing of the old room's live state may linger either, or its banner and offers would still show here.
       const s = useRooms.getState();
       const live = s.room !== null || s.myKey !== null || s.offer !== null || s.alert !== null || s.deck !== null || s.tidyMemo !== null || s.status === "aboard" || s.status === "elsewhere" || s.status === "error";
       if (live) {
@@ -51,6 +54,9 @@ export function useRoomSync(): void {
     const unAuth = subscribeAuthUser((user) => {
       const was = uid;
       uid = user?.uid ?? null;
+      // The last account's note about its room, and the invite it was answering, never carry over to whoever is next.
+      if (was && !uid) roomsSignedOut();
+      if (uid && !was) roomsSignedIn();
       // Someone else's 13+ answer, room, nicknames and hidden sailors never carry over to this account.
       if (uid) useRooms.getState().forAccount(uid);
       // Someone who logged in to answer an invite goes straight back to it (never joined by itself).
@@ -58,7 +64,10 @@ export function useRoomSync(): void {
         useUi.getState().setLoginOpen(false);
         useUi.getState().openPanel("rooms");
       }
-      if (uid && useUi.getState().panel === "rooms") tidy();
+      // Notes for rooms that have ended are cleared on opening Study Rooms, and on signing in on a
+      // browser where this account has used rooms, so they don't wait for the next visit to the panel.
+      const s = useRooms.getState();
+      if (uid && (useUi.getState().panel === "rooms" || s.rulesOk > 0 || s.recent.length > 0 || s.current !== null)) tidy();
       follow();
     });
     const unRooms = useRooms.subscribe((s, prev) => {
@@ -70,7 +79,7 @@ export function useRoomSync(): void {
     // Another tab left, joined or switched rooms: read the saved preferences again (only one tab runs the room).
     const roomsKey = storageKey("rooms");
     const onStorage = (e: StorageEvent) => {
-      if (e.key === roomsKey) void useRooms.persist.rehydrate();
+      if (e.key === roomsKey) void roomsChangedElsewhere();
     };
     window.addEventListener("storage", onStorage);
     return () => {

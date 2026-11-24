@@ -176,15 +176,26 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
+/**
+ * A bottle card's own pastel and ink (lilac for decks, mint for sources), the same on every theme
+ * and look: everything inside that uses the page's ink, muted ink, chip fill or border (the card's
+ * text, its Add and Keep buttons, focus rings, the report reasons) takes the card's instead, so a
+ * card never turns near-white on near-white (Midnight Moon, Deep Sea Jellyfish) or faint on navy
+ * (Full Color). Muted lines are the card's ink at 90%, at least 4.5:1 on the pastel.
+ */
+const BOTTLE_CARD = {
+  deck: "border-[#DCCCF0] bg-[#F7F2FD] text-[#56406A] [--page-ink:#56406A] [--muted-ink:rgb(86_64_106_/_0.9)] [--border-subtle:#DCCCF0]",
+  source: "border-[#C3E6DC] bg-[#F0FAF7] text-[#2D6252] [--page-ink:#2D6252] [--muted-ink:rgb(45_98_82_/_0.9)] [--border-subtle:#C3E6DC]",
+} as const;
+
 /** A bottle as everyone sees it. Used for browsing, the share preview and My bottles. */
 function BottleCardView({ bottle, actions, note }: { bottle: Omit<Bottle, "id" | "at"> & { at?: number }; actions?: React.ReactNode; note?: string }) {
   const deck = bottle.kind === "deck";
   return (
     <article
       className={cx(
-        "flex h-full flex-col gap-2 rounded-2xl border px-3.5 py-3 text-[var(--page-ink)] shadow-[0_2px_0_rgb(0_0_0_/_0.04)]",
-        deck ? "border-[#DCCCF0] bg-[#F7F2FD]" : "border-[#C3E6DC] bg-[#F0FAF7]",
-        "[[data-visual-style=storybook]_&]:border-[var(--border-subtle)] [[data-visual-style=storybook]_&]:bg-[var(--surface-2)]",
+        "flex h-full min-w-0 flex-col gap-2 rounded-2xl border px-3.5 py-3 shadow-[0_2px_0_rgb(0_0_0_/_0.04)] [--surface-2:rgb(255_255_255_/_0.7)] [--surface-3:#FFFFFF] [--ring:currentColor]",
+        deck ? BOTTLE_CARD.deck : BOTTLE_CARD.source,
       )}
     >
       <div className="flex items-center gap-2 text-xs text-[var(--muted-ink)]">
@@ -194,19 +205,19 @@ function BottleCardView({ bottle, actions, note }: { bottle: Omit<Bottle, "id" |
         {bottle.subject && <span className="truncate">{bottle.subject}</span>}
         {bottle.at !== undefined && <span className="ml-auto shrink-0">afloat {day(bottle.at)}</span>}
       </div>
-      <h3 className="font-display text-lg leading-snug">{bottle.title}</h3>
-      {bottle.description && <p className="line-clamp-3 text-sm text-[var(--muted-ink)]">{bottle.description}</p>}
+      <h3 className="font-display text-lg leading-snug wrap-anywhere">{bottle.title}</h3>
+      {bottle.description && <p className="line-clamp-3 text-sm wrap-anywhere text-[var(--muted-ink)]">{bottle.description}</p>}
       {deck && bottle.preview.length > 0 && (
         <ul className="space-y-1 text-sm">
           {bottle.preview.map((c, i) => (
-            <li key={i} className="rounded-lg bg-white/70 px-2 py-1 [[data-visual-style=storybook]_&]:bg-[var(--surface-3)]">
+            <li key={i} className="rounded-lg bg-white/70 px-2 py-1 wrap-anywhere">
               <span className="font-semibold">{c.f}</span> <span className="text-[var(--muted-ink)]" aria-hidden="true">·</span> <span className="text-[var(--muted-ink)]">{c.b}</span>
             </li>
           ))}
         </ul>
       )}
       {!deck && bottle.url && <p className="truncate text-xs text-[var(--muted-ink)]">{bottle.url.replace(/^https:\/\/(www\.)?/, "")}</p>}
-      {bottle.tags.length > 0 && <p className="text-xs text-[#6B5E8A]">{bottle.tags.map((t) => `#${t}`).join(" ")}</p>}
+      {bottle.tags.length > 0 && <p className="text-xs wrap-anywhere text-[var(--muted-ink)]">{bottle.tags.map((t) => `#${t}`).join(" ")}</p>}
       {note && <p className="text-xs text-[#8A3B31]">{note}</p>}
       {actions && <div className="mt-auto flex flex-wrap items-center gap-x-1 pt-1">{actions}</div>}
     </article>
@@ -454,7 +465,7 @@ function SetAfloat({ uid, onDone }: { uid: string; onDone: () => void }) {
             ))}
           </div>
         )}
-        {check.ok && check.removedParams.length > 0 && <p className="text-xs text-[#2D6252]">✓ Took tracking codes out of the link ({check.removedParams.join(", ")}), so it can't point back at you.</p>}
+        {check.ok && check.removedParams.length > 0 && <p className="rounded-xl bg-[#E9F6EF] px-3 py-1.5 text-xs text-[#2D6252]">✓ Took tracking codes out of the link ({check.removedParams.join(", ")}), so it can't point back at you.</p>}
         {check.ok && check.warnings.length > 0 && (
           <div className="rounded-2xl bg-[#FFF1D6] px-3 py-2 text-xs text-[#6B4B12]">
             <p className="font-semibold">Before you share, check:</p>
@@ -475,7 +486,11 @@ function SetAfloat({ uid, onDone }: { uid: string; onDone: () => void }) {
         >
           {busy ? "Corking the bottle…" : wait > 0 ? `Wait ${wait} s for the next bottle` : "Set it afloat 🍾"}
         </button>
-        {error && <p className="text-sm text-[#8A3B31]">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">
+            {error}
+          </p>
+        )}
         <p className="text-xs text-[var(--muted-ink)]">Anonymous: the bottle holds no name, email or account. Only your account privately remembers it's yours, so you can take it back from My bottles.</p>
       </div>
     </div>

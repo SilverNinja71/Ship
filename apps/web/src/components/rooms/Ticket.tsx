@@ -26,10 +26,10 @@ export function Ticket({ room }: { room: Room }) {
   const [open, setOpen] = useState(room.members.length <= 1);
   const link = typeof location === "undefined" ? "" : inviteLink(room.code, location.origin, location.pathname);
   return (
-    <section className="rounded-2xl border-2 border-dashed border-[#B2C8E0] bg-[#E6F2FA] text-[#2F4F6B]">
+    <section className="rounded-2xl border-2 border-dashed border-[#B2C8E0] bg-[#E6F2FA] text-[#2F4F6B] [--ring:currentColor]">
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className={cx("flex w-full items-center gap-2 rounded-2xl px-4 py-2.5 text-left", ROOM_FOCUS_RING)}>
         <span className="font-display text-base">Invite ticket</span>
-        <span className="font-display text-sm tracking-[0.16em] tabular-nums opacity-80">{formatCode(room.code)}</span>
+        <span className="font-display text-sm tracking-[0.16em] tabular-nums opacity-90">{formatCode(room.code)}</span>
         <span className="ml-auto opacity-70">
           <IconChevron dir={open ? "up" : "down"} size={16} />
         </span>
@@ -41,7 +41,7 @@ export function Ticket({ room }: { room: Room }) {
               <PastelMinionBadge costume="pwedo" size={56} />
             </span>
             <div className="min-w-0">
-              <p className="text-xs tracking-[0.18em] uppercase opacity-80">Room code</p>
+              <p className="text-xs tracking-[0.18em] uppercase opacity-90">Room code</p>
               <p className="whitespace-nowrap font-display text-2xl tabular-nums tracking-[0.22em] sm:text-3xl">{formatCode(room.code)}</p>
               <p className="mt-0.5 text-xs opacity-85">Share it only with people you'd study with.</p>
             </div>

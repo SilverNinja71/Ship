@@ -36,13 +36,20 @@ service cloud.firestore {
       return t == (resource == null ? null : resource.data.get(c, null))
         || (request.resource.data[f] == request.time && t is string && t.matches('[A-HJ-NP-Z2-9]{8}'));
     }
-    // The open room this sailor opened last: it changes only to an open room opened in this same write.
+    // The open room this sailor runs (opened, or took charge of) last. It changes only to an open
+    // room opened in this same write, or to an open room this write leaves them skippering (taking
+    // the hat, or putting a room whose hat was handed to them back on the list), and only while
+    // the last one is no longer theirs. So one account has one listed open room at a time.
     function openStamp() {
       let t = request.resource.data.openIn;
-      return t == (resource == null ? null : resource.data.get('openIn', null))
-        || (t is string && t.matches('[A-HJ-NP-Z2-9]{8}') && request.resource.data.madeAt == request.time
-          && !exists(/databases/$(database)/documents/rooms/$(t))
-          && getAfter(/databases/$(database)/documents/rooms/$(t)).data.mode == 'open');
+      let was = resource == null ? null : resource.data.get('openIn', null);
+      return t == was
+        || (t is string && t.matches('[A-HJ-NP-Z2-9]{8}')
+          && getAfter(/databases/$(database)/documents/rooms/$(t)).data.mode == 'open'
+          && (exists(/databases/$(database)/documents/rooms/$(t))
+            ? getAfter(/databases/$(database)/documents/rooms/$(t)).data.host == hashing.sha256(request.auth.uid + '/' + t).toHexString().lower()
+              && !stillSkippering(was)
+            : request.resource.data.madeAt == request.time));
     }
     // Whether this sailor still skippers the open room `code` they opened (one open room per account at a time).
     function stillSkippering(code) {
@@ -58,22 +65,33 @@ service cloud.firestore {
       // its open room is still theirs (deleting it would free the one-open-room slot).
       allow delete: if isOwner(uid)
         && !(kind == 'meta' && docId == 'bottles' && request.time < resource.data.lastAt + duration.value(20, 's'))
+        && !(kind == 'meta' && docId == 'reports' && request.time < resource.data.at + duration.value(30, 's'))
         && !(kind == 'meta' && docId == 'rooms'
           && !(stampDue('madeAt', 60) && stampDue('joinedAt', 10) && !stillSkippering(resource.data.get('openIn', null))));
       allow create, update: if isOwner(uid)
         && kind in ['state', 'notes', 'meta']
-        && !(kind == 'meta' && docId in ['bottles', 'rooms']);
-      // When this sailor last set a bottle afloat: one every 20 seconds at most.
+        && !(kind == 'meta' && docId in ['bottles', 'rooms', 'reports']);
+      // When this sailor last set a bottle afloat (one every 20 seconds at most), and which bottle
+      // that time was spent on, so one batch can't set several afloat on one stamp.
       allow create, update: if isOwner(uid) && kind == 'meta' && docId == 'bottles'
-        && request.resource.data.keys().hasOnly(['lastAt'])
+        && request.resource.data.keys().hasOnly(['lastAt', 'lastId'])
         && request.resource.data.lastAt == request.time
+        && request.resource.data.lastId is string && request.resource.data.lastId.size() <= 64
         && (resource == null || request.time > resource.data.lastAt + duration.value(20, 's'));
+      // When this sailor last reported a bottle (one every 30 seconds at most), and which bottle,
+      // so one batch can't report several on one stamp and a few accounts can't hide the whole bay at once.
+      allow create, update: if isOwner(uid) && kind == 'meta' && docId == 'reports'
+        && request.resource.data.keys().hasOnly(['at', 'id'])
+        && request.resource.data.at == request.time
+        && request.resource.data.id is string && request.resource.data.id.size() <= 64
+        && (resource == null || request.time > resource.data.at + duration.value(30, 's'));
       // The private note that a bottle is theirs: made only together with a new bottle, never changed.
       allow create: if isOwner(uid) && kind == 'shared'
         && request.resource.data.keys().hasOnly(['at'])
         && request.resource.data.at == request.time
         && !exists(/databases/$(database)/documents/bottles/$(docId))
-        && existsAfter(/databases/$(database)/documents/bottles/$(docId));
+        && existsAfter(/databases/$(database)/documents/bottles/$(docId))
+        && getAfter(/databases/$(database)/documents/users/$(uid)/meta/bottles).data.lastId == docId;
       // Study Rooms: when this sailor last opened (60 s) and joined (10 s) a room and which room
       // each time (one stamp, one room, so a batch can't open or join several), the open room they
       // opened last, the room rules version they accepted, and whether they said they're 13 or
@@ -85,24 +103,52 @@ service cloud.firestore {
         && stampTime('madeAt', 60) && stampTime('joinedAt', 10)
         && stampRoom('madeIn', 'madeAt') && stampRoom('joinedIn', 'joinedAt')
         && openStamp();
-      // Study Rooms: the private note that this sailor is in room {docId}, so account deletion can find it.
+      // Study Rooms: the private note that this sailor is (or was) in room {docId}, made only by
+      // the write that brings them aboard. Account deletion finds their rooms by it, and it lets
+      // someone who left still report the room until the note is tidied away with the room.
       allow create: if isOwner(uid) && kind == 'rooms'
         && docId.matches('[A-HJ-NP-Z2-9]{8}')
         && request.resource.data.keys().hasOnly(['at'])
-        && request.resource.data.at == request.time;
+        && request.resource.data.at == request.time
+        && hashing.sha256(uid + '/' + docId).toHexString().lower() in getAfter(/databases/$(database)/documents/rooms/$(docId)).data.m;
+      // Leaving by themselves, the sailor's note records whether they were aboard 5 minutes or more
+      // this time (`stayed`): only then does a report made after leaving count towards taking an
+      // open room off the list. Written only by the write that takes them out of the room; `true`
+      // only when it's so (the app never claims it on a guess, so `false` is always allowed).
+      allow update: if isOwner(uid) && kind == 'rooms'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stayed'])
+        && (request.resource.data.stayed == false
+          || (request.resource.data.stayed == true
+            && request.time > get(roomAt(docId)).data.m[hashing.sha256(uid + '/' + docId).toHexString().lower()].in + duration.value(5, 'm')))
+        && hashing.sha256(uid + '/' + docId).toHexString().lower() in get(roomAt(docId)).data.m
+        && !(hashing.sha256(uid + '/' + docId).toHexString().lower() in getAfter(roomAt(docId)).data.m);
+    }
+
+    // Rules have no loops, so the few tags and preview cards a bottle may hold are checked one by
+    // one: every bottle in a browse downloads them, so each must stay small.
+    function tagOk(t, i) {
+      return t.size() <= i || (t[i] is string && t[i].size() <= 30);
+    }
+    function previewOk(p, i) {
+      return p.size() <= i
+        || (p[i] is map && p[i].keys().hasOnly(['f', 'b']) && p[i].keys().hasAll(['f', 'b'])
+          && p[i].f is string && p[i].f.size() <= 500 && p[i].b is string && p[i].b.size() <= 500);
     }
 
     function validBottle(d) {
-      return d.keys().hasOnly(['kind', 'title', 'url', 'sourceType', 'subject', 'subjectKey', 'tags', 'description', 'cardCount', 'preview', 'at', 'reports'])
-        && d.keys().hasAll(['kind', 'title', 'url', 'sourceType', 'subject', 'subjectKey', 'tags', 'description', 'cardCount', 'preview', 'at', 'reports'])
+      return d.keys().hasOnly(['kind', 'title', 'url', 'sourceType', 'subject', 'subjectKey', 'tags', 'description', 'cardCount', 'preview', 'at', 'reports', 'hidden'])
+        && d.keys().hasAll(['kind', 'title', 'url', 'sourceType', 'subject', 'subjectKey', 'tags', 'description', 'cardCount', 'preview', 'at', 'reports', 'hidden'])
         && d.title is string && d.title.size() > 0 && d.title.size() <= 200
         && d.subject is string && d.subject.size() <= 60
         && d.subjectKey is string && d.subjectKey.size() <= 60
         && d.tags is list && d.tags.size() <= 8
+        && tagOk(d.tags, 0) && tagOk(d.tags, 1) && tagOk(d.tags, 2) && tagOk(d.tags, 3)
+        && tagOk(d.tags, 4) && tagOk(d.tags, 5) && tagOk(d.tags, 6) && tagOk(d.tags, 7)
         && d.description is string && d.description.size() <= 500
         && d.preview is list && d.preview.size() <= 3
+        && previewOk(d.preview, 0) && previewOk(d.preview, 1) && previewOk(d.preview, 2)
         && d.cardCount is int
-        && d.reports == 0
+        && d.reports == 0 && d.hidden == false
         && d.at == request.time
         && (d.kind == 'source'
           ? d.url is string && d.url.size() <= 2000 && d.url.matches('https://[^\\s]+')
@@ -112,22 +158,41 @@ service cloud.firestore {
             && d.cardCount > 0 && d.cardCount <= 300);
     }
 
+    // Whether this sailor set bottle `id` afloat (their private note says so).
+    function sharerOf(id) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(id));
+    }
+
     match /bottles/{bottleId} {
-      allow read: if signedIn();
-      // Set afloat together with the sharer's private note and their cooldown stamp.
+      // A bottle that reports have hidden can be read only by its sharer (My bottles), and the bay
+      // lists only bottles that aren't hidden, so a reported one can't be fished out by a query.
+      allow get: if signedIn() && (resource.data.get('hidden', false) == false || sharerOf(bottleId));
+      allow list: if signedIn() && resource.data.hidden == false;
+      // Set afloat together with the sharer's private note and their cooldown stamp, which names
+      // this bottle (so one stamp sets one bottle afloat).
       allow create: if signedIn()
         && validBottle(request.resource.data)
         && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(bottleId))
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/meta/bottles).data.lastAt == request.time;
-      // Only the sharer can take it back.
-      allow delete: if signedIn()
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/meta/bottles).data.lastAt == request.time
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/meta/bottles).data.lastId == bottleId;
+      // Only the sharer can take it back. A bottle is never deleted: taking it back empties it to
+      // {gone: true} for good, so its id can't be set afloat again with other cards (its reports
+      // stay with it, and rooms never deal it again).
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['gone']) && request.resource.data.gone == true
         && exists(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(bottleId));
-      // A report adds exactly one, once per sailor, written together with that sailor's report.
+      // A report adds exactly one, once per sailor, written together with that sailor's report and
+      // their report stamp (one report every 30 s, naming this bottle). The third hides the bottle
+      // for good, and a hidden deck's cards go in the same batch.
       allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reports'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reports', 'hidden'])
         && request.resource.data.reports == resource.data.reports + 1
+        && request.resource.data.hidden == (request.resource.data.reports >= 3)
+        && (request.resource.data.hidden == false || !existsAfter(/databases/$(database)/documents/bottles/$(bottleId)/deck/cards))
         && !exists(/databases/$(database)/documents/bottles/$(bottleId)/reports/$(request.auth.uid))
-        && existsAfter(/databases/$(database)/documents/bottles/$(bottleId)/reports/$(request.auth.uid));
+        && existsAfter(/databases/$(database)/documents/bottles/$(bottleId)/reports/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/meta/reports).data.at == request.time
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/meta/reports).data.id == bottleId;
 
       // Reports are never read back by anyone; their count is on the bottle.
       match /reports/{reporter} {
@@ -149,7 +214,7 @@ service cloud.firestore {
           && request.resource.data.cards is list
           && request.resource.data.cards.size() == getAfter(/databases/$(database)/documents/bottles/$(bottleId)).data.cardCount;
         allow delete: if signedIn()
-          && exists(/databases/$(database)/documents/users/$(request.auth.uid)/shared/$(bottleId));
+          && (sharerOf(bottleId) || getAfter(/databases/$(database)/documents/bottles/$(bottleId)).data.get('hidden', false) == true);
       }
     }
 
@@ -196,6 +261,15 @@ service cloud.firestore {
       let c = getAfter(cardAt(roomId)).data;
       return c.n == n.m.size() && c.listed == n.listed && c.locked == n.locked;
     }
+    // A skipper's own write keeps the card's `alive` (refreshed in the same batch when due) no
+    // more than 10 minutes old, so a card never looks finished while its room goes on.
+    function cardFresh(roomId) {
+      return !staleAt(getAfter(cardAt(roomId)).data.alive, 10);
+    }
+    // This write leaves the sailor's stamp naming `roomId` as the open room they run (openStamp).
+    function claimedAfter(roomId) {
+      return getAfter(stampAt()).data.get('openIn', null) == roomId;
+    }
 
     function memberShape(x) {
       return x is map
@@ -237,8 +311,8 @@ service cloud.firestore {
     }
 
     function newRoom(d, roomId) {
-      return d.keys().hasOnly(['v', 'mode', 'name', 'subj', 'at', 'host', 'listed', 'locked', 'ban', 'rep', 'why', 'banked', 'last', 'sail', 'deck', 'game', 'm'])
-        && d.keys().hasAll(['v', 'mode', 'name', 'subj', 'at', 'host', 'listed', 'locked', 'ban', 'rep', 'why', 'banked', 'last', 'sail', 'deck', 'game', 'm'])
+      return d.keys().hasOnly(['v', 'mode', 'name', 'subj', 'at', 'host', 'listed', 'locked', 'ban', 'rep', 'why', 'strikes', 'banked', 'last', 'sail', 'deck', 'game', 'm'])
+        && d.keys().hasAll(['v', 'mode', 'name', 'subj', 'at', 'host', 'listed', 'locked', 'ban', 'rep', 'why', 'strikes', 'banked', 'last', 'sail', 'deck', 'game', 'm'])
         && d.v == 1
         && d.mode in ['invite', 'open']
         && d.name is list && d.name.size() == 2
@@ -248,7 +322,7 @@ service cloud.firestore {
         && d.at == request.time
         && d.host == me(roomId)
         && d.listed == (d.mode == 'open') && d.locked == false
-        && d.ban == [] && d.rep == [] && d.why == {'spam': 0, 'unkind': 0, 'personal': 0, 'off': 0}
+        && d.ban == [] && d.rep == [] && d.why == {'spam': 0, 'unkind': 0, 'personal': 0, 'off': 0} && d.strikes == 0
         && d.banked == 0 && d.last == null
         && d.sail == null && d.deck == null && d.game == null
         && d.m.keys().hasOnly([me(roomId)]) && newMember(d.m[me(roomId)]);
@@ -268,27 +342,31 @@ service cloud.firestore {
         && cardInStep(n, roomId);
     }
 
-    function own(o, n, k) {
+    function own(o, n, k, roomId) {
       return k in o.m && k in n.m && n.m.diff(o.m).affectedKeys().hasOnly([k])
-        && ownChange(o.m[k], n.m[k]);
+        && ownChange(o.m[k], n.m[k])
+        && (o.host != k || cardFresh(roomId));
     }
 
     // One sailor (named in `last`) leaves: by themselves, removed by the skipper (and banned), or
     // tidied away by anyone, the skipper too, once 25 minutes stale (a sweep never bans, and never
     // takes out someone still here). Their focus minutes stay with the crew; someone leaving by
-    // themselves may add the minutes since they were last credited. A departing skipper hands the
-    // hat to someone still aboard in the same write.
+    // themselves may add the whole minutes since they were last credited. A departing skipper
+    // hands the hat to someone still aboard in the same write, and an open room leaves the list
+    // until its new skipper puts it back (claimedAfter: one listed open room per account).
     function removal(o, n, k, roomId) {
       let gone = n.last;
-      return n.diff(o).affectedKeys().hasOnly(['m', 'banked', 'last', 'host', 'ban'])
+      return n.diff(o).affectedKeys().hasOnly(['m', 'banked', 'last', 'host', 'ban', 'listed'])
         && gone is string && gone in o.m && !(gone in n.m)
         && n.m.diff(o.m).affectedKeys().hasOnly([gone])
+        && n.banked is int
         && (n.banked == o.banked + o.m[gone].dmg
           || (gone == k && n.banked > o.banked + o.m[gone].dmg
             && (n.banked - o.banked - o.m[gone].dmg) * 60 <= (request.time - o.m[gone].cr).seconds() + 60))
         && (n.ban == o.ban || (o.host == k && gone != k && n.ban == o.ban.concat([gone]) && n.ban.size() <= 20))
         && (gone == k || staleAt(o.m[gone].seen, 25) || n.ban != o.ban)
         && (o.host != gone ? n.host == o.host : n.host in n.m)
+        && n.listed == (o.listed && o.host != gone)
         && cardInStep(n, roomId);
     }
 
@@ -326,7 +404,7 @@ service cloud.firestore {
       return n.game == o.game || n.game == null
         || (n.deck != null
           && (n.deck.b == null || get(/databases/$(database)/documents/bottles/$(n.deck.b)).data.reports < 3)
-          && n.game.v == 1 && n.game.seed is int && n.game.at == request.time
+          && n.game.v == 2 && n.game.seed is int && n.game.at == request.time
           && n.game.seats is list && n.game.seats.size() >= 1 && n.game.seats.size() <= 6
           && n.m.keys().hasAll(n.game.seats)
           && (n.game.kind == 'tidy'
@@ -341,21 +419,27 @@ service cloud.firestore {
     }
 
     // The skipper: lock the door, set sail together, pick the deck and game, pass the hat.
-    // Each skipper write also stamps their own entry, so the 15 s gap applies to them too.
+    // Each skipper write also stamps their own entry, so the 15 s gap applies to them too, and
+    // keeps the card's `alive` fresh while the hat stays. An open room is listed only while its
+    // skipper runs it as their one open room (claimedAfter); passing the hat takes it off the
+    // list until the new skipper puts it back.
     function captain(o, n, k, roomId) {
       return o.host == k && k in o.m && k in n.m
         && n.diff(o).affectedKeys().hasOnly(['m', 'locked', 'listed', 'sail', 'deck', 'game', 'host'])
         && n.m.diff(o.m).affectedKeys().hasOnly([k])
         && ownChange(o.m[k], n.m[k])
         && n.locked is bool
-        && n.listed == (o.mode == 'open' && !n.locked && o.rep.size() < 3)
-        && (n.host == o.host || n.host in n.m)
+        && n.listed == (o.mode == 'open' && !n.locked && o.strikes < 3 && n.host == o.host
+          && (o.listed || claimedAfter(roomId)))
+        && (n.host == o.host ? cardFresh(roomId) : n.host in n.m)
         && sailOk(o, n) && deckOk(o, n, roomId) && gameOk(o, n)
         && cardInStep(n, roomId);
     }
 
     // Pass the Bottle: one turn at a time, by the bottle's holder, or by anyone aboard once its
-    // 35 s are up, its holder has left, or its holder is focusing.
+    // 35 s are up, its holder has left, or its holder is focusing. The app's turn also writes the
+    // game's seed: unchanged, it isn't an affected key, so a turn queued for an earlier game (whose
+    // seed differs) is refused by the key list instead of landing on the next game's turn.
     function turn(o, n, k) {
       let g = o.game;
       let h = n.game;
@@ -366,6 +450,7 @@ service cloud.firestore {
         && request.time > g.tAt + duration.value(2, 's')
         && (g.holder == k || request.time > g.tAt + duration.value(35, 's') || !(g.holder in o.m) || o.m[g.holder].st == 1)
         && h.holder in g.seats
+        && h.turn is int && h.del is int && h.buoys is int && h.card is int
         && h.del >= g.del && h.del <= g.del + 1
         && h.buoys <= g.buoys && h.buoys >= g.buoys - 1
         && h.card >= g.card && h.card <= g.card + 1
@@ -373,25 +458,43 @@ service cloud.firestore {
         && h.end == (h.del >= g.goal ? 1 : (h.buoys == 0 || h.card >= g.n ? 2 : 0));
     }
 
-    // A report: once per account, only from someone aboard or someone the skipper removed, with
-    // one reason. Three take an open room off the list for good.
+    // Whether a report counts towards taking an open room off the list (a strike): the reporter has
+    // been aboard 5 minutes or more (now, or the last time they left by themselves, as their note
+    // records), and this is the room they came aboard last. So sailors who come aboard only to
+    // report, and leave, can't take rooms off the list, and one account weighs in one room at a time.
+    function stake(o, k, roomId) {
+      let note = /databases/$(database)/documents/users/$(request.auth.uid)/rooms/$(roomId);
+      return exists(stampAt()) && get(stampAt()).data.get('joinedIn', null) == roomId
+        && (k in o.m ? staleAt(o.m[k].in, 5) : exists(note) && get(note).data.get('stayed', false) == true);
+    }
+
+    // A report: once per account, only from someone aboard, someone the skipper removed, or
+    // someone who was aboard and left (their private note for the room stays until it's tidied
+    // away with the room), with one reason. Three strikes (stake) take an open room off the list
+    // for good; other reports are counted (rep, why) but leave the list as it is.
     function report(o, n, k, roomId) {
       let r = reportKey(roomId);
-      return (k in o.m || k in o.ban)
+      return (k in o.m || k in o.ban || exists(/databases/$(database)/documents/users/$(request.auth.uid)/rooms/$(roomId)))
         && !(r in o.rep) && n.rep == o.rep.concat([r]) && n.rep.size() <= 20
         && n.why.keys().hasOnly(['spam', 'unkind', 'personal', 'off']) && n.why.keys().hasAll(['spam', 'unkind', 'personal', 'off'])
+        && n.why.spam is int && n.why.unkind is int && n.why.personal is int && n.why.off is int
         && n.why.spam >= o.why.spam && n.why.unkind >= o.why.unkind && n.why.personal >= o.why.personal && n.why.off >= o.why.off
         && n.why.spam + n.why.unkind + n.why.personal + n.why.off == o.why.spam + o.why.unkind + o.why.personal + o.why.off + 1
-        && n.listed == (o.listed && n.rep.size() < 3)
+        && n.strikes == o.strikes + (stake(o, k, roomId) ? 1 : 0)
+        && n.listed == (o.listed && n.strikes < 3)
         && cardInStep(n, roomId);
     }
 
-    // When the skipper has been gone 25 minutes, any sailor aboard can take the hat (stamping their own entry).
-    function takeHat(o, n, k) {
-      return n.diff(o).affectedKeys().hasOnly(['host', 'm'])
+    // When the skipper has been quiet 15 minutes, any sailor aboard can take the hat (stamping their
+    // own entry), well before the room counts as over at 25, so a crew still studying never loses
+    // its room. An open room stays listed only if the new skipper runs it as their one open room.
+    function takeHat(o, n, k, roomId) {
+      return n.diff(o).affectedKeys().hasOnly(['host', 'm', 'listed'])
         && n.host == k && k in o.m
         && n.m.diff(o.m).affectedKeys().hasOnly([k]) && ownChange(o.m[k], n.m[k])
-        && (!(o.host in o.m) || staleAt(o.m[o.host].seen, 25));
+        && (!(o.host in o.m) || staleAt(o.m[o.host].seen, 15))
+        && n.listed == (o.mode == 'open' && !o.locked && o.strikes < 3 && claimedAfter(roomId))
+        && cardInStep(n, roomId);
     }
 
     // Exactly one kind of change per write, picked by its shape, so only one check runs
@@ -401,11 +504,11 @@ service cloud.firestore {
       let changed = n.diff(o).affectedKeys();
       return n.m.size() > o.m.size() ? join(o, n, k, roomId)
         : n.m.size() < o.m.size() ? removal(o, n, k, roomId)
-        : changed.hasOnly(['m']) ? own(o, n, k)
-        : changed.hasOnly(['rep', 'why', 'listed']) ? report(o, n, k, roomId)
+        : changed.hasOnly(['m']) ? own(o, n, k, roomId)
+        : changed.hasOnly(['rep', 'why', 'listed', 'strikes']) ? report(o, n, k, roomId)
         : changed.hasOnly(['game']) ? turn(o, n, k)
         : o.host == k ? captain(o, n, k, roomId)
-        : takeHat(o, n, k);
+        : takeHat(o, n, k, roomId);
     }
 
     function roomOver(d) {
@@ -422,9 +525,12 @@ service cloud.firestore {
       allow get: if signedIn() && me(roomId) in resource.data.m;
       // Opened with its card, the skipper's private note and their cooldown stamp (naming this
       // room), in one batch. An open room also needs the 13+ tick, and only one at a time: the
-      // last open room this account opened must be gone, over, or skippered by someone else.
+      // last open room this account opened must be gone, over, or skippered by someone else. A
+      // code is used once: a closed room leaves its card as {gone: true}, so nobody can open a
+      // room under it again (old invite links and Hop back in never lead into someone else's room).
       allow create: if signedIn()
         && roomId.matches('[A-HJ-NP-Z2-9]{8}')
+        && !exists(cardAt(roomId))
         && newRoom(request.resource.data, roomId)
         && switchedOn('create')
         && (request.resource.data.mode == 'invite'
@@ -434,15 +540,22 @@ service cloud.firestore {
         && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/rooms/$(roomId))
         && stamped('madeAt', 'madeIn', roomId) && stamped('joinedAt', 'joinedIn', roomId)
         && getAfter(cardAt(roomId)).data.n == 1;
-      allow update: if signedIn() && roomUpdate(resource.data, request.resource.data, roomId);
+      // Over is final: once a room is over (skipper gone 25 minutes, or 12 hours old), nothing can
+      // bring it back (a skipper's own write with the card's alive refreshed would otherwise revive
+      // it, keeping one account in several listed open rooms). Only deleting it is left, and a
+      // report, which can't touch anyone's `seen`.
+      allow update: if signedIn()
+        && (!roomOver(resource.data) || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rep', 'why', 'listed', 'strikes']))
+        && roomUpdate(resource.data, request.resource.data, roomId);
       // The skipper closes it, the last sailor out closes it, or anyone clears it once it's over,
-      // always with its card and deck in the same batch, so no card is ever left on the list
-      // without its room. Deleting a room that's already gone is allowed, so a batch can clear
-      // a card or deck left behind by an older app.
+      // always with its deck deleted and its card emptied to {gone: true} in the same batch, so no
+      // card is ever left on the list without its room, and the code is never used again.
+      // Deleting a room that's already gone is allowed, so a batch can clear a card or deck left
+      // behind by an older app.
       allow delete: if signedIn()
         && (resource == null
           || ((resource.data.host == me(roomId) || resource.data.m.keys().hasOnly([me(roomId)]) || roomOver(resource.data))
-            && !existsAfter(cardAt(roomId))
+            && getAfter(cardAt(roomId)).data.keys().hasOnly(['gone'])
             && !existsAfter(/databases/$(database)/documents/rooms/$(roomId)/deck/cards)));
 
       // The skipper's own flashcards for a game (invite rooms only), read only by sailors aboard,
@@ -465,7 +578,7 @@ service cloud.firestore {
     }
 
     // A room's public card: only ever a copy of its room's public fields. `alive` is the skipper's
-    // last write, refreshed by their keep-alive. A card goes only with its room.
+    // last write, refreshed by their keep-alive. A card empties (cardGone) only with its room.
     function cardMirrors(roomId) {
       let d = request.resource.data;
       let r = getAfter(roomAt(roomId)).data;
@@ -476,13 +589,19 @@ service cloud.firestore {
         && (d.alive == r.m[r.host].seen || (resource != null && d.alive == resource.data.alive));
     }
 
+    // What a room's card becomes when the room goes: {gone: true}, for good (never deleted), so
+    // its code can't be opened again.
+    function cardGone(roomId) {
+      return request.resource.data.keys().hasOnly(['gone']) && request.resource.data.gone == true
+        && !existsAfter(roomAt(roomId));
+    }
+
     match /roomCards/{roomId} {
       allow get: if signedIn();
       // The open-rooms list: listed cards only, 20 at a time, for sailors who ticked 13 or older.
       allow list: if signedIn() && resource.data.listed == true && request.query.limit <= 20
         && switchedOn('open') && over13Now();
-      allow create, update: if signedIn() && cardMirrors(roomId);
-      allow delete: if signedIn() && !existsAfter(roomAt(roomId));
+      allow create, update: if signedIn() && (cardMirrors(roomId) || cardGone(roomId));
     }
   }
 }

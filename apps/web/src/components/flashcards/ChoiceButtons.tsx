@@ -52,7 +52,7 @@ export function ChoiceButtons({
             disabled={locked}
             onClick={() => onPick(opt)}
             className={cx(
-              "rounded-xl border px-3 py-2.5 text-left transition",
+              "min-w-0 rounded-xl border px-3 py-2.5 text-left wrap-anywhere transition",
               !reveal && !disabled && "border-[var(--border-subtle)] bg-[var(--surface-1)] hover:bg-[var(--surface-2)]",
               !reveal && disabled && "border-[var(--border-subtle)] bg-[var(--surface-1)] opacity-60",
               reveal && isAnswer && "border-seafoam-700 bg-seafoam-500/15 font-bold",

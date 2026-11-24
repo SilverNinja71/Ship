@@ -12,7 +12,7 @@ import { ACCESSORY_LABELS, COSTUME_LABELS, COSTUME_PASTELS, ROOM_FOCUS_RING, acc
 export function LookPicker({ look, onChange }: { look: RoomLook; onChange: (look: RoomLook) => void }) {
   const costume = costumeOf(look.costume);
   return (
-    <div className="space-y-3 rounded-2xl border border-[#DCCCF0] bg-[#F7F2FD] px-3.5 py-3 text-[#56406A]">
+    <div className="space-y-3 rounded-2xl border border-[#DCCCF0] bg-[#F7F2FD] px-3.5 py-3 text-[#56406A] [--ring:currentColor]">
       <div className="flex items-center gap-3">
         <span className="grid shrink-0 place-items-center rounded-2xl" style={{ background: COSTUME_PASTELS[costume].fill }}>
           <PastelMinionBadge costume={costume} accessory={accessoryOf(look.accessory)} size={64} />
@@ -21,7 +21,7 @@ export function LookPicker({ look, onChange }: { look: RoomLook; onChange: (look
           <p className="text-sm">
             In this room you're <strong className="font-display text-base font-normal">{nickText(look.nick)}</strong>.
           </p>
-          <p className="text-xs opacity-80">Your Google name and email stay hidden, and every room gets a new nickname.</p>
+          <p className="text-xs opacity-90">Your Google name and email stay hidden, and every room gets a new nickname.</p>
           <button
             type="button"
             onClick={() => onChange({ ...look, nick: randomNick(Math.random) })}

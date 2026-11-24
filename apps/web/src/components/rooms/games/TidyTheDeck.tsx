@@ -9,7 +9,7 @@ import { MATCH_PENALTY_MS, tidyPatches } from "@ship/active-recall-engine";
 import type { PracticeCard } from "@ship/active-recall-engine";
 import { ROOM_LIMITS } from "@ship/shared-types";
 import type { Room, TidyGame } from "@ship/shared-types";
-import { nickText, tidyStatus } from "../../../lib/roomRules.js";
+import { TIDY_DECK_TOO_SMALL_TEXT, memberName, tidyStatus } from "../../../lib/roomRules.js";
 import { useRecall } from "../../../stores/recallStore.js";
 import { useRooms } from "../../../stores/roomStore.js";
 import { prefersReducedMotion, useSettings } from "../../../stores/settingsStore.js";
@@ -52,8 +52,10 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
   const [chosen, setChosen] = useState<number | null | undefined>(undefined);
   // Patches I've cleared here; the room hears about them on my next write (up to 15 s later).
   const [mine, setMine] = useState(0);
+  // Mix-ups on the board in front of me, and the ones sent with my cleared patches: only those reach
+  // the crew's time (a board a crewmate tidied first, or one the tide closed, sends none).
   const [patchMixups, setPatchMixups] = useState(0);
-  const [mixups, setMixups] = useState(0);
+  const [sentMixups, setSentMixups] = useState(0);
   const [record, setRecord] = useState<boolean | null>(() => crewRecords.get(game.seed) ?? null);
 
   const count = patches?.length ?? 0;
@@ -83,20 +85,18 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
     const ms = Math.max(0, Math.round(Date.now() + useRooms.getState().serverOffset - game.at));
     useRooms.getState().tidyCleared(patch, ms, patchMixups);
     setMine((b) => b | bit(patch));
+    setSentMixups((n) => n + patchMixups);
     setPatchMixups(0);
     setChosen(null);
   };
 
-  const mistake = () => {
-    setPatchMixups((n) => n + 1);
-    setMixups((n) => n + 1);
-  };
+  const mistake = () => setPatchMixups((n) => n + 1);
 
   let body: ReactNode;
   if (!patches) {
     body = <Waiting text="Mochi is shuffling the cards…" />;
   } else if (!patches.length) {
-    body = <Waiting text="Couldn't deal this deck: it needs at least 4 cards with different answers. The skipper can pick another deck." />;
+    body = <Waiting text={`Couldn't deal this deck. ${TIDY_DECK_TOO_SMALL_TEXT}`} />;
   } else if (status.done) {
     body = (
       <EndCard tone="win">
@@ -108,7 +108,7 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
         {record ? (
           <p className={cx("rounded-full bg-[#FFF9DC] px-3 py-0.5 text-sm text-[#4B3A0B]", !prefersReducedMotion(motion) && "sticker-pop")}>New crew record!</p>
         ) : best !== undefined ? (
-          <p className="text-xs opacity-80">Crew best with this deck: {seconds(best)}</p>
+          <p className="text-xs opacity-90">Crew best with this deck: {seconds(best)}</p>
         ) : null}
         {endExtra}
       </EndCard>
@@ -165,7 +165,7 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
                   {m ? <PastelMinionBadge costume={costumeOf(m.costume)} accessory={accessoryOf(m.accessory)} size={30} /> : <span className="grid size-[30px] place-items-center font-display">{i + 1}</span>}
                   <span>
                     Patch {i + 1}
-                    {owner && <span className="opacity-75"> · {ownerName(room, owner)}</span>}
+                    {owner && <span className="opacity-90"> · {ownerName(room, owner)}</span>}
                   </span>
                 </button>
               </li>
@@ -192,9 +192,15 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
 
       {body}
 
-      {playing && mixups > 0 && (
+      {playing && (sentMixups > 0 || (boardOpen && patchMixups > 0)) && (
         <p className="text-xs text-[var(--muted-ink)]">
-          Your mix-ups: {mixups} (+{(mixups * MATCH_PENALTY_MS) / 1000} s for the crew)
+          {sentMixups > 0 && (
+            <>
+              Your mix-ups: {sentMixups} (+{(sentMixups * MATCH_PENALTY_MS) / 1000} s for the crew)
+            </>
+          )}
+          {sentMixups > 0 && boardOpen && patchMixups > 0 && <span aria-hidden="true"> · </span>}
+          {boardOpen && patchMixups > 0 && <>This patch: {patchMixups}, counted when you tidy it</>}
         </p>
       )}
     </div>
@@ -203,7 +209,7 @@ export function TidyTheDeck({ room, game, myKey, deck, endExtra }: TidyProps) {
 
 function ownerName(room: Room, key: string): string {
   const m = room.members.find((x) => x.key === key);
-  return m ? nickText(m.nick) : "a sailor who left";
+  return m ? memberName(room, key) : "a sailor who left";
 }
 
 /** "Patch 2, Cozy Dango 42's", or "Patch 2 (its sailor left)" once they've gone. */
@@ -211,7 +217,7 @@ function patchTitle(room: Room, patch: number, owner: string | undefined, myKey:
   const title = `Patch ${patch + 1}`;
   if (!owner || owner === myKey) return title;
   const m = room.members.find((x) => x.key === owner);
-  return m ? `${title}, ${nickText(m.nick)}'s` : `${title} (its sailor left)`;
+  return m ? `${title}, ${memberName(room, owner)}'s` : `${title} (its sailor left)`;
 }
 
 /** One chip per patch, with the sailor who started on it and a tick once anyone has tidied it. */
@@ -226,7 +232,7 @@ function PatchStrip({ room, game, count, covered, myKey }: { room: Room; game: T
         return (
           <span
             key={i}
-            title={`Patch ${i + 1}${m ? `: ${nickText(m.nick)}${owner === myKey ? " (you)" : ""}` : ""}${done ? ", tidy" : ""}`}
+            title={`Patch ${i + 1}${m && owner ? `: ${memberName(room, owner)}${owner === myKey ? " (you)" : ""}` : ""}${done ? ", tidy" : ""}`}
             className={cx("relative inline-flex items-center gap-1 rounded-full border py-0.5 pr-2 pl-0.5 text-xs", done ? "border-[#C3E6DC] bg-[#ECF8F1] text-[#24584B]" : "border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--muted-ink)]")}
           >
             {m ? <PastelMinionBadge costume={costumeOf(m.costume)} size={24} /> : <span className="size-6" aria-hidden="true" />}
@@ -285,7 +291,7 @@ function EndCard({ tone, children }: { tone: "win" | "tide"; children: ReactNode
   return (
     <div
       className={cx(
-        "grid justify-items-center gap-2 rounded-2xl border px-4 py-5 text-center",
+        "grid justify-items-center gap-2 rounded-2xl border px-4 py-5 text-center [--ring:currentColor]",
         tone === "win" ? "border-[#C3E6DC] bg-[#ECF8F1] text-[#24584B]" : "border-[#B2C8E0] bg-[#E6F2FA] text-[#2F4F6B]",
       )}
     >

@@ -1,7 +1,8 @@
-// The open list: rooms whose skippers chose "Open", for sailors who ticked 13+. One read when
-// the tab opens (and on Refresh); subjects are filtered in the browser, so no database index is
-// needed. Each load also quietly clears up to 3 rooms that are over (the store does it), which is
-// how open rooms expire without a server.
+// The open list: rooms whose skippers chose "Open", for sailors who ticked 13+. One load when
+// the tab opens (and on Refresh), unless one was loaded in the last 2 minutes (switching tabs
+// back and forth shows that one again: each load reads up to 22 documents); subjects are filtered
+// in the browser, so no database index is needed. Each load also quietly clears up to 3 rooms
+// that are over (the store does it), which is how open rooms expire without a server.
 
 import { useEffect, useMemo, useState } from "react";
 import type { RoomCard } from "@ship/shared-types";
@@ -14,6 +15,9 @@ import { RoomCardView } from "./RoomCardView.js";
 import { QUIET_BUTTON, YELLOW_BUTTON, chipClass, roomAction, useTicker } from "./roomStyle.js";
 
 type ListState = "loading" | "ready" | "paused" | { problem: string };
+
+/** A list loaded this recently is shown again when the tab opens, rather than read again. */
+const LIST_FRESH_MS = 2 * 60_000;
 
 const PAUSED = roomProblem("paused", "load");
 
@@ -33,8 +37,11 @@ export function OpenRooms({ onBoard, onRules, onStart }: { onBoard: (card: RoomC
     setState(problem === PAUSED ? "paused" : problem ? { problem } : "ready");
   };
   useEffect(() => {
-    if (over13) void load();
-    // Loads once per visit to the tab; Refresh loads again.
+    if (!over13) return;
+    const { openList: last, serverOffset: offset } = useRooms.getState();
+    if (last && Date.now() + offset - last.at < LIST_FRESH_MS) setState("ready");
+    else void load();
+    // Loads once per visit to the tab (or reuses one from a moment ago); Refresh loads again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [over13]);
 
@@ -78,7 +85,11 @@ export function OpenRooms({ onBoard, onRules, onStart }: { onBoard: (card: RoomC
         </div>
       )}
 
-      {typeof state === "object" && <p className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">{state.problem}</p>}
+      {typeof state === "object" && (
+        <p role="alert" className="rounded-2xl bg-[#FDE8E4] px-3 py-2 text-sm text-[#8A3B31]">
+          {state.problem}
+        </p>
+      )}
       {state === "paused" && (
         <div className="grid place-items-center gap-2 py-8 text-center">
           <PastelMinionBadge costume="teddy" size={60} />
