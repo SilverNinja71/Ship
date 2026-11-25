@@ -7,6 +7,8 @@ import { useCrewSync } from "./hooks/useCrewSync.js";
 import { useIdleDetection } from "./hooks/useIdleDetection.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
 import { useLookoutBridge } from "./hooks/useLookoutBridge.js";
+import { useRoomLink } from "./hooks/useRoomLink.js";
+import { useRoomSync } from "./hooks/useRoomSync.js";
 import { useVoyageTicker } from "./hooks/useVoyageTicker.js";
 import { useWebRTC } from "./hooks/useWebRTC.js";
 import { BreakReflectModal } from "./components/BreakReflectModal.js";
@@ -34,6 +36,9 @@ export function App() {
   useLookoutBridge();
   useAutoSync();
   useCloudSync();
+  // Study Rooms on the website (Firestore); the localhost crew server below stays for npm run dev.
+  useRoomLink();
+  useRoomSync();
   useVaultSync();
   useCrewSync();
   useWebRTC();

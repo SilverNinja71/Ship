@@ -5,3 +5,5 @@ export * from "./integrations.js";
 export * from "./crew.js";
 export * from "./lookout.js";
 export * from "./sprite.js";
+export * from "./bottle.js";
+export * from "./room.js";

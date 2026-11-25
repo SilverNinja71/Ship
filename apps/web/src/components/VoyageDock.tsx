@@ -9,6 +9,7 @@ import { focusProgress, remainingFocusMs } from "../lib/voyageLogic.js";
 import { selectAudioTrack, useActiveAudioTrack } from "../hooks/useAmbiance.js";
 import { setPwedoPomoOpen } from "../ship-engine/StudySceneRenderer.js";
 import { useSettings } from "../stores/settingsStore.js";
+import { useRooms } from "../stores/roomStore.js";
 import { onVoyageEvent, useVoyage } from "../stores/voyageStore.js";
 import { AudioBrowserModal } from "./AudioBrowserModal.js";
 import { useNow } from "./Hud.js";
@@ -32,10 +33,11 @@ export function VoyageDock() {
   const prepEndsAt = useVoyage((s) => s.prepEndsAt);
   const [showMusicBrowser, setShowMusicBrowser] = useState(false);
 
-  // Guide user toward the Quick Reflection when a focus round completes.
+  // Guide user toward the Quick Reflection when a focus round completes. Not while aboard a study
+  // room: the break is when the crew's games and next-leg calls show, up in the scene.
   useEffect(() => {
     return onVoyageEvent((kind) => {
-      if (kind === "focus-complete") {
+      if (kind === "focus-complete" && !useRooms.getState().room) {
         window.setTimeout(() => scrollToQuickReflection(true), 650);
       }
     });

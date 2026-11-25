@@ -34,7 +34,8 @@ export const SYNCED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "lastActiveMonth",
   ],
   [storageKey("voyage")]: ["records", "tree", "breakReflections", "sessionTasks"],
-  [storageKey("economy")]: ["doubloons", "xp", "inventory", "paidRewardIds", "unlockedThemes", "ledger"],
+  // roomEarnings syncs so the daily room cap holds across devices; paidRewardIds makes each room reward pay once.
+  [storageKey("economy")]: ["doubloons", "xp", "inventory", "paidRewardIds", "unlockedThemes", "ledger", "roomEarnings"],
   [storageKey("recall")]: ["decks", "cards", "reviewLog", "blurts", "matchBest"],
   [storageKey("customizer")]: ["activeShipId", "loadouts", "avatar"],
   [storageKey("fleet")]: ["assignments", "library", "done"],

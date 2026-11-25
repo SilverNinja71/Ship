@@ -37,6 +37,18 @@ describe("what syncs", () => {
     expect(Object.keys(voyage.state)).toEqual(["records", "tree"]);
   });
 
+  it("carries the daily room cap, but never the Study Rooms store", () => {
+    const economy = projectForSync("ship:economy", {
+      state: { doubloons: 5, paidRewardIds: ["room:K7MP2QXA:1:beast:0"], roomEarnings: { day: "2026-11-24", doubloons: 20, xp: 50 } },
+      version: 1,
+    });
+    expect(economy.state.roomEarnings).toEqual({ day: "2026-11-24", doubloons: 20, xp: 50 });
+    expect(economy.state.paidRewardIds).toEqual(["room:K7MP2QXA:1:beast:0"]);
+    // Recent room codes work as invite keys, so ship:rooms stays on this device.
+    expect(Object.keys(SYNCED_FIELDS)).not.toContain("ship:rooms");
+    expect(projectForSync("ship:rooms", { state: { current: "K7MP2QXA", recent: [] }, version: 1 }).state).toEqual({});
+  });
+
   it("only knows the stores it lists", () => {
     expect(projectForSync("ship:crew", { state: { ghosts: [] }, version: 1 }).state).toEqual({});
     expect(Object.keys(SYNCED_FIELDS)).not.toContain("ship:crew");

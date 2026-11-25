@@ -55,6 +55,68 @@ export interface QuestState {
 /** 1 focus minute = 1 damage. */
 export const DAMAGE_PER_FOCUS_MINUTE = 1;
 
+// Study Rooms keep no quest state: every device works the quest out from the room's damage
+// total, so these give the same answer however the total was added up. (The crew server's
+// damageQuest is different: there, one hit defeats at most one beast.)
+
+/** Total hp of one pass through QUEST_BEASTS (120 + 200 + 300 + 420); then the cycle repeats. */
+const QUEST_CYCLE_HP = QUEST_BEASTS.reduce((sum, beast) => sum + beast.maxHp, 0);
+
+// Whole focus minutes in practice, but keep float noise (119.99999999) out of hp, as damageQuest does.
+function roundHp(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/** A damage total as a usable number: nothing negative, and junk counts as no damage. */
+function cleanTotal(total: number): number {
+  return Number.isFinite(total) && total > 0 ? roundHp(total) : 0;
+}
+
+/** How many beasts `total` damage has defeated, counted from the first Kraken, and the damage dealt to the current one. */
+function walkQuest(total: number): { defeated: number; onCurrent: number } {
+  const t = cleanTotal(total);
+  const cycles = Math.floor(t / QUEST_CYCLE_HP);
+  let onCurrent = roundHp(t - cycles * QUEST_CYCLE_HP);
+  let defeated = cycles * QUEST_BEASTS.length;
+  for (const beast of QUEST_BEASTS) {
+    if (onCurrent < beast.maxHp) break;
+    onCurrent = roundHp(onCurrent - beast.maxHp);
+    defeated += 1;
+  }
+  return { defeated, onCurrent };
+}
+
+/**
+ * The beast a crew faces after `total` focus minutes; damage past a beast carries on to the next,
+ * so a sum gives the same answer in any order. `beastIndex` is the beast's place in QUEST_BEASTS
+ * (0–3); `defeated` counts every beast beaten so far.
+ */
+export function questFromDamage(total: number): QuestState & { beastIndex: number } {
+  const { defeated, onCurrent } = walkQuest(total);
+  const beastIndex = defeated % QUEST_BEASTS.length;
+  const beast = QUEST_BEASTS[beastIndex]!;
+  const rewards: FigureheadId[] = [];
+  for (const won of QUEST_BEASTS.slice(0, Math.min(defeated, QUEST_BEASTS.length))) {
+    if (!rewards.includes(won.reward)) rewards.push(won.reward);
+  }
+  return { beastId: beast.id, hp: roundHp(beast.maxHp - onCurrent), maxHp: beast.maxHp, defeated, rewards, beastIndex };
+}
+
+/** At most this many beasts are listed per call, so a forged total can't make a caller loop for ages. */
+const MAX_DEFEATS_LISTED = 100;
+
+/** Beasts newly defeated between two totals, counted from the start (index 0 = the first Kraken). */
+export function beastsDefeatedBetween(before: number, after: number): { index: number; beastId: QuestBeastId; reward: FigureheadId }[] {
+  const from = walkQuest(before).defeated;
+  const to = Math.min(walkQuest(after).defeated, from + MAX_DEFEATS_LISTED);
+  const out: { index: number; beastId: QuestBeastId; reward: FigureheadId }[] = [];
+  for (let index = from; index < to; index++) {
+    const beast = QUEST_BEASTS[index % QUEST_BEASTS.length]!;
+    out.push({ index, beastId: beast.id, reward: beast.reward });
+  }
+  return out;
+}
+
 export interface IceCandidate {
   candidate: string;
   sdpMid?: string | null;

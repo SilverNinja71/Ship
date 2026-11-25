@@ -42,15 +42,22 @@ export function Button({
   );
 }
 
-/** A full-height parchment panel over the scene. Escape closes it; focus moves in and back out. */
-export function Panel({ title, subtitle, icon, onClose, children, wide = false }: { title: string; subtitle?: string; icon?: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean }) {
+/**
+ * A full-height parchment panel over the scene. Escape closes it; focus moves in and back out. If
+ * what opened it has gone meanwhile (a banner's button hides while its panel is open), the focus
+ * goes back to the panel's own button instead (`opener`: an element with data-panel-opener="…").
+ */
+export function Panel({ title, subtitle, icon, onClose, children, wide = false, opener }: { title: string; subtitle?: string; icon?: ReactNode; onClose: () => void; children: ReactNode; wide?: boolean; opener?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.focus();
-    return () => previous?.focus?.();
-  }, []);
+    return () => {
+      if (previous?.isConnected && previous !== document.body) previous.focus?.();
+      else if (opener) document.querySelector<HTMLElement>(`[data-panel-opener="${opener}"]`)?.focus();
+    };
+  }, [opener]);
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center bg-[rgb(0_0_0_/_0.26)] p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
@@ -77,14 +84,27 @@ export function Panel({ title, subtitle, icon, onClose, children, wide = false }
               <IconClose />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+          {/* relative: anything positioned inside stays inside the scrolling body, not the clipped dialog around it. */}
+          <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
         </div>
       </div>
     </div>
   );
 }
 
-export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; badge?: number }[]; value: T; onChange: (id: T) => void }) {
+/** `tone="pastel"` gives the Ink & Paper look (a butter-yellow active tab) used by the newer panels. */
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  tone = "kit",
+}: {
+  tabs: { id: T; label: string; badge?: number }[];
+  value: T;
+  onChange: (id: T) => void;
+  tone?: "kit" | "pastel";
+}) {
+  const active = tone === "pastel" ? "bg-[#FFF1B8] text-[#5B460F] shadow-[0_2px_0_#F1E3A0]" : "bg-navy-900 text-cream-50 shadow-sm";
   return (
     <div role="tablist" className="mb-4 flex flex-wrap gap-1.5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-2)] p-1">
       {tabs.map((t) => (
@@ -95,8 +115,9 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
           className={cx(
-            "flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-display text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
-            value === t.id ? "bg-navy-900 text-cream-50 shadow-sm" : "text-[var(--muted-ink)] hover:bg-[var(--surface-1)] hover:text-[var(--page-ink)]",
+            "flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-display text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--page-ink)]",
+            tone === "pastel" ? "font-normal" : "font-bold",
+            value === t.id ? active : "text-[var(--muted-ink)] hover:bg-[var(--surface-1)] hover:text-[var(--page-ink)]",
           )}
         >
           {t.label}

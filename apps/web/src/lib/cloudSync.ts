@@ -16,18 +16,16 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
-  connectFirestoreEmulator,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
-  getFirestore,
   onSnapshot,
   serverTimestamp,
   setDoc,
   writeBatch,
 } from "firebase/firestore";
-import type { DocumentData, Firestore, Unsubscribe } from "firebase/firestore";
+import type { DocumentData, Unsubscribe } from "firebase/firestore";
 import type { NoteDocument } from "@ship/shared-types";
 import { useCustomizer } from "../stores/shipCustomizer.js";
 import { useEconomy } from "../stores/economyStore.js";
@@ -38,7 +36,7 @@ import { useSettings } from "../stores/settingsStore.js";
 import { useSync } from "../stores/syncStore.js";
 import type { SyncChoice } from "../stores/syncStore.js";
 import { useVoyage } from "../stores/voyageStore.js";
-import { app, firebaseEmulators } from "./firebase.js";
+import { firestore } from "./db.js";
 import { saveNotes } from "./noteVault.js";
 import { SYNC_META_KEY, onShipStorageWrite, storageKey } from "./storage.js";
 import {
@@ -79,14 +77,6 @@ const REHYDRATE: Record<string, () => unknown> = {
   [storageKey("settings")]: () => useSettings.persist.rehydrate(),
 };
 
-let db: Firestore | null = null;
-function firestore(): Firestore {
-  if (!db) {
-    db = getFirestore(app);
-    if (firebaseEmulators) connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  }
-  return db;
-}
 
 const newRev = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -486,23 +476,96 @@ export async function retrySync(): Promise<void> {
   await startSync(uid);
 }
 
+/** When the rules let a cooldown stamp go (local ms, with 1 s of slack): bottles after 20 s, bottle reports after 30 s, rooms 60 s after opening and 10 s after joining. */
+function stampDueAt(path: string, data: DocumentData): number {
+  const after = (v: unknown, seconds: number) => {
+    const at = (v as { toMillis?: () => number } | null | undefined)?.toMillis?.();
+    return typeof at === "number" ? at + (seconds + 1) * 1000 : 0;
+  };
+  if (path.endsWith("/meta/bottles")) return after(data.lastAt, 20);
+  if (path.endsWith("/meta/reports")) return after(data.at, 30);
+  return Math.max(after(data.madeAt, 60), after(data.joinedAt, 10));
+}
+
+/** Thrown by deleteCloudData once part of the cloud copy is already gone: its words say what went, and that the rest needs another try. */
+export class PartlyDeleted extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PartlyDeleted";
+  }
+}
+
+/** How often, and how far apart, the last step (the cooldown stamps) is tried: the rules judge their time by the server's clock, not this device's. */
+const STAMP_TRIES = 4;
+const STAMP_RETRY_MS = 5000;
+
 /**
  * Deletes everything this account keeps in the cloud. Used before deleting the
  * account itself, which would otherwise leave the data behind with no way to
- * reach it. Returns quietly when the cloud never held anything.
+ * reach it. Returns quietly when the cloud never held anything. A failure before
+ * anything went throws plain words; one after part of it went throws PartlyDeleted.
  */
 export async function deleteCloudData(uid: string): Promise<void> {
   stopSync();
+  // Once one read has worked, the database exists: a refusal after that is a real failure, not "nothing stored".
+  let readOk = false;
+  // What has gone so far, for the words if a later step fails.
+  const gone: string[] = [];
   try {
     const store = firestore();
-    const refs = (await Promise.all(["state", "notes", "meta"].map((name) => getDocs(collection(store, "users", uid, name))))).flatMap((snap) => snap.docs.map((d) => d.ref));
+    // Leave (or close) every Study Room first, while the private notes saying which rooms are ours still exist.
+    if ((await (await import("./rooms.js")).leaveAllRooms(uid)) > 0) gone.push("your study rooms");
+    // Bottles this sailor set afloat are taken back too (their deck cards deleted, each emptied to
+    // {gone: true} so its id is never reused), while the private notes that they're theirs still exist.
+    const shared = await getDocs(collection(store, "users", uid, "shared"));
+    readOk = true;
+    // 10 bottles a batch: taking a bottle back and deleting its cards costs the rules a lookup each, and one batch may make at most 20.
+    for (let i = 0; i < shared.docs.length; i += 10) {
+      const batch = writeBatch(store);
+      for (const d of shared.docs.slice(i, i + 10)) {
+        batch.delete(doc(store, "bottles", d.id, "deck", "cards"));
+        batch.set(doc(store, "bottles", d.id), { gone: true });
+      }
+      await batch.commit();
+      if (!gone.includes("your bottles")) gone.push("your bottles");
+    }
+    const docs = (await Promise.all(["state", "notes", "meta", "shared", "rooms"].map((name) => getDocs(collection(store, "users", uid, name))))).flatMap((snap) => snap.docs);
+    // The bottle, report and room cooldown stamps can only go once their time is up (see firestore.rules), so they go last.
+    const isStamp = (path: string) => path.endsWith("/meta/bottles") || path.endsWith("/meta/reports") || path.endsWith("/meta/rooms");
+    const stamps = docs.filter((d) => isStamp(d.ref.path));
+    const refs = docs.filter((d) => !isStamp(d.ref.path)).map((d) => d.ref);
     for (let i = 0; i < refs.length; i += 400) {
       const batch = writeBatch(store);
       for (const ref of refs.slice(i, i + 400)) batch.delete(ref);
       await batch.commit();
+      if (!gone.includes("your cloud copy")) gone.push("your cloud copy");
+    }
+    if (stamps.length) {
+      const dueAt = Math.max(...stamps.map((d) => stampDueAt(d.ref.path, d.data())));
+      // At most 61 s, even if this device's clock is behind.
+      const wait = Math.min(dueAt - Date.now(), 61_000);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      // The wait above uses this device's clock; the rules use the server's. A refusal is tried
+      // again a few seconds later, so a clock a little fast doesn't stop the deletion here.
+      for (let tries = 1; ; tries++) {
+        const batch = writeBatch(store);
+        for (const d of stamps) batch.delete(d.ref);
+        try {
+          await batch.commit();
+          break;
+        } catch (e) {
+          const code = typeof e === "object" && e !== null && "code" in e ? String((e as { code: unknown }).code) : "";
+          if (!/permission-denied/.test(code) || tries >= STAMP_TRIES) throw e;
+          await new Promise((r) => setTimeout(r, STAMP_RETRY_MS));
+        }
+      }
     }
   } catch (e) {
-    if (nothingStored(e)) return;
+    if (!readOk && !gone.length && nothingStored(e)) return;
+    if (gone.length) {
+      const list = gone.length > 1 ? `${gone.slice(0, -1).join(", ")} and ${gone.at(-1)}` : gone[0];
+      throw new PartlyDeleted(`Ship deleted ${list}, but couldn't finish, so your account and this browser's data are still here. Try again in a minute.`);
+    }
     throw new Error(syncProblem(e));
   }
 }

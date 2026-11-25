@@ -63,6 +63,15 @@ export function blockEndsAt(c: VoyageClock, now: number): number | null {
   return null;
 }
 
+/**
+ * When the running focus block reaches its planned end: the planned time, not "now", so a phone
+ * that slept through it ends the block on time. Null while paused or not sailing.
+ */
+export function focusEndsAt(c: VoyageClock): number | null {
+  if (c.phase !== "sailing" || c.segmentStartedAt === null) return null;
+  return c.segmentStartedAt + Math.max(0, c.focusMinutes * MINUTE_MS - c.bankedMs);
+}
+
 export function startVoyage(presetId: VoyagePresetId, focusMinutes: number, breakMinutes: number, now: number): VoyageClock {
   return {
     ...DOCKED,

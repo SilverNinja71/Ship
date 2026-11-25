@@ -1,29 +1,43 @@
 // 12 original white-bordered die-cut SVG study stickers starring Ship's crew.
 // Hand-crafted vector artwork (100% original, NO traced/third-party assets).
 
+import { STICKER_IDS } from "@ship/shared-types";
+import { prefersReducedMotion, useSettings } from "../stores/settingsStore.js";
+
+export type StickerId = (typeof STICKER_IDS)[number];
+
 export interface StickerDef {
-  id: string;
+  id: StickerId;
   label: string;
 }
 
-export const STICKERS: readonly StickerDef[] = [
-  { id: "100-sign", label: "100% Goal" },
-  { id: "fire-focus", label: "Locked In Fire" },
-  { id: "boba-break", label: "Boba Break" },
-  { id: "teacup-nap", label: "Warm Matcha Cup" },
-  { id: "plane-pwedo", label: "Paper Plane Pwedo" },
-  { id: "blanket-zz", label: "Cozy Blanket zZ" },
-  { id: "book-stack", label: "Book Stack" },
-  { id: "astro-mochi", label: "Astro Mochi" },
-  { id: "mini-dumbbell", label: "Brain Lift" },
-  { id: "buttered-toast", label: "Buttered Toast" },
-  { id: "star-sparkle", label: "Star Sparkle" },
-  { id: "dango-trio", label: "Dango Trio" },
-] as const;
+const STICKER_LABELS: Record<StickerId, string> = {
+  "100-sign": "100% Goal",
+  "fire-focus": "Locked In Fire",
+  "boba-break": "Boba Break",
+  "teacup-nap": "Warm Matcha Cup",
+  "plane-pwedo": "Paper Plane Pwedo",
+  "blanket-zz": "Cozy Blanket zZ",
+  "book-stack": "Book Stack",
+  "astro-mochi": "Astro Mochi",
+  "mini-dumbbell": "Brain Lift",
+  "buttered-toast": "Buttered Toast",
+  "star-sparkle": "Star Sparkle",
+  "dango-trio": "Dango Trio",
+};
 
-export function DieCutSticker({ id, size = 34 }: { id: string; size?: number }) {
+// Study Rooms send a sticker as its place in STICKER_IDS (say 24..35), so the order lives in
+// shared-types and this list follows it.
+export const STICKERS: readonly StickerDef[] = STICKER_IDS.map((id) => ({ id, label: STICKER_LABELS[id] }));
+
+/**
+ * One sticker. It springs in (`pop`, on by default) unless motion is reduced, by Ship's own
+ * Settings → Motion as well as the device's setting (index.css only knows the device's).
+ */
+export function DieCutSticker({ id, size = 34, pop = true }: { id: string; size?: number; pop?: boolean }) {
   const ink = "#7C746B";
   const cream = "#FFFDF7";
+  const still = prefersReducedMotion(useSettings((s) => s.motion));
   return (
     <svg
       width={size}
@@ -31,7 +45,7 @@ export function DieCutSticker({ id, size = 34 }: { id: string; size?: number }) 
       viewBox="0 0 48 48"
       fill="none"
       aria-label={STICKERS.find((s) => s.id === id)?.label ?? id}
-      className="sticker-pop shrink-0 drop-shadow-[0_1px_1px_rgb(0_0_0_/_0.12)]"
+      className={`${pop && !still ? "sticker-pop " : ""}shrink-0 drop-shadow-[0_1px_1px_rgb(0_0_0_/_0.12)]`}
     >
       {/* White die-cut vinyl border halo */}
       <circle cx="24" cy="24" r="21" fill="#FFFFFF" stroke="#EAE4D8" strokeWidth="1.2" />

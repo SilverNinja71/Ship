@@ -47,6 +47,12 @@ export const IconNotebook = (p: IconProps) => (
     <path d="M3 7h3M3 12h3M3 17h3" />
   </Icon>
 );
+export const IconBottle = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 2.5h4M10.5 2.5v3.2L8.4 9a3 3 0 0 0-.4 1.5V19a2.5 2.5 0 0 0 2.5 2.5h3A2.5 2.5 0 0 0 16 19v-8.5a3 3 0 0 0-.4-1.5l-2.1-3.3V2.5" />
+    <path d="M10.2 13.2c.9.6 2.7.6 3.6 0M10.2 16.2c.9.6 2.7.6 3.6 0" />
+  </Icon>
+);
 export const IconCards = (p: IconProps) => (
   <Icon {...p}>
     <rect x="3" y="6" width="13" height="15" rx="2" />
@@ -176,6 +182,13 @@ export const IconAnchor = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="5" r="2" />
     <path d="M12 7v14M8 11h8M4 14a8 8 0 0 0 16 0" />
+  </Icon>
+);
+
+/** A chevron, for "next" and "back": the serif font draws arrow characters as dashes. */
+export const IconChevron = ({ dir = "right", ...p }: IconProps & { dir?: "right" | "left" | "up" | "down" }) => (
+  <Icon {...p}>
+    <path d="M9 5.5l6.5 6.5L9 18.5" transform={`rotate(${{ right: 0, down: 90, left: 180, up: 270 }[dir]} 12 12)`} />
   </Icon>
 );
 

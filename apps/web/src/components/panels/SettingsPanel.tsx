@@ -10,8 +10,10 @@ import { isHostedSite } from "../../lib/hosting.js";
 import { signOutGoogle } from "../../lib/firebase.js";
 import { browserFetch } from "../../lib/network.js";
 import { clearNotes, saveNotes } from "../../lib/noteVault.js";
+import { clearSessionKeys } from "../../lib/storage.js";
 import { forgetVaultHandle } from "../../lib/obsidianVault.js";
 import { useFleet } from "../../stores/fleetStore.js";
+import { useRooms } from "../../stores/roomStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
 import type { MotionPreference, VisualStyle } from "../../stores/settingsStore.js";
 import { useUi } from "../../stores/uiStore.js";
@@ -42,9 +44,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   };
 
   const reset = async () => {
+    // Step out of any Study Room first, so crewmates don't see a sailor who's gone. Offline, the write never
+    // finishes, so it gets a few seconds; the room sweeps a sailor it stops hearing from anyway.
+    await Promise.race([useRooms.getState().leaveRoom().catch(() => {}), new Promise((r) => setTimeout(r, 8000))]);
     // Signed in, the cloud copy would come straight back after the reload. Signing out first makes this browser start fresh; the account keeps its copy.
     if (signedIn) await signOutGoogle().catch((e: unknown) => console.warn("Ship couldn't sign out.", e));
     for (const key of Object.keys(localStorage)) if (key.startsWith("ship:")) localStorage.removeItem(key);
+    clearSessionKeys();
     await clearNotes().catch((e: unknown) => console.warn("Ship couldn't erase its saved notes.", e));
     await forgetVaultHandle().catch(() => undefined);
     location.reload();
@@ -128,7 +134,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <Card>
           <h3 className="mb-2 font-display font-extrabold">Crew server</h3>
-          <Field label="Address" hint={isHostedSite ? "Crew rooms live here. This website doesn't have a server yet, so you only need this if a friend runs one." : "Crew rooms and the Canvas relay live here. npm run dev starts one at http://localhost:8787."}>
+          <Field label="Address" hint={isHostedSite ? "Crew rooms here need your own server. On this website, study together in Study Rooms (R)." : "Crew rooms and the Canvas relay live here. npm run dev starts one at http://localhost:8787."}>
             <div className="flex gap-2">
               <TextInput value={server} onChange={(e) => setServer(e.target.value)} />
               <Button onClick={() => s.set({ crewServer: server.trim() || s.crewServer })} disabled={server.trim() === s.crewServer}>

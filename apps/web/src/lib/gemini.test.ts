@@ -89,6 +89,16 @@ describe("backups", () => {
     expect(target.getItem("ship:sync-meta")).toBeNull();
   });
 
+  it("leave Study Rooms out, since recent room codes work as invite keys", () => {
+    const storage = memoryStorage({ "ship:rooms": { state: { current: "K7MP2QXA", recent: [{ code: "K7MP2QXA" }] }, version: 1 }, "ship:economy": { state: {}, version: 1 } });
+    const backup = makeBackup(storage);
+    expect(Object.keys(backup.data)).toEqual(["ship:economy"]);
+    expect(JSON.stringify(backup)).not.toContain("K7MP2QXA");
+    const target = memoryStorage();
+    restoreBackup(target, { app: "ship", data: { "ship:rooms": { state: { current: "ABCDEFGH" }, version: 1 } }, text: { "ship:rooms": "x" } });
+    expect(target.getItem("ship:rooms")).toBeNull();
+  });
+
   it("refuse files that aren't Ship backups", () => {
     expect(() => restoreBackup(memoryStorage(), { app: "other", data: {} })).toThrow("not a Ship backup");
     expect(() => restoreBackup(memoryStorage(), null)).toThrow("not a Ship backup");

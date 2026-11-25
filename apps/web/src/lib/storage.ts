@@ -34,3 +34,22 @@ export const storageKey = (name: string) => `ship:${name}`;
 
 /** Cloud sync's bookkeeping. It describes this browser only, so backups and sync leave it out. */
 export const SYNC_META_KEY = storageKey("sync-meta");
+
+/**
+ * Removes this tab's sessionStorage keys that start with `prefix` (a study room's uncredited
+ * minutes and Tidy the Deck memory start with "ship:room-"). Start over and account deletion clear
+ * every "ship:" key.
+ */
+export function clearSessionKeys(prefix = "ship:"): void {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    for (const k of keys) sessionStorage.removeItem(k);
+  } catch {
+    // Storage blocked: nothing was saved there either.
+  }
+}

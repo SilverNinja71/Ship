@@ -41,8 +41,10 @@ export function BananaPlannaSection() {
     return () => window.clearInterval(id);
   }, [checkAndResetWeek]);
 
+  // grid-cols-1 lets the column shrink to the screen, so on phones the week grid scrolls inside
+  // its card instead of making the whole page scroll sideways.
   return (
-    <div className="grid gap-8 border-t border-[var(--border-subtle)] pt-8 lg:grid-cols-[1.35fr_1fr]">
+    <div className="grid grid-cols-1 gap-8 border-t border-[var(--border-subtle)] pt-8 lg:grid-cols-[1.35fr_1fr]">
       {/* Weekly Plan */}
       <div className={SHEET}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

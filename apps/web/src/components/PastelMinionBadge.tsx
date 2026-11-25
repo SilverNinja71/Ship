@@ -1,4 +1,10 @@
 // Extra kawaii pastel costume minion badges for the Tiny Planner and UI headers.
+// Study Rooms add a tiny accessory emblem (top right), a status dot (bottom right) and a
+// "Skipper" ribbon; the characters themselves are unchanged.
+
+import type { RoomAccessory } from "@ship/shared-types";
+import { STATUS_DOT } from "./rooms/roomStyle.js";
+import type { BadgeStatus } from "./rooms/roomStyle.js";
 
 const AURA: Record<"banana" | "teddy" | "bunny" | "frog" | "pwedo", string> = {
   banana: "#FFF5C0",
@@ -11,25 +17,39 @@ const AURA: Record<"banana" | "teddy" | "bunny" | "frog" | "pwedo", string> = {
 export function PastelMinionBadge({
   costume = "banana",
   size = 44,
+  accessory,
+  status,
+  skipper = false,
 }: {
   costume?: "banana" | "teddy" | "bunny" | "frog" | "pwedo";
   size?: number;
+  /** A tiny emblem at the top right (Study Rooms). */
+  accessory?: RoomAccessory;
+  /** A dot at the bottom right; away is the badge at half strength with "zZ". */
+  status?: BadgeStatus;
+  /** A small "Skipper" ribbon under the badge. */
+  skipper?: boolean;
 }) {
   const ink = "#A29C93";
   const pupil = "#8E887F";
   const blush = "#FBBAC4";
+  const away = status === "away";
+  const emblem = accessory && accessory !== "none";
 
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+  const svg = (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true" opacity={away ? 0.5 : undefined}>
       {/* Soft pastel aura */}
       <circle cx="32" cy="34" r="25" fill={AURA[costume]} opacity="0.7" />
       {/* Tiny kawaii sparkles */}
-      <path
-        d="M10 15l1.2 2.4 2.4 1.2-2.4 1.2L10 22.2l-1.2-2.4-2.4-1.2 2.4-1.2L10 15Z"
-        fill="#FCE38A"
-      />
-      <circle cx="53" cy="14" r="1.8" fill="#FBBAC4" />
-      <circle cx="55" cy="48" r="1.4" fill="#CBEAD7" />
+      {away ? (
+        <text x="4" y="17" fontSize="12" fontStyle="italic" fill={pupil} fontFamily="Georgia, serif">
+          zZ
+        </text>
+      ) : (
+        <path d="M10 15l1.2 2.4 2.4 1.2-2.4 1.2L10 22.2l-1.2-2.4-2.4-1.2 2.4-1.2L10 15Z" fill="#FCE38A" />
+      )}
+      {!emblem && <circle cx="53" cy="14" r="1.8" fill="#FBBAC4" />}
+      {!status && <circle cx="55" cy="48" r="1.4" fill="#CBEAD7" />}
 
       {costume === "teddy" && (
         <>
@@ -120,6 +140,74 @@ export function PastelMinionBadge({
           <path d="M29.5 35.8q2.5 2.4 5 0" stroke={pupil} strokeWidth="1.9" strokeLinecap="round" />
         </>
       )}
+      {emblem && <AccessoryEmblem accessory={accessory} ink={ink} />}
+      {status && status !== "away" && <circle cx="52" cy="52" r="5.5" fill={STATUS_DOT[status]} stroke="#FFFFFF" strokeWidth="2.2" />}
     </svg>
   );
+  if (!skipper) return svg;
+  return (
+    <span className="relative inline-grid shrink-0 place-items-center" style={{ width: size, height: size }}>
+      {svg}
+      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#E8C64A] bg-[#FFF1B8] px-1.5 font-serif text-[9px] leading-[13px] text-[#5B460F]">Skipper</span>
+    </span>
+  );
+}
+
+/** One small emblem per Study Rooms accessory, worn at the badge's top right. */
+function AccessoryEmblem({ accessory, ink }: { accessory: RoomAccessory; ink: string }) {
+  const line = { stroke: ink, strokeWidth: 1.5, strokeLinejoin: "round" as const, strokeLinecap: "round" as const };
+  switch (accessory) {
+    case "cafe-apron":
+      return (
+        <g>
+          <path d="M48.8 8.6a2.7 2.7 0 0 1 5.4 0" fill="none" {...line} />
+          <path d="M47 9.6h9l1.6 9.4H45.4Z" fill="#F7E1CF" {...line} />
+          <path d="M49.2 14.4h4.6" {...line} />
+        </g>
+      );
+    case "woodland-sprout":
+      return (
+        <g>
+          <path d="M51.5 19.5v-7" fill="none" {...line} />
+          <path d="M51.5 13.2c-1-3.6-4-4.6-6.2-4.1.3 3.1 2.6 4.7 6.2 4.1Z" fill="#CBEAD7" {...line} />
+          <path d="M51.5 12.2c1-3.6 4-4.6 6.2-4.1-.3 3.1-2.6 4.7-6.2 4.1Z" fill="#CBEAD7" {...line} />
+        </g>
+      );
+    case "sunflower":
+      return (
+        <g>
+          {[0, 60, 120, 180, 240, 300].map((a) => (
+            <ellipse key={a} cx="51.5" cy="7.8" rx="2.1" ry="3" transform={`rotate(${a} 51.5 12)`} fill="#FFE27A" {...line} strokeWidth={1.2} />
+          ))}
+          <circle cx="51.5" cy="12" r="2.6" fill="#C9A26B" {...line} strokeWidth={1.3} />
+        </g>
+      );
+    case "pumpkin-cap":
+      return (
+        <g>
+          <path d="M51.5 8.2V5.6" fill="none" {...line} />
+          <ellipse cx="51.5" cy="12.8" rx="6.2" ry="4.8" fill="#F8C99B" {...line} />
+          <path d="M51.5 8.2v9.2M48.2 8.9c-1.4 2.5-1.4 5.4 0 7.8M54.8 8.9c1.4 2.5 1.4 5.4 0 7.8" fill="none" {...line} strokeWidth={1.2} />
+        </g>
+      );
+    case "star-pin":
+      return <path d="M51.5 5.4l1.9 4 4.3.5-3.2 2.9.9 4.3-3.9-2.2-3.9 2.2.9-4.3-3.2-2.9 4.3-.5Z" fill="#FCE38A" {...line} strokeWidth={1.4} />;
+    case "astro-helmet":
+      return (
+        <g>
+          <circle cx="51.5" cy="12" r="6.2" fill="#F4F1FB" {...line} />
+          <path d="M47.6 12.6a3.9 3.2 0 0 1 7.8 0v.6h-7.8Z" fill="#B2C8E0" {...line} strokeWidth={1.2} />
+          <circle cx="55.6" cy="8.4" r="0.9" fill="#FFFFFF" />
+        </g>
+      );
+    case "jelly-bow":
+      return (
+        <g>
+          <path d="M51.5 12 45.6 8.3v7.4ZM51.5 12l5.9-3.7v7.4Z" fill="#FBD3DC" {...line} strokeWidth={1.4} />
+          <circle cx="51.5" cy="12" r="1.9" fill="#FBBAC4" {...line} strokeWidth={1.3} />
+        </g>
+      );
+    default:
+      return null;
+  }
 }

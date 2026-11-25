@@ -79,6 +79,11 @@ export function setHandDrawnMode(enabled: boolean): void {
   handDrawnMode = enabled;
 }
 
+/** Whether the Ink & Paper look is drawing now (set per frame by ShipCanvas). */
+export function isHandDrawnMode(): boolean {
+  return handDrawnMode;
+}
+
 function getGrainyGreyStroke(_ctx: Ctx): string {
   return SOFT_GREY_INK;
 }

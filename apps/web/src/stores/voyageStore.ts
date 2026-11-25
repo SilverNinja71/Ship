@@ -13,9 +13,8 @@ import {
   beginShoreLeave,
   dock,
   focusedMs,
+  focusEndsAt,
   fruitForVoyage,
-  isBreakOver,
-  isFocusDone,
   makeRecord,
   pause,
   resume,
@@ -43,6 +42,8 @@ export interface VoyageStartOptions {
   breakMinutes?: number;
   cycles?: number;
   prep?: boolean;
+  /** With `prep`: when the prep minute ends (local ms), so a crew can start together. Capped at 5 minutes ahead; a time already past starts at once. */
+  prepUntil?: number;
   objective?: string | null;
   assignmentId?: string | null;
 }
@@ -112,6 +113,8 @@ export function onVoyageEvent(fn: Listener<VoyageEventKind>): () => void {
 const emit = <T>(set: Set<Listener<T>>, value: T) => set.forEach((fn) => fn(value));
 
 const MAX_RECORDS = 1000;
+/** At most this many timer changes in one tick (8 legs of focus and break, plus the prep). */
+const MAX_CATCH_UP = 20;
 
 function clockOf(s: VoyageState): VoyageClock {
   const { phase, presetId, focusMinutes, breakMinutes, voyageStartedAt, segmentStartedAt, bankedMs, pausedReason, breakEndsAt, paidMinutes } = s;
@@ -165,14 +168,15 @@ export const useVoyage = create<VoyageState>()(
           const breakMinutes = opts.breakMinutes ?? preset.breakMinutes;
           const cycles = Math.max(1, Math.min(8, opts.cycles ?? 1));
           const now = Date.now();
-          if (opts.prep) {
+          const prepEndsAt = !opts.prep ? null : opts.prepUntil === undefined ? now + 60_000 : Math.min(opts.prepUntil, now + 300_000);
+          if (prepEndsAt !== null && prepEndsAt > now) {
             set({
               presetId: opts.presetId,
               focusMinutes,
               breakMinutes,
               cyclesTotal: cycles,
               cyclesCompleted: 0,
-              prepEndsAt: now + 60_000,
+              prepEndsAt,
               objective: opts.objective?.trim() || null,
               assignmentId: opts.assignmentId ?? null,
               showBreakReflection: false,
@@ -244,21 +248,29 @@ export const useVoyage = create<VoyageState>()(
         },
 
         tick: (now = Date.now()) => {
-          const s = get();
-          if (s.phase === "docked" && s.prepEndsAt !== null) {
-            if (now >= s.prepEndsAt) {
-              const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, now);
+          // Each change happens at its planned time, not whenever the tick finally runs: a phone that
+          // slept (or a tab the browser froze) wakes in step with a crew that started together. The
+          // focus block starts when the prep ended, the break when the block was planned to end, and
+          // the next leg when the break was. Several changes due at once (a long sleep) all happen.
+          for (let step = 0; step < MAX_CATCH_UP; step++) {
+            const s = get();
+            if (s.phase === "docked" && s.prepEndsAt !== null) {
+              if (now < s.prepEndsAt) return;
+              const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, s.prepEndsAt);
               set({ ...clock, prepEndsAt: null, tree: { ...s.tree, state: "blooming" } });
               emit(eventListeners, "started");
+              continue;
             }
-            return;
-          }
-          if (s.phase === "sailing" || s.phase === "drifting") {
-            const clock = settle(now);
-            if (isFocusDone(clock, now)) {
+            if (s.phase === "sailing" || s.phase === "drifting") {
+              const endsAt = focusEndsAt(clockOf(s));
+              if (endsAt === null || now < endsAt) {
+                settle(now);
+                return;
+              }
+              const clock = settle(endsAt);
               useEconomy.getState().earn(VOYAGE_COMPLETION_BONUS, 0, "Voyage complete!");
-              const records = record(true, now);
-              const next = beginShoreLeave(clock, now);
+              const records = record(true, endsAt);
+              const next = beginShoreLeave(clock, endsAt);
               const cyclesCompleted = s.cyclesCompleted + 1;
               const tree: CitrusTree = { state: "resting", fruit: get().tree.fruit + fruitForVoyage(clock.focusMinutes) };
               set({
@@ -270,16 +282,19 @@ export const useVoyage = create<VoyageState>()(
                 ...(next.phase === "docked" ? { objective: null, assignmentId: null } : {}),
               });
               emit(eventListeners, "focus-complete");
+              continue;
             }
-          } else if (isBreakOver(clockOf(s), now)) {
-            if (s.cyclesCompleted < s.cyclesTotal) {
-              const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, now);
-              set({ ...clock, showBreakReflection: false, tree: { ...s.tree, state: "blooming" } });
-              emit(eventListeners, "started");
-            } else {
+            if (s.phase === "shore-leave" && s.breakEndsAt !== null && now >= s.breakEndsAt) {
+              if (s.cyclesCompleted < s.cyclesTotal) {
+                const clock = startVoyage(s.presetId, s.focusMinutes, s.breakMinutes, s.breakEndsAt);
+                set({ ...clock, showBreakReflection: false, tree: { ...s.tree, state: "blooming" } });
+                emit(eventListeners, "started");
+                continue;
+              }
               set({ ...dock(clockOf(s)), objective: null, assignmentId: null, showBreakReflection: false });
               emit(eventListeners, "break-over");
             }
+            return;
           }
         },
 

@@ -11,6 +11,7 @@ import { formatMinutes, relativeTime } from "../../lib/format.js";
 import { isHostedSite, needsCrewServerAddress } from "../../lib/hosting.js";
 import { useCrew } from "../../stores/crewStore.js";
 import { useSettings } from "../../stores/settingsStore.js";
+import { useUi } from "../../stores/uiStore.js";
 import { AvatarPreview } from "../AvatarPreview.js";
 import { IconCamera, IconCrew, IconMic, IconMute, IconSound } from "../icons.js";
 import { Badge, Button, Card, EmptyState, Field, Panel, ProgressBar, TextInput, cx } from "../ui.js";
@@ -63,7 +64,20 @@ function JoinRoom() {
       {status === "connecting" && <p className="text-sm font-bold text-brass-700">Hailing the crew server at {server}…</p>}
       {error && <p className="rounded-xl bg-coral-500/15 px-3 py-2 text-sm font-bold text-coral-700">{error}</p>}
       {noServer ? (
-        <p className="rounded-xl bg-coral-500/15 px-3 py-2 text-sm font-bold text-coral-700">Crew rooms need a crew server, and this website doesn't have one yet. If a friend runs one, put its address in Settings.</p>
+        // The website has no crew server, but Study Rooms works there with no server at all.
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#B2C8E0] bg-[#E6F2FA] px-4 py-3 text-[#2F4F6B]">
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-base">On this website, study together in Study Rooms</p>
+            <p className="text-xs opacity-85">Crew rooms here need your own crew server. If a friend runs one, put its address in Settings.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => useUi.getState().openPanel("rooms")}
+            className="rounded-full bg-[#FFE27A] px-4 py-1.5 font-semibold text-[#4B3A0B] shadow-[0_3px_0_#E8C64A] transition hover:bg-[#FFD95A] active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2F4F6B]"
+          >
+            Open Study Rooms
+          </button>
+        </div>
       ) : (
         <p className="text-xs text-ink/60">
           {isHostedSite ? "Crew server" : <>Crew rooms need the crew server running (it starts with <code>npm run dev</code>). Server</>}: {server} (change it in Settings).

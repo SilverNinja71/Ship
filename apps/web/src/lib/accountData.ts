@@ -3,6 +3,7 @@
 
 import { deleteUser, signOut } from "firebase/auth";
 import { clearNotes } from "./noteVault.js";
+import { clearSessionKeys } from "./storage.js";
 import { forgetVaultHandle } from "./obsidianVault.js";
 import { auth } from "./firebase.js";
 
@@ -106,6 +107,8 @@ export async function deleteAllUserData(): Promise<{ wasSignedIn: boolean; delet
   } catch {
     // Ignore storage cleanup errors.
   }
+  // This tab's sessionStorage too (a study room's uncredited minutes and Tidy the Deck memory).
+  clearSessionKeys();
 
   await clearNotes().catch(() => undefined);
   await forgetVaultHandle().catch(() => undefined);

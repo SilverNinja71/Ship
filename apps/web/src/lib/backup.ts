@@ -15,8 +15,8 @@ export interface ShipBackup {
   notes?: NoteDocument[];
 }
 
-/** Keys that describe this browser alone and never go into a backup. */
-const DEVICE_ONLY_KEYS: readonly string[] = [SYNC_META_KEY];
+/** Keys that describe this browser alone and never go into a backup. Recent Study Room codes work as invite keys, so ship:rooms stays too. */
+const DEVICE_ONLY_KEYS: readonly string[] = [SYNC_META_KEY, storageKey("rooms")];
 
 const backedUp = (key: string | null): key is string => Boolean(key?.startsWith("ship:")) && !DEVICE_ONLY_KEYS.includes(key as string);
 

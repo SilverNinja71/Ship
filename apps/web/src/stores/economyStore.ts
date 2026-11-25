@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { levelForXp } from "@ship/shared-types";
+import { ROOM_LIMITS, levelForXp } from "@ship/shared-types";
 import type { AvatarItemKind, Inventory, LookoutRewardEvent, PartKind } from "@ship/shared-types";
 import {
   EMPTY_INVENTORY,
@@ -18,8 +18,10 @@ import {
 import type { PurchaseCheck } from "@ship/ship-theme-kit";
 import { newId } from "../lib/ids.js";
 import { shipStorage, storageKey } from "../lib/storage.js";
+import { dayKey } from "../lib/voyageLogic.js";
 import { getKawaiiTheme } from "../ship-engine/kawaiiThemes.js";
 import type { KawaiiThemeId } from "../ship-engine/kawaiiThemes.js";
+import { useUi } from "./uiStore.js";
 
 export interface LedgerEntry {
   id: string;
@@ -27,6 +29,13 @@ export interface LedgerEntry {
   doubloons: number;
   xp: number;
   reason: string;
+}
+
+/** What Study Rooms have paid on one local day, kept under ROOM_LIMITS.dailyRewards. */
+export interface RoomEarnings {
+  day: string;
+  doubloons: number;
+  xp: number;
 }
 
 export interface EconomyState {
@@ -37,6 +46,7 @@ export interface EconomyState {
   paidRewardIds: string[];
   unlockedThemes: KawaiiThemeId[];
   ledger: LedgerEntry[];
+  roomEarnings: RoomEarnings;
   earn(doubloons: number, xp: number, reason: string): void;
   buyShip(shipId: string): PurchaseCheck;
   buyPart(kind: PartKind, id: string): PurchaseCheck;
@@ -46,10 +56,23 @@ export interface EconomyState {
   grantPart(kind: PartKind, id: string): boolean;
   /** Pays each new Lookout event once; returns the ids now settled (new and already paid) for acking. */
   payLookoutRewards(events: readonly LookoutRewardEvent[]): string[];
+  /**
+   * Pays once per id (paidRewardIds, as payLookoutRewards does) and keeps room rewards inside
+   * ROOM_LIMITS.dailyRewards for the local day. Returns what it paid, which is 0 and 0 once today's
+   * room chest is full, or null when the id was already paid.
+   */
+  earnOnce(id: string, doubloons: number, xp: number, reason: string, opts?: { roomCap?: boolean }): { doubloons: number; xp: number } | null;
 }
 
 const MAX_LEDGER = 200;
 const MAX_PAID_IDS = 1000;
+const NO_ROOM_EARNINGS: RoomEarnings = { day: "", doubloons: 0, xp: 0 };
+
+/** Whole, non-negative coins: a broken or negative amount pays nothing. */
+const amount = (n: number) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
+
+// The "chest is full" toast shows once a day per page load, not once per capped reward.
+let chestFullToastDay = "";
 
 export const useEconomy = create<EconomyState>()(
   persist(
@@ -72,6 +95,7 @@ export const useEconomy = create<EconomyState>()(
         paidRewardIds: [],
         unlockedThemes: ["matcha-cafe", "mossy-woodland"],
         ledger: [],
+        roomEarnings: NO_ROOM_EARNINGS,
 
         earn: (doubloons, xp, reason) => {
           if (doubloons === 0 && xp === 0) return;
@@ -140,13 +164,46 @@ export const useEconomy = create<EconomyState>()(
           }
           return events.map((e) => e.id);
         },
+
+        earnOnce: (id, doubloons, xp, reason, opts) => {
+          const s = get();
+          if (!id || s.paidRewardIds.includes(id)) return null;
+          let paid = { doubloons: amount(doubloons), xp: amount(xp) };
+          let roomEarnings = s.roomEarnings;
+          if (opts?.roomCap) {
+            const today = dayKey(Date.now());
+            // A missing or garbled tally (say, synced from an older device) counts as a fresh day instead of crashing.
+            const valid = roomEarnings?.day === today && amount(roomEarnings.doubloons) === roomEarnings.doubloons && amount(roomEarnings.xp) === roomEarnings.xp;
+            const sofar = valid ? roomEarnings : { day: today, doubloons: 0, xp: 0 };
+            const cap = ROOM_LIMITS.dailyRewards;
+            const capped = {
+              doubloons: Math.min(paid.doubloons, Math.max(0, cap.doubloons - sofar.doubloons)),
+              xp: Math.min(paid.xp, Math.max(0, cap.xp - sofar.xp)),
+            };
+            if ((capped.doubloons < paid.doubloons || capped.xp < paid.xp) && chestFullToastDay !== today) {
+              chestFullToastDay = today;
+              useUi.getState().toast("Today's room treasure chest is full. Studying still pays!", "info");
+            }
+            paid = capped;
+            roomEarnings = { day: today, doubloons: sofar.doubloons + paid.doubloons, xp: sofar.xp + paid.xp };
+          }
+          // The id is settled even when the chest was full, so a later day (or another device) never pays it.
+          set({
+            paidRewardIds: [...s.paidRewardIds, id].slice(-MAX_PAID_IDS),
+            doubloons: s.doubloons + paid.doubloons,
+            xp: s.xp + paid.xp,
+            roomEarnings,
+            ledger: paid.doubloons || paid.xp ? record(paid.doubloons, paid.xp, reason) : s.ledger,
+          });
+          return paid;
+        },
       };
     },
     {
       name: storageKey("economy"),
       storage: shipStorage,
       version: 1,
-      partialize: ({ doubloons, xp, inventory, paidRewardIds, unlockedThemes, ledger }) => ({ doubloons, xp, inventory, paidRewardIds, unlockedThemes, ledger }),
+      partialize: ({ doubloons, xp, inventory, paidRewardIds, unlockedThemes, ledger, roomEarnings }) => ({ doubloons, xp, inventory, paidRewardIds, unlockedThemes, ledger, roomEarnings }),
     },
   ),
 );

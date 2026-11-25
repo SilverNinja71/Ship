@@ -3,7 +3,7 @@
 // DESK_NEAR (towards the viewer), and the front panel hides the sailor's legs.
 
 import type { DeskId } from "@ship/shared-types";
-import { alpha, radialGradient, shade } from "../draw.js";
+import { alpha, isHandDrawnMode, radialGradient, shade } from "../draw.js";
 import type { Ctx } from "../types.js";
 import { drawSteam } from "./arms.js";
 import { curvyPath, fillPath, hash01, paintShaded, strokePath, tube, withClip, type CurvePt } from "./kit.js";
@@ -478,10 +478,19 @@ function marblePlinth(ctx: Ctx): void {
   paintShaded(ctx, (c) => c.ellipse(-50, -65.5, 1.8, 1.5, 0, 0, Math.PI * 2), "#5A5F3A", null, null, { width: 1 });
 }
 
+/**
+ * The galley table's wood. In Ink & Paper only the characters carry color, so the table and its
+ * chairs are drawn in the deck's cream, tan and grey, like the ship around them.
+ */
+const GALLEY_WOOD = { table: "#B5835A", top: "#C99668", topEdge: "#9E6B45", nail: "#5A4636", chair: "#9B6B43" } as const;
+const GALLEY_PAPER = { table: "#E6DDCC", top: "#F1EBDF", topEdge: "#CFC6B5", nail: "#A29C93", chair: "#DDD3C2" } as const;
+const galleyColors = () => (isHandDrawnMode() ? GALLEY_PAPER : GALLEY_WOOD);
+
 /** The galley table's long plank top and front, in the table frame (seat scale applied by the caller). */
 export function drawGalleyTableBody(ctx: Ctx, half: number): void {
   if (drawGalleyTableSprite(ctx)) return;
-  const wood = "#B5835A";
+  const colors = galleyColors();
+  const wood = colors.table;
   floorShadow(ctx, half + 6);
   for (const s of [-1, 1]) paintShaded(ctx, (c) => c.roundRect(s * (half - 8) - 5, -12, 10, 12, [0, 0, 2, 2]), shade(wood, -0.25), null, null);
   const front = (c: Ctx) => c.rect(-half + 4, -57, (half - 4) * 2, 46);
@@ -501,9 +510,9 @@ export function drawGalleyTableBody(ctx: Ctx, half: number): void {
     c.lineTo(half - 4, -50);
   }, alpha(shade(wood, -0.35), 0.6), 1.2);
   for (let x = -half + 15; x < half - 4; x += 22) {
-    fillPath(ctx, (c) => c.arc(x, -53.5, 1.1, 0, Math.PI * 2), "#5A4636");
+    fillPath(ctx, (c) => c.arc(x, -53.5, 1.1, 0, Math.PI * 2), colors.nail);
   }
-  slab(ctx, "#C99668", "#9E6B45", { half: half - 4, flare: 4 });
+  slab(ctx, colors.top, colors.topEdge, { half: half - 4, flare: 4 });
   withClip(ctx, (c) => topPath(c, half - 4, 4), () => {
     for (const y of [-70, -66]) {
       strokePath(ctx, (c) => {
@@ -516,7 +525,7 @@ export function drawGalleyTableBody(ctx: Ctx, half: number): void {
 
 /** A ladder-back chair seen from the front, behind a seated sailor (seat frame). */
 export function drawChairBack(ctx: Ctx): void {
-  const wood = "#9B6B43";
+  const wood = galleyColors().chair;
   for (const y of [-114, -101, -88]) paintShaded(ctx, (c) => c.roundRect(-39, y, 78, 5.5, 2), shade(wood, 0.04), null, null, { width: 2.6 });
   for (const s of [-1, 1]) {
     paintShaded(ctx, (c) => c.roundRect(s * 41 - 3.5, -120, 7, 52, 3), wood, shade(wood, -0.15), (c) => c.rect(s * 41 - (s < 0 ? 4 : 0), -120, 4, 52));
