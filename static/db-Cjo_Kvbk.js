@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-XKyaHtl9.js";import{r as t,t as n}from"./firebase-C184M8zo.js";import{C as r,D as i}from"./index.esm-EaKw8L17.js";var a=e({firestore:()=>s}),o=null;function s(){return o||(o=i(n),t&&r(o,`127.0.0.1`,8080)),o}export{s as n,a as t};

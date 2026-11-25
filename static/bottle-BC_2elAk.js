@@ -1,0 +1,1 @@
+var e={title:200,url:2e3,subject:60,tags:8,tag:30,description:500,cards:300,cardSide:500,preview:3,hideAtReports:3,cooldownSeconds:20,reportCooldownSeconds:30};export{e as t};
